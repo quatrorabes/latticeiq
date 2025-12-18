@@ -1,12 +1,10 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from supabase import create_client
 import os
-from datetime import datetime
-import asyncpg
 
-app = FastAPI(title="LatticeIQ API", version="1.0.0")
+app = FastAPI(title="LatticeIQ API")
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,75 +14,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-db_pool = None
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
 
-@app.on_event("startup")
-async def startup():
-    global db_pool
-    if DATABASE_URL:
-        db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
+security = HTTPBearer()
 
-@app.on_event("shutdown")
-async def shutdown():
-    if db_pool:
-        await db_pool.close()
-
-class Contact(BaseModel):
-    id: Optional[int] = None
-    name: str
-    email: Optional[str] = None
-    company: Optional[str] = None
-    title: Optional[str] = None
-    enrichment_status: Optional[str] = "pending"
-    created_at: Optional[datetime] = None
-
-class ContactCreate(BaseModel):
-    name: str
-    email: Optional[str] = None
-    company: Optional[str] = None
-    title: Optional[str] = None
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        user = supabase.auth.get_user(credentials.credentials)
+        return user.user
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 @app.get("/health")
-def health_check():
-    return {"status": "healthy", "service": "LatticeIQ"}
+def health():
+    return {"status": "ok"}
 
-@app.get("/api/v2/contacts")
-async def list_contacts(limit: int = 20, offset: int = 0):
-    if not db_pool:
-        raise HTTPException(status_code=503, detail="Database not connected")
-    
-    async with db_pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT * FROM contacts ORDER BY created_at DESC LIMIT $1 OFFSET $2",
-            limit, offset
-        )
-        contacts = [dict(row) for row in rows]
-        return {"contacts": contacts, "total": len(contacts)}
+@app.get("/api/contacts")
+def get_contacts(user = Depends(get_current_user)):
+    result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
+    return {"contacts": result.data}
 
-@app.get("/api/v2/contacts/{contact_id}")
-async def get_contact(contact_id: int):
-    if not db_pool:
-        raise HTTPException(status_code=503, detail="Database not connected")
-    
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT * FROM contacts WHERE id = $1", contact_id)
-        if not row:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        return {"contact": dict(row)}
+@app.get("/api/contacts/{contact_id}")
+def get_contact(contact_id: int, user = Depends(get_current_user)):
+    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return result.data[0]
 
-@app.post("/api/v2/contacts")
-async def create_contact(contact: ContactCreate):
-    if not db_pool:
-        raise HTTPException(status_code=503, detail="Database not connected")
-    
-    async with db_pool.acquire() as conn:
-        row = await conn.fetchrow(
-            """
-            INSERT INTO contacts (name, email, company, title, enrichment_status, created_at)
-            VALUES ($1, $2, $3, $4, 'pending', NOW())
-            RETURNING *
-            """,
-            contact.name, contact.email, contact.company, contact.title
-        )
-        return {"contact": dict(row)}
+@app.post("/api/contacts")
+def create_contact(contact: dict, user = Depends(get_current_user)):
+    contact["user_id"] = user.id
+    result = supabase.table("contacts").insert(contact).execute()
+    return result.data[0]
+
+@app.delete("/api/contacts/{contact_id}")
+def delete_contact(contact_id: int, user = Depends(get_current_user)):
+    supabase.table("contacts").delete().eq("id", contact_id).eq("user_id", user.id).execute()
+    return {"deleted": True}
