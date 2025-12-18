@@ -1,42 +1,141 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+/* Add these to your existing styles */
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.add-btn { background: #10b981; }
+.import-btn { background: #6366f1; }
+.logout-btn { background: #64748b; }
+
+.empty-state {
   text-align: center;
+  padding: 60px 20px;
+  color: #64748b;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.empty-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.modal {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: 90%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
-.card {
-  padding: 2em;
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
 }
 
-.read-the-docs {
-  color: #888;
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: #64748b;
 }
+
+.import-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.import-options button {
+  padding: 20px;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  background: white;
+  cursor: pointer;
+  font-size: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.import-options button:hover {
+  border-color: #6366f1;
+  background: #f8fafc;
+}
+
+.import-form input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.import-form .hint {
+  font-size: 12px;
+  color: #64748b;
+  margin: -8px 0 16px;
+}
+
+.back-btn {
+  background: none;
+  border: none;
+  color: #6366f1;
+  cursor: pointer;
+  margin-bottom: 16px;
+  padding: 0;
+}
+
+.filter-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.import-result {
+  margin-top: 20px;
+  padding: 16px;
+  border-radius: 8px;
+}
+
+.import-result.success { background: #ecfdf5; }
+.import-result.error { background: #fef2f2; }
+
+.import-result details { margin-top: 12px; }
+.import-result ul { margin: 8px 0 0 20px; font-size: 13px; }
+
+.contact-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.status {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.status.pending { background: #fef3c7; color: #92400e; }
+.status.enriched { background: #d1fae5; color: #065f46; }
