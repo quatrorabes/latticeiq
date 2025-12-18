@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: latticeiq-backend
+    env: python
+    plan: free
+    buildCommand: "cd backend && pip install -r requirements.txt"
+    startCommand: "cd backend && python main.py"
+    rootDir: backend
+    envVars:
+      - key: DATABASE_URL
+        scope: build
+      - key: OPENAI_API_KEY
+        scope: build
+      - key: PERPLEXITY_API_KEY
+        scope: build
+      - key: PORT
+        value: 10000
