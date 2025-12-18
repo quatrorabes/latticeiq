@@ -421,3 +421,4 @@ export default function App() {
     <Auth onLogin={() => supabase.auth.getSession().then(({ data }) => setSession(data.session))} />
   )
 }
+
