@@ -46,6 +46,13 @@ function Auth({ onLogin }: { onLogin: () => void }) {
       else onLogin()
     }
   }
+  
+  const handleHubSpot = () => doImport('/api/import/hubspot', {
+    access_token: hubspotToken,
+    max_contacts: maxContacts,  // was 500
+    filter_dnc: filterDnc
+  })
+  
 
   return (
     <div className="auth-container">
@@ -67,6 +74,8 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
   const [importType, setImportType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'csv' | null>(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
+  const [maxContacts, setMaxContacts] = useState(50)
+  
   
   // Form states
   const [hubspotToken, setHubspotToken] = useState('')
@@ -149,33 +158,34 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
           </div>
         )}
 
-        {importType && (
-          <div className="import-form">
-            <button onClick={() => { setImportType(null); setResult(null) }} className="back-btn">
-              ← Back
-            </button>
-
-            <label className="filter-toggle">
-              <input type="checkbox" checked={filterDnc} onChange={e => setFilterDnc(e.target.checked)} />
-              Filter out unqualified/unsubscribed/DNC contacts
+        {importType === 'hubspot' && (
+          <>
+            <h3>HubSpot Import</h3>
+            <input
+              type="password"
+              placeholder="HubSpot Private App Access Token"
+              value={hubspotToken}
+              onChange={e => setHubspotToken(e.target.value)}
+            />
+            <p className="hint">Get from HubSpot → Settings → Integrations → Private Apps</p>
+          
+            <label>
+              Max contacts to import:
+              <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
+                <option value={10}>10 (test)</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={250}>250</option>
+                <option value={500}>500</option>
+              </select>
             </label>
-
-            {importType === 'hubspot' && (
-              <>
-                <h3>HubSpot Import</h3>
-                <input
-                  type="password"
-                  placeholder="HubSpot Private App Access Token"
-                  value={hubspotToken}
-                  onChange={e => setHubspotToken(e.target.value)}
-                />
-                <p className="hint">Get from HubSpot → Settings → Integrations → Private Apps</p>
-                <button onClick={handleHubSpot} disabled={importing || !hubspotToken}>
-                  {importing ? 'Importing...' : 'Import from HubSpot'}
-                </button>
-              </>
-            )}
-
+          
+            <button onClick={handleHubSpot} disabled={importing || !hubspotToken}>
+              {importing ? 'Importing...' : `Import ${maxContacts} from HubSpot`}
+            </button>
+          </>
+        )}
+    
             {importType === 'salesforce' && (
               <>
                 <h3>Salesforce Import</h3>
