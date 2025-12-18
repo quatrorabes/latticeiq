@@ -408,7 +408,7 @@ export default function App() {
       setSession(data.session)
       setLoading(false)
     })
-    supabase.auth.onAuthStateChange((event, session) => {
+    supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
     })
   }, [])
