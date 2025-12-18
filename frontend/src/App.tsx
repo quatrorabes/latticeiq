@@ -134,26 +134,16 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
 
         {!importType && (
           <div className="import-options">
-            <button onClick={() => setImportType('hubspot')} className="import-btn hubspot">
-              <span>🟠</span> HubSpot
-            </button>
-            <button onClick={() => setImportType('salesforce')} className="import-btn salesforce">
-              <span>☁️</span> Salesforce
-            </button>
-            <button onClick={() => setImportType('pipedrive')} className="import-btn pipedrive">
-              <span>🟢</span> Pipedrive
-            </button>
-            <button onClick={() => setImportType('csv')} className="import-btn csv">
-              <span>📄</span> CSV Upload
-            </button>
+            <button onClick={() => setImportType('hubspot')} className="import-btn hubspot">HubSpot</button>
+            <button onClick={() => setImportType('salesforce')} className="import-btn salesforce">Salesforce</button>
+            <button onClick={() => setImportType('pipedrive')} className="import-btn pipedrive">Pipedrive</button>
+            <button onClick={() => setImportType('csv')} className="import-btn csv">CSV Upload</button>
           </div>
         )}
 
         {importType && (
           <div className="import-form">
-            <button onClick={() => { setImportType(null); setResult(null) }} className="back-btn">
-              ← Back
-            </button>
+            <button onClick={() => { setImportType(null); setResult(null) }} className="back-btn">← Back</button>
 
             <label className="filter-toggle">
               <input type="checkbox" checked={filterDnc} onChange={e => setFilterDnc(e.target.checked)} />
@@ -161,7 +151,7 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
             </label>
 
             {importType === 'hubspot' && (
-              <>
+              <div>
                 <h3>HubSpot Import</h3>
                 <input
                   type="password"
@@ -171,7 +161,7 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                 />
                 <p className="hint">Get from HubSpot → Settings → Integrations → Private Apps</p>
                 <div className="max-contacts">
-                  <label>Max contacts:</label>
+                  <label>Max contacts: </label>
                   <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
                     <option value={10}>10 (test)</option>
                     <option value={50}>50</option>
@@ -183,11 +173,11 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                 <button onClick={handleHubSpot} disabled={importing || !hubspotToken}>
                   {importing ? 'Importing...' : `Import ${maxContacts} from HubSpot`}
                 </button>
-              </>
+              </div>
             )}
 
             {importType === 'salesforce' && (
-              <>
+              <div>
                 <h3>Salesforce Import</h3>
                 <input
                   type="text"
@@ -203,7 +193,7 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                 />
                 <p className="hint">Use OAuth or Connected App to get access token</p>
                 <div className="max-contacts">
-                  <label>Max contacts:</label>
+                  <label>Max contacts: </label>
                   <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
                     <option value={10}>10 (test)</option>
                     <option value={50}>50</option>
@@ -215,11 +205,11 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                 <button onClick={handleSalesforce} disabled={importing || !sfInstanceUrl || !sfAccessToken}>
                   {importing ? 'Importing...' : `Import ${maxContacts} from Salesforce`}
                 </button>
-              </>
+              </div>
             )}
 
             {importType === 'pipedrive' && (
-              <>
+              <div>
                 <h3>Pipedrive Import</h3>
                 <input
                   type="password"
@@ -229,7 +219,7 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                 />
                 <p className="hint">Get from Pipedrive → Settings → Personal preferences → API</p>
                 <div className="max-contacts">
-                  <label>Max contacts:</label>
+                  <label>Max contacts: </label>
                   <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
                     <option value={10}>10 (test)</option>
                     <option value={50}>50</option>
@@ -241,11 +231,11 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                 <button onClick={handlePipedrive} disabled={importing || !pipedriveToken}>
                   {importing ? 'Importing...' : `Import ${maxContacts} from Pipedrive`}
                 </button>
-              </>
+              </div>
             )}
 
             {importType === 'csv' && (
-              <>
+              <div>
                 <h3>CSV Upload</h3>
                 <input
                   type="file"
@@ -254,7 +244,7 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                   disabled={importing}
                 />
                 <p className="hint">Auto-maps columns: first name, last name, email, company, title, phone, linkedin</p>
-              </>
+              </div>
             )}
           </div>
         )}
@@ -262,21 +252,11 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
         {result && (
           <div className={`import-result ${result.error ? 'error' : 'success'}`}>
             {result.success ? (
-              <>
+              <div>
                 <p>✅ <strong>{result.imported}</strong> contacts imported</p>
                 <p>🚫 <strong>{result.filtered}</strong> filtered (DNC/invalid)</p>
                 <p>⚠️ <strong>{result.duplicates}</strong> duplicates skipped</p>
-                {result.filter_reasons && Object.keys(result.filter_reasons).length > 0 && (
-                  <details>
-                    <summary>Filter details</summary>
-                    <ul>
-                      {Object.entries(result.filter_reasons).map(([reason, count]) => (
-                        <li key={reason}>{reason}: {count}</li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </>
+              </div>
             ) : (
               <p>❌ {result.error}</p>
             )}
@@ -402,7 +382,7 @@ function Dashboard({ token, onLogout }: { token: string, onLogout: () => void })
                 <td>{c.company}</td>
                 <td>{c.title}</td>
                 <td>{c.email}</td>
-                <td><span className={`status ${c.enrichment_status}`}>{c.enrichment_status || 'pending'}</span></td>
+                <td>{c.enrichment_status || 'pending'}</td>
                 <td>{c.apex_score || '-'}</td>
               </tr>
             ))}
@@ -411,19 +391,11 @@ function Dashboard({ token, onLogout }: { token: string, onLogout: () => void })
       )}
 
       {showImport && (
-        <ImportModal 
-          token={token} 
-          onClose={() => setShowImport(false)} 
-          onSuccess={fetchContacts} 
-        />
+        <ImportModal token={token} onClose={() => setShowImport(false)} onSuccess={fetchContacts} />
       )}
 
       {showAddContact && (
-        <AddContactModal 
-          token={token} 
-          onClose={() => setShowAddContact(false)} 
-          onSuccess={fetchContacts} 
-        />
+        <AddContactModal token={token} onClose={() => setShowAddContact(false)} onSuccess={fetchContacts} />
       )}
     </div>
   )
