@@ -46,13 +46,6 @@ function Auth({ onLogin }: { onLogin: () => void }) {
       else onLogin()
     }
   }
-  
-  const handleHubSpot = () => doImport('/api/import/hubspot', {
-    access_token: hubspotToken,
-    max_contacts: maxContacts,  // was 500
-    filter_dnc: filterDnc
-  })
-  
 
   return (
     <div className="auth-container">
@@ -74,15 +67,13 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
   const [importType, setImportType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'csv' | null>(null)
   const [importing, setImporting] = useState(false)
   const [result, setResult] = useState<ImportResult | null>(null)
-  const [maxContacts, setMaxContacts] = useState(50)
   
-  
-  // Form states
   const [hubspotToken, setHubspotToken] = useState('')
   const [sfInstanceUrl, setSfInstanceUrl] = useState('')
   const [sfAccessToken, setSfAccessToken] = useState('')
   const [pipedriveToken, setPipedriveToken] = useState('')
   const [filterDnc, setFilterDnc] = useState(true)
+  const [maxContacts, setMaxContacts] = useState(50)
 
   const doImport = async (endpoint: string, body: object) => {
     setImporting(true)
@@ -108,20 +99,20 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
 
   const handleHubSpot = () => doImport('/api/import/hubspot', {
     access_token: hubspotToken,
-    max_contacts: 500,
+    max_contacts: maxContacts,
     filter_dnc: filterDnc
   })
 
   const handleSalesforce = () => doImport('/api/import/salesforce', {
     instance_url: sfInstanceUrl,
     access_token: sfAccessToken,
-    max_contacts: 500,
+    max_contacts: maxContacts,
     filter_dnc: filterDnc
   })
 
   const handlePipedrive = () => doImport('/api/import/pipedrive', {
     api_token: pipedriveToken,
-    max_contacts: 500,
+    max_contacts: maxContacts,
     filter_dnc: filterDnc
   })
 
@@ -158,34 +149,43 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
           </div>
         )}
 
-        {importType === 'hubspot' && (
-          <>
-            <h3>HubSpot Import</h3>
-            <input
-              type="password"
-              placeholder="HubSpot Private App Access Token"
-              value={hubspotToken}
-              onChange={e => setHubspotToken(e.target.value)}
-            />
-            <p className="hint">Get from HubSpot → Settings → Integrations → Private Apps</p>
-          
-            <label>
-              Max contacts to import:
-              <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
-                <option value={10}>10 (test)</option>
-                <option value={50}>50</option>
-                <option value={100}>100</option>
-                <option value={250}>250</option>
-                <option value={500}>500</option>
-              </select>
-            </label>
-          
-            <button onClick={handleHubSpot} disabled={importing || !hubspotToken}>
-              {importing ? 'Importing...' : `Import ${maxContacts} from HubSpot`}
+        {importType && (
+          <div className="import-form">
+            <button onClick={() => { setImportType(null); setResult(null) }} className="back-btn">
+              ← Back
             </button>
-          </>
-        )}
-    
+
+            <label className="filter-toggle">
+              <input type="checkbox" checked={filterDnc} onChange={e => setFilterDnc(e.target.checked)} />
+              Filter out unqualified/unsubscribed/DNC contacts
+            </label>
+
+            {importType === 'hubspot' && (
+              <>
+                <h3>HubSpot Import</h3>
+                <input
+                  type="password"
+                  placeholder="HubSpot Private App Access Token"
+                  value={hubspotToken}
+                  onChange={e => setHubspotToken(e.target.value)}
+                />
+                <p className="hint">Get from HubSpot → Settings → Integrations → Private Apps</p>
+                <div className="max-contacts">
+                  <label>Max contacts:</label>
+                  <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
+                    <option value={10}>10 (test)</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={250}>250</option>
+                    <option value={500}>500</option>
+                  </select>
+                </div>
+                <button onClick={handleHubSpot} disabled={importing || !hubspotToken}>
+                  {importing ? 'Importing...' : `Import ${maxContacts} from HubSpot`}
+                </button>
+              </>
+            )}
+
             {importType === 'salesforce' && (
               <>
                 <h3>Salesforce Import</h3>
@@ -202,8 +202,18 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                   onChange={e => setSfAccessToken(e.target.value)}
                 />
                 <p className="hint">Use OAuth or Connected App to get access token</p>
+                <div className="max-contacts">
+                  <label>Max contacts:</label>
+                  <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
+                    <option value={10}>10 (test)</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={250}>250</option>
+                    <option value={500}>500</option>
+                  </select>
+                </div>
                 <button onClick={handleSalesforce} disabled={importing || !sfInstanceUrl || !sfAccessToken}>
-                  {importing ? 'Importing...' : 'Import from Salesforce'}
+                  {importing ? 'Importing...' : `Import ${maxContacts} from Salesforce`}
                 </button>
               </>
             )}
@@ -218,8 +228,18 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
                   onChange={e => setPipedriveToken(e.target.value)}
                 />
                 <p className="hint">Get from Pipedrive → Settings → Personal preferences → API</p>
+                <div className="max-contacts">
+                  <label>Max contacts:</label>
+                  <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
+                    <option value={10}>10 (test)</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={250}>250</option>
+                    <option value={500}>500</option>
+                  </select>
+                </div>
                 <button onClick={handlePipedrive} disabled={importing || !pipedriveToken}>
-                  {importing ? 'Importing...' : 'Import from Pipedrive'}
+                  {importing ? 'Importing...' : `Import ${maxContacts} from Pipedrive`}
                 </button>
               </>
             )}
@@ -431,4 +451,3 @@ export default function App() {
     <Auth onLogin={() => supabase.auth.getSession().then(({ data }) => setSession(data.session))} />
   )
 }
-
