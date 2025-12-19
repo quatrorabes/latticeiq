@@ -42,6 +42,7 @@ function App() {
     );
   }
 
+  // Not authenticated
   if (!session) {
     return (
       <Router>
@@ -56,14 +57,15 @@ function App() {
     );
   }
 
+  // Authenticated
   return (
     <Router>
-      <div className="min-h-screen bg-gray-950 flex">
+      <div className="min-h-screen bg-gray-950">
         <Sidebar onLogout={handleLogout} />
-        <main className="flex-1 ml-64 p-8">
+        <main className="ml-64 min-h-screen p-8">
           <Routes>
             <Route path="/" element={<Navigate to="/contacts" replace />} />
-            <Route path="/contacts" element={<Contacts onLogout={handleLogout} />} />
+            <Route path="/contacts" element={<Contacts />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
           </Routes>

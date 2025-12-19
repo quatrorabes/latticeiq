@@ -6,11 +6,7 @@ import ContactsTable from '../components/ContactsTable';
 import ContactDetailModal from '../components/ContactDetailModal';
 import Loader from '../components/Loader';
 
-interface ContactsProps {
-  onLogout: () => void;
-}
-
-export default function Contacts({ onLogout }: ContactsProps) {
+export default function Contacts() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -100,37 +96,31 @@ export default function Contacts({ onLogout }: ContactsProps) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-3xl font-bold text-white">Contacts</h1>
-          <p className="text-gray-400 mt-1">{contacts.length} total contacts</p>
-        </div>
-        <div className="flex items-center gap-4">
-          <button
-            onClick={onLogout}
-            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
-          >
-            Logout
-          </button>
-        </div>
+      {/* Header */}
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-white">Contacts</h1>
+        <p className="text-gray-400 mt-1">{contacts.length} total contacts</p>
       </div>
 
+      {/* Search */}
       <div className="mb-6">
         <input
           type="text"
           placeholder="Search contacts..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full md:w-96 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full md:w-96 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
       </div>
 
+      {/* Contacts Table */}
       <ContactsTable
         contacts={filteredContacts}
         onRowClick={handleRowClick}
         onDelete={handleDelete}
       />
 
+      {/* Contact Detail Modal */}
       <ContactDetailModal
         contact={selectedContact}
         isOpen={isModalOpen}
