@@ -10,7 +10,6 @@ interface Contact {
   apex_score?: number | null;
   enrichment_data?: any;
   parsed_profile?: any;
-  enrichment_status?: string | null;
 }
 
 interface ContactDetailModalProps {
@@ -25,8 +24,8 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   contact,
   isOpen = true,
   onClose,
-  onEnrichComplete: _onEnrichComplete,
 }) => {
+  
   
   const [activeTab, setActiveTab] = useState<'profile' | 'raw'>('profile');
 
