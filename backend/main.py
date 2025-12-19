@@ -230,3 +230,11 @@ async def root():
         "docs": "/docs",
     }
     
+@app.get("/health")
+async def health_check_root():
+    """Health check for Render (no /api prefix)"""
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+    }
