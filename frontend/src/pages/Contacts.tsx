@@ -1,190 +1,139 @@
-'use client';
+// frontend/src/pages/Contacts.tsx
+import { useState, useEffect, useCallback } from 'react';
+import { Contact } from '../types/contact';
+import { getContacts, deleteContact as deleteContactApi } from '../services/contactsService';
+import ContactsTable from '../components/ContactsTable';
+import ContactDetailModal from '../components/ContactDetailModal';
+import Loader from '../components/Loader';
 
-import { useState, useEffect } from 'react';
-
-import { supabase } from '../lib/supabase';
-import { ContactDetailModal } from '../components/ContactDetailModal';
-
-interface Contact {
-  id: number;
-  firstname: string;
-  lastname: string;
-  email: string;
-  company: string;
-  title: string;
-  apex_score?: number;
-  enrichment_status?: string;
-  enrichment_data?: any;
+interface ContactsProps {
+  onLogout: () => void;
 }
 
-export default function Contacts() {
+export default function Contacts({ onLogout }: ContactsProps) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [stats, setStats] = useState({ total: 0, enriched: 0, companies: 0 });
 
-  useEffect(() => {
-    fetchContacts();
-  }, []);
-
-  const fetchContacts = async () => {
-    setLoading(true);
+  const loadContacts = useCallback(async () => {
     try {
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-
-      setContacts(data || []);
-      
-      // Calculate stats
-      const enriched = (data || []).filter(
-        (c) => c.enrichment_status === 'enriched'
-      ).length;
-      const companies = new Set((data || []).map((c) => c.company)).size;
-      
-      setStats({
-        total: (data || []).length,
-        enriched,
-        companies,
-      });
+      setLoading(true);
+      setError(null);
+      const data = await getContacts();
+      setContacts(data);
     } catch (err) {
-      console.error('Error fetching contacts:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadContacts();
+  }, [loadContacts]);
 
   const handleRowClick = (contact: Contact) => {
     setSelectedContact(contact);
     setIsModalOpen(true);
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'enriched':
-        return 'bg-green-900 text-green-200';
-      case 'enriching':
-        return 'bg-blue-900 text-blue-200';
-      case 'failed':
-        return 'bg-red-900 text-red-200';
-      default:
-        return 'bg-gray-700 text-gray-200';
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedContact(null);
+  };
+
+  const handleEnrichComplete = () => {
+    loadContacts(); // Refresh contacts after enrichment
+  };
+
+  const handleDelete = async (contactId: number) => {
+    try {
+      await deleteContactApi(contactId);
+      setContacts(prev => prev.filter(c => c.id !== contactId));
+    } catch (err) {
+      console.error('Failed to delete contact:', err);
     }
   };
 
+  const filteredContacts = contacts.filter(contact => {
+    const query = searchQuery.toLowerCase();
+    return (
+      contact.first_name.toLowerCase().includes(query) ||
+      contact.last_name.toLowerCase().includes(query) ||
+      contact.company.toLowerCase().includes(query) ||
+      (contact.email?.toLowerCase().includes(query) ?? false) ||
+      (contact.title?.toLowerCase().includes(query) ?? false)
+    );
+  });
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="bg-red-900/30 border border-red-700 rounded-lg p-6">
+        <h3 className="text-red-400 font-semibold mb-2">Error Loading Contacts</h3>
+        <p className="text-red-300">{error}</p>
+        <button
+          onClick={loadContacts}
+          className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Contacts</h1>
-          <p className="text-gray-400">Manage and enrich your sales contacts</p>
+    <div>
+      {/* Header */}
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-3xl font-bold text-white">Contacts</h1>
+          <p className="text-gray-400 mt-1">{contacts.length} total contacts</p>
         </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-8 p-4 bg-gray-900 rounded-lg border border-gray-800">
-          <div>
-            <p className="text-gray-400 text-sm uppercase">Total Contacts</p>
-            <p className="text-3xl font-bold text-white">{stats.total}</p>
-          </div>
-          <div>
-            <p className="text-gray-400 text-sm uppercase">Enriched</p>
-            <p className="text-3xl font-bold text-green-400">{stats.enriched}</p>
-          </div>
-          <div>
-            <p className="text-gray-400 text-sm uppercase">Companies</p>
-            <p className="text-3xl font-bold text-blue-400">{stats.companies}</p>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
-          {loading ? (
-            <div className="text-center py-12 text-gray-400">
-              Loading contacts...
-            </div>
-          ) : contacts.length === 0 ? (
-            <div className="text-center py-12 text-gray-400">
-              No contacts yet. Import some to get started.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="border-b border-gray-700 bg-gray-800">
-                    <th className="text-left p-4 text-gray-300 font-semibold">
-                      Contact
-                    </th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">
-                      Company
-                    </th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">
-                      Title
-                    </th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">
-                      APEX Score
-                    </th>
-                    <th className="text-left p-4 text-gray-300 font-semibold">
-                      Status
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {contacts.map((contact) => (
-                    <tr
-                      key={contact.id}
-                      onClick={() => handleRowClick(contact)}
-                      className="border-b border-gray-800 hover:bg-gray-800 cursor-pointer transition"
-                    >
-                      <td className="p-4">
-                        <div>
-                          <p className="font-semibold text-white">
-                            {contact.firstname} {contact.lastname}
-                          </p>
-                          <p className="text-sm text-gray-400">{contact.email}</p>
-                        </div>
-                      </td>
-                      <td className="p-4 text-gray-300">{contact.company || '—'}</td>
-                      <td className="p-4 text-gray-300">{contact.title || '—'}</td>
-                      <td className="p-4">
-                        {contact.apex_score ? (
-                          <span className="inline-block px-3 py-1 bg-purple-900 text-purple-200 rounded font-bold">
-                            {contact.apex_score}
-                          </span>
-                        ) : (
-                          <span className="text-gray-500">—</span>
-                        )}
-                      </td>
-                      <td className="p-4">
-                        <span
-                          className={`inline-block px-3 py-1 rounded text-sm capitalize ${getStatusColor(
-                            contact.enrichment_status || 'pending'
-                          )}`}
-                        >
-                          {contact.enrichment_status || 'pending'}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <div className="flex items-center gap-4">
+          <button
+            onClick={onLogout}
+            className="px-4 py-2 text-gray-400 hover:text-white transition-colors"
+          >
+            Logout
+          </button>
         </div>
       </div>
 
-      {/* Detail Modal */}
+      {/* Search */}
+      <div className="mb-6">
+        <input
+          type="text"
+          placeholder="Search contacts..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full md:w-96 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+      </div>
+
+      {/* Contacts Table */}
+      <ContactsTable
+        contacts={filteredContacts}
+        onRowClick={handleRowClick}
+        onDelete={handleDelete}
+      />
+
+      {/* Contact Detail Modal */}
       <ContactDetailModal
         contact={selectedContact}
         isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedContact(null);
-        }}
+        onClose={handleCloseModal}
+        onEnrichComplete={handleEnrichComplete}
       />
     </div>
   );

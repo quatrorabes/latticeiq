@@ -1,60 +1,65 @@
-import { useState, useEffect, useCallback } from 'react'
-import type { Contact } from '../types/contact'
-import { fetchContacts, deleteContact, deleteContacts } from '../services/contactsService'
+// frontend/src/hooks/useContacts.ts
+import { useState, useEffect, useCallback } from 'react';
+import { Contact } from '../types/contact';
+import { getContacts, deleteContact, deleteContacts } from '../services/contactsService';
 
-export function useContacts() {
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+interface UseContactsReturn {
+  contacts: Contact[];
+  loading: boolean;
+  error: string | null;
+  refresh: () => Promise<void>;
+  removeContact: (id: number) => Promise<void>;
+  removeContacts: (ids: number[]) => Promise<void>;
+}
+
+export function useContacts(): UseContactsReturn {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadContacts = useCallback(async () => {
-    setIsLoading(true)
-    setError(null)
     try {
-      const data = await fetchContacts()
-      // fetchContacts already returns Contact[] - just set it
-      setContacts(data)
+      setLoading(true);
+      setError(null);
+      const data = await getContacts();
+      setContacts(data);
     } catch (err) {
-      console.error('Load contacts error:', err)
-      setError(err instanceof Error ? err : new Error('Failed to load contacts'))
-      setContacts([])
+      setError(err instanceof Error ? err.message : 'Failed to load contacts');
     } finally {
-      setIsLoading(false)
+      setLoading(false);
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
-    loadContacts()
-  }, [loadContacts])
+    loadContacts();
+  }, [loadContacts]);
 
   const removeContact = useCallback(async (id: number) => {
     try {
-      await deleteContact(id)
-      setContacts(prev => prev.filter(c => c.id !== id))
+      await deleteContact(id);
+      setContacts(prev => prev.filter(c => c.id !== id));
     } catch (err) {
-      throw err
+      throw err;
     }
-  }, [])
+  }, []);
 
   const removeContacts = useCallback(async (ids: number[]) => {
     try {
-      await deleteContacts(ids)
-      setContacts(prev => prev.filter(c => !ids.includes(c.id)))
+      await deleteContacts(ids);
+      setContacts(prev => prev.filter(c => !ids.includes(c.id)));
     } catch (err) {
-      throw err
+      throw err;
     }
-  }, [])
-
-  const refetch = useCallback(() => {
-    loadContacts()
-  }, [loadContacts])
+  }, []);
 
   return {
     contacts,
-    isLoading,
+    loading,
     error,
-    refetch,
+    refresh: loadContacts,
     removeContact,
-    removeContacts
-  }
+    removeContacts,
+  };
 }
+
+export default useContacts;
