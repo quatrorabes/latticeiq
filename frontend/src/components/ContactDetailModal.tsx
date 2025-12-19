@@ -16,8 +16,7 @@ interface ContactDetailModalProps {
   contact: Contact | null;
   isOpen?: boolean;
   onClose: () => void;
-  onEnrichComplete: _onEnrichComplete,
-  
+  onEnrichComplete?: () => void;
 }
 
 export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
@@ -25,8 +24,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   isOpen = true,
   onClose,
 }) => {
-  
-  
   const [activeTab, setActiveTab] = useState<'profile' | 'raw'>('profile');
 
   if (!isOpen || !contact) return null;
@@ -85,16 +82,16 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                   <p className="text-2xl font-bold text-green-400">{contact.apex_score ?? '-'}</p>
                 </div>
                 <div className="bg-gray-800 p-4 rounded-lg">
-                  <p className="text-xs text-gray-400 uppercase">Status</p>
-                  <p className="text-sm font-medium text-blue-400">{contact.enrichment_status}</p>
-                </div>
-                <div className="bg-gray-800 p-4 rounded-lg">
                   <p className="text-xs text-gray-400 uppercase">Title</p>
                   <p className="text-sm font-medium text-white">{contact.title || '-'}</p>
                 </div>
                 <div className="bg-gray-800 p-4 rounded-lg">
                   <p className="text-xs text-gray-400 uppercase">Company</p>
                   <p className="text-sm font-medium text-white">{contact.company || '-'}</p>
+                </div>
+                <div className="bg-gray-800 p-4 rounded-lg">
+                  <p className="text-xs text-gray-400 uppercase">Email</p>
+                  <p className="text-sm font-medium text-white truncate">{contact.email || '-'}</p>
                 </div>
               </div>
 
@@ -145,48 +142,11 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 </div>
               )}
 
-              {/* BANT Scores */}
-              {profile.bant && (
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <h3 className="text-sm font-semibold text-gray-300 mb-3">📊 BANT FRAMEWORK</h3>
-                  <div className="space-y-2">
-                    {Object.entries(profile.bant).map(([key, val]: [string, any]) => (
-                      <div key={key} className="flex items-center justify-between">
-                        <span className="text-sm text-gray-400 capitalize">{key}</span>
-                        <span className="text-sm font-medium text-gray-300">{val ?? '-'}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Company Info */}
-              {Object.keys(profile.company || {}).length > 0 && (
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <h3 className="text-sm font-semibold text-gray-300 mb-3">🏢 COMPANY</h3>
-                  <div className="space-y-2">
-                    {Object.entries(profile.company).map(([key, val]: [string, any]) => (
-                      <div key={key}>
-                        <p className="text-xs text-gray-500 uppercase">{key}</p>
-                        <p className="text-sm text-gray-300">{val || '-'}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Objection Handlers */}
-              {Object.keys(profile.objection_handlers || {}).length > 0 && (
-                <div className="bg-gray-800 p-4 rounded-lg">
-                  <h3 className="text-sm font-semibold text-gray-300 mb-3">🛡️ HANDLE OBJECTIONS</h3>
-                  <div className="space-y-2">
-                    {Object.entries(profile.objection_handlers).map(([objection, handler]: [string, any]) => (
-                      <div key={objection} className="border-l-2 border-red-600 pl-3">
-                        <p className="text-sm font-medium text-red-400">{objection}</p>
-                        <p className="text-sm text-gray-300">{handler}</p>
-                      </div>
-                    ))}
-                  </div>
+              {/* No profile data yet */}
+              {!profile.summary && !profile.opening_line && (
+                <div className="bg-gray-800 p-6 rounded-lg text-center">
+                  <p className="text-gray-400">No parsed profile data yet.</p>
+                  <p className="text-sm text-gray-500 mt-2">Check the Raw Data tab for enrichment results.</p>
                 </div>
               )}
             </>
@@ -196,7 +156,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
               <div className="bg-gray-800 p-4 rounded-lg">
                 <h3 className="text-sm font-semibold text-gray-300 mb-3">RAW ENRICHMENT DATA</h3>
                 <pre className="bg-gray-900 p-3 rounded text-xs text-gray-300 overflow-x-auto max-h-96">
-                  {JSON.stringify(enrichment, null, 2)}
+                  {JSON.stringify(enrichment, null, 2) || 'No enrichment data'}
                 </pre>
               </div>
               <button
