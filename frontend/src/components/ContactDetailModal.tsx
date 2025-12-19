@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 
 // frontend/src/components/ContactDetailModal.tsx
-import React, { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
 interface EnrichmentData {
@@ -21,11 +24,11 @@ interface EnrichmentData {
 
 interface Contact {
 	id: number;
-	firstname: string;
-	lastname: string;
-	email: string;
-	company: string;
-	title: string;
+	firstname?: string;
+	lastname?: string;
+	email?: string;
+	company?: string;
+	title?: string;  // ← FIXED: optional
 	apex_score?: number;
 	enrichment_data?: any;
 	enrichment_status?: string;
