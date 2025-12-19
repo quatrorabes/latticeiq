@@ -30,7 +30,6 @@ supabase = create_client(
 # AUTH - Import from main app
 # ═══════════════════════════════════════════════════════════════════════════════
 
-# This will be imported when wired up
 async def get_current_user_placeholder():
     """Placeholder - replaced by main.py import"""
     raise HTTPException(status_code=401, detail="Auth not configured")
@@ -82,15 +81,17 @@ def get_synthesizer() -> EnrichmentSynthesizer:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/enrich")
-async def enrich_contact_v3(request: EnrichRequest, user = Depends(lambda: get_current_user)):
+async def enrich_contact_v3(request: EnrichRequest, user: dict = Depends(get_current_user)):
     """
     V3 Parallel Enrichment - Single Contact
-
     Executes 5 parallel Perplexity queries + GPT-4 synthesis
     """
     try:
+        # Get user_id from JWT token
+        user_id = user.get("sub") or user.get("id") or user.get("user_id")
+        
         # Get contact (with user_id filter for security)
-        result = supabase.table("contacts").select("*").eq("id", request.contact_id).eq("user_id", user.id).execute()
+        result = supabase.table("contacts").select("*").eq("id", request.contact_id).eq("user_id", user_id).execute()
 
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -132,7 +133,7 @@ async def enrich_contact_v3(request: EnrichRequest, user = Depends(lambda: get_c
             "queries_cached": enrichment_result.queries_cached,
             "latency_ms": enrichment_result.total_latency_ms,
             "raw_results": {
-                k: {"success": v.success, "latency_ms": v.latency_ms, "content": v.content[:500]}
+                k: {"success": v.success, "latency_ms": v.latency_ms, "content": v.content[:500] if v.content else ""}
                 for k, v in enrichment_result.query_results.items()
             },
             "synthesized": synthesized
@@ -157,6 +158,9 @@ async def enrich_contact_v3(request: EnrichRequest, user = Depends(lambda: get_c
         return {
             "success": True,
             "contact_id": request.contact_id,
+            "enrichment_id": f"enr_{request.contact_id}",
+            "status": "completed",
+            "message": "Enrichment complete",
             "version": "v3_parallel",
             "metrics": {
                 "total_latency_ms": enrichment_result.total_latency_ms,
@@ -178,18 +182,18 @@ async def enrich_contact_v3(request: EnrichRequest, user = Depends(lambda: get_c
 
 
 @router.post("/enrich/batch")
-async def batch_enrich_v3(request: BatchEnrichRequest, user = Depends(lambda: get_current_user)):
+async def batch_enrich_v3(request: BatchEnrichRequest, user: dict = Depends(get_current_user)):
     """
     Batch V3 Enrichment - Multiple Contacts
-
-    Enriches pending contacts sequentially (parallel within each contact)
     """
     try:
+        user_id = user.get("sub") or user.get("id") or user.get("user_id")
+        
         # Get contacts to enrich
         if request.contact_ids:
-            result = supabase.table("contacts").select("*").eq("user_id", user.id).in_("id", request.contact_ids).execute()
+            result = supabase.table("contacts").select("*").eq("user_id", user_id).in_("id", request.contact_ids).execute()
         else:
-            result = supabase.table("contacts").select("*").eq("user_id", user.id).eq("enrichment_status", "pending").limit(request.limit).execute()
+            result = supabase.table("contacts").select("*").eq("user_id", user_id).eq("enrichment_status", "pending").limit(request.limit).execute()
 
         if not result.data:
             return {"success": True, "message": "No contacts to enrich", "enriched": 0}
@@ -279,10 +283,37 @@ async def batch_enrich_v3(request: BatchEnrichRequest, user = Depends(lambda: ge
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/contact/{contact_id}/profile")
-async def get_contact_profile(contact_id: int, user = Depends(lambda: get_current_user)):
+@router.get("/enrich/{contact_id}/status")
+async def get_enrichment_status(contact_id: int, user: dict = Depends(get_current_user)):
+    """Get enrichment status for a contact"""
+    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    result = supabase.table("contacts").select("enrichment_status, enrichment_data").eq("id", contact_id).eq("user_id", user_id).execute()
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    contact = result.data[0]
+    status = contact.get("enrichment_status", "pending")
+    
+    # Map internal status to frontend expected status
+    status_map = {"enriched": "completed", "enriching": "processing"}
+    mapped_status = status_map.get(status, status)
+    
+    return {
+        "enrichment_id": f"enr_{contact_id}",
+        "contact_id": contact_id,
+        "status": mapped_status,
+        "progress": 100 if mapped_status == "completed" else 0,
+        "domains_completed": ["COMPANY", "PERSON", "INDUSTRY", "NEWS", "OPEN_ENDED"] if mapped_status == "completed" else [],
+        "domains_pending": [] if mapped_status == "completed" else ["COMPANY", "PERSON", "INDUSTRY", "NEWS", "OPEN_ENDED"]
+    }
+
+
+@router.get("/enrich/{contact_id}/profile")
+async def get_contact_profile(contact_id: int, user: dict = Depends(get_current_user)):
     """Get enriched profile for a contact"""
-    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
+    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user_id).execute()
 
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
@@ -295,17 +326,18 @@ async def get_contact_profile(contact_id: int, user = Depends(lambda: get_curren
 
     return {
         "contact_id": contact_id,
-        "name": f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip(),
+        "name": f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip(),
         "company": contact.get("company"),
         "title": contact.get("title"),
         "apex_score": contact.get("apex_score"),
         "enrichment_status": contact.get("enrichment_status"),
-        "profile": enrichment_data.get("synthesized", {})
+        "profile": enrichment_data.get("synthesized", {}),
+        "enriched_at": contact.get("enriched_at")
     }
 
 
 @router.post("/cache/clear")
-async def clear_enrichment_cache(user = Depends(lambda: get_current_user)):
+async def clear_enrichment_cache(user: dict = Depends(get_current_user)):
     """Clear the enrichment cache"""
     enricher = get_enricher()
     enricher.cache.clear()

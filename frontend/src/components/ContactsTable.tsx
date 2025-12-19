@@ -12,9 +12,6 @@ import {
   Square,
   Loader2,
   AlertCircle,
-  Users,
-  Building2,
-  Sparkles,
   RefreshCw
 } from 'lucide-react'
 
@@ -86,8 +83,7 @@ export function ContactsTable({ onAddContact, onImport }: ContactsTableProps) {
   const stats = useMemo(() => ({
     total: contacts.length,
     enriched: contacts.filter(c => c.enrichment_status === 'completed').length,
-    companies: new Set(contacts.map(c => c.company).filter(Boolean)).size,
-    highScore: contacts.filter(c => (c.apex_score ?? 0) >= 75).length
+    companies: new Set(contacts.map(c => c.company).filter(Boolean)).size
   }), [contacts])
 
   const handleSort = (field: SortField) => {
@@ -149,300 +145,327 @@ export function ContactsTable({ onAddContact, onImport }: ContactsTableProps) {
   }
 
   const getScoreBadge = (score?: number) => {
-    if (score == null) return <span className="text-gray-400">—</span>
-    const tier = score >= 75 ? 'high' : score >= 50 ? 'medium' : 'low'
-    const colors = {
-      high: 'bg-green-500/20 text-green-400 border-green-500/30',
-      medium: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
-      low: 'bg-gray-500/20 text-gray-400 border-gray-500/30'
-    }
+    if (score == null) return <span style={{ color: '#6b7280' }}>—</span>
+    const color = score >= 75 ? '#22c55e' : score >= 50 ? '#eab308' : '#6b7280'
     return (
-      <span className={`px-2.5 py-1 rounded-full text-xs font-bold border ${colors[tier]}`}>
+      <span style={{ 
+        padding: '4px 10px', 
+        borderRadius: '12px', 
+        fontSize: '12px', 
+        fontWeight: 'bold',
+        backgroundColor: `${color}20`,
+        color: color
+      }}>
         {score}
       </span>
     )
   }
 
   const getStatusBadge = (status?: string | null) => {
-    const config: Record<string, { bg: string; text: string; label: string }> = {
-      completed: { bg: 'bg-green-500/20', text: 'text-green-400', label: '✓ Enriched' },
-      processing: { bg: 'bg-blue-500/20', text: 'text-blue-400', label: '⟳ Processing' },
-      pending: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: 'Pending' },
-      failed: { bg: 'bg-red-500/20', text: 'text-red-400', label: '✗ Failed' }
+    const configs: Record<string, { color: string; label: string }> = {
+      completed: { color: '#22c55e', label: '✓ Enriched' },
+      processing: { color: '#3b82f6', label: '⟳ Processing' },
+      pending: { color: '#6b7280', label: 'Pending' },
+      failed: { color: '#ef4444', label: '✗ Failed' }
     }
-    const c = config[status || 'pending'] || config.pending
+    const c = configs[status || 'pending'] || configs.pending
     return (
-      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${c.bg} ${c.text}`}>
+      <span style={{ 
+        padding: '4px 10px', 
+        borderRadius: '12px', 
+        fontSize: '12px',
+        backgroundColor: `${c.color}20`,
+        color: c.color
+      }}>
         {c.label}
       </span>
     )
   }
 
-  const SortHeader = ({ field, children }: { field: SortField; children: React.ReactNode }) => (
-    <button 
-      onClick={() => handleSort(field)}
-      className="flex items-center gap-1.5 text-xs font-semibold text-gray-400 uppercase tracking-wider hover:text-white transition-colors"
-    >
-      {children}
-      {sortField === field ? (
-        sortDirection === 'asc' ? <ChevronUp className="w-4 h-4 text-purple-400" /> : <ChevronDown className="w-4 h-4 text-purple-400" />
-      ) : (
-        <ChevronUp className="w-4 h-4 opacity-30" />
-      )}
-    </button>
-  )
-
   if (isLoading) {
     return (
-      <div className="bg-gray-900 rounded-xl border border-gray-800 p-12">
-        <div className="flex flex-col items-center justify-center">
-          <Loader2 className="w-10 h-10 text-purple-500 animate-spin mb-4" />
-          <p className="text-gray-400">Loading contacts...</p>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+        <Loader2 style={{ width: 32, height: 32, color: '#a855f7', animation: 'spin 1s linear infinite' }} />
+        <span style={{ marginLeft: 12, color: '#9ca3af' }}>Loading contacts...</span>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="bg-gray-900 rounded-xl border border-red-800/50 p-12">
-        <div className="flex flex-col items-center justify-center text-center">
-          <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-          <p className="text-white font-medium mb-2">Failed to load contacts</p>
-          <p className="text-gray-400 text-sm mb-4">{error.message}</p>
-          <button onClick={refetch} className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
-            Try Again
-          </button>
-        </div>
+      <div style={{ textAlign: 'center', padding: '80px 0' }}>
+        <AlertCircle style={{ width: 48, height: 48, color: '#ef4444', margin: '0 auto 16px' }} />
+        <p style={{ color: 'white', fontWeight: 500, marginBottom: 8 }}>Failed to load contacts</p>
+        <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 16 }}>{error.message}</p>
+        <button 
+          onClick={refetch}
+          style={{ padding: '8px 16px', backgroundColor: '#a855f7', color: 'white', borderRadius: 8, border: 'none', cursor: 'pointer' }}
+        >
+          Try Again
+        </button>
       </div>
     )
   }
 
   return (
-    <div className="space-y-4">
-      {/* Stats Cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-500/20 rounded-lg">
-              <Users className="w-5 h-5 text-purple-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{stats.total}</p>
-              <p className="text-xs text-gray-500">Total Contacts</p>
-            </div>
-          </div>
+    <div>
+      {/* Stats Bar */}
+      <div style={{ 
+        display: 'flex', 
+        gap: '24px', 
+        marginBottom: '24px',
+        padding: '16px 20px',
+        backgroundColor: '#1f2937',
+        borderRadius: '12px',
+        border: '1px solid #374151'
+      }}>
+        <div>
+          <span style={{ fontSize: '24px', fontWeight: 'bold', color: 'white' }}>{stats.total}</span>
+          <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '14px' }}>contacts</span>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-500/20 rounded-lg">
-              <Sparkles className="w-5 h-5 text-green-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{stats.enriched}</p>
-              <p className="text-xs text-gray-500">Enriched</p>
-            </div>
-          </div>
+        <div style={{ borderLeft: '1px solid #374151', paddingLeft: '24px' }}>
+          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#22c55e' }}>{stats.enriched}</span>
+          <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '14px' }}>enriched</span>
         </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-500/20 rounded-lg">
-              <Building2 className="w-5 h-5 text-blue-400" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{stats.companies}</p>
-              <p className="text-xs text-gray-500">Companies</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gray-900 rounded-xl border border-gray-800 p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-yellow-500/20 rounded-lg">
-              <span className="text-yellow-400 text-lg">🔥</span>
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-white">{stats.highScore}</p>
-              <p className="text-xs text-gray-500">High Score (75+)</p>
-            </div>
-          </div>
+        <div style={{ borderLeft: '1px solid #374151', paddingLeft: '24px' }}>
+          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#3b82f6' }}>{stats.companies}</span>
+          <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '14px' }}>companies</span>
         </div>
       </div>
 
-      {/* Main Table Card */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        {/* Toolbar */}
-        <div className="p-4 border-b border-gray-800">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            {/* Search */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
-              <input
-                type="text"
-                placeholder="Search by name, email, company..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-              />
-            </div>
-            
-            {/* Actions */}
-            <div className="flex items-center gap-3">
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white text-sm focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="all">All Contacts</option>
-                <option value="enriched">Enriched</option>
-                <option value="not_enriched">Not Enriched</option>
-                <option value="high_score">High Score (75+)</option>
-              </select>
-
-              <button
-                onClick={refetch}
-                className="p-2.5 bg-gray-800 border border-gray-700 rounded-lg text-gray-400 hover:text-white hover:border-gray-600 transition-colors"
-                title="Refresh"
-              >
-                <RefreshCw className="w-5 h-5" />
-              </button>
-              
-              {selectedIds.size > 0 && (
-                <button
-                  onClick={handleDeleteSelected}
-                  disabled={isDeleting}
-                  className="flex items-center gap-2 px-4 py-2.5 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-500/30 transition-colors"
-                >
-                  {isDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                  Delete ({selectedIds.size})
-                </button>
-              )}
-              
-              {onImport && (
-                <button
-                  onClick={onImport}
-                  className="px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white hover:border-gray-600 transition-colors"
-                >
-                  Import
-                </button>
-              )}
-              {onAddContact && (
-                <button
-                  onClick={onAddContact}
-                  className="px-4 py-2.5 bg-purple-600 text-white rounded-lg font-medium hover:bg-purple-700 transition-colors"
-                >
-                  + Add Contact
-                </button>
-              )}
-            </div>
-          </div>
+      {/* Toolbar */}
+      <div style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        gap: '16px',
+        marginBottom: '16px',
+        flexWrap: 'wrap'
+      }}>
+        <div style={{ position: 'relative', flex: '1', maxWidth: '400px' }}>
+          <Search style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, color: '#6b7280' }} />
+          <input
+            type="text"
+            placeholder="Search contacts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '10px 12px 10px 40px',
+              backgroundColor: '#1f2937',
+              border: '1px solid #374151',
+              borderRadius: '8px',
+              color: 'white',
+              fontSize: '14px'
+            }}
+          />
         </div>
+        
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value)}
+            style={{
+              padding: '10px 12px',
+              backgroundColor: '#1f2937',
+              border: '1px solid #374151',
+              borderRadius: '8px',
+              color: 'white',
+              fontSize: '14px'
+            }}
+          >
+            <option value="all">All Contacts</option>
+            <option value="enriched">Enriched</option>
+            <option value="not_enriched">Not Enriched</option>
+            <option value="high_score">High Score (75+)</option>
+          </select>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead className="bg-gray-800/50">
+          <button
+            onClick={refetch}
+            style={{ padding: '10px', backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: '#9ca3af', cursor: 'pointer' }}
+            title="Refresh"
+          >
+            <RefreshCw style={{ width: 20, height: 20 }} />
+          </button>
+          
+          {selectedIds.size > 0 && (
+            <button
+              onClick={handleDeleteSelected}
+              disabled={isDeleting}
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px',
+                padding: '10px 16px', 
+                backgroundColor: '#7f1d1d', 
+                border: '1px solid #991b1b', 
+                borderRadius: '8px', 
+                color: '#fca5a5', 
+                cursor: 'pointer' 
+              }}
+            >
+              <Trash2 style={{ width: 16, height: 16 }} />
+              Delete ({selectedIds.size})
+            </button>
+          )}
+          
+          {onImport && (
+            <button
+              onClick={onImport}
+              style={{ padding: '10px 16px', backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: 'white', cursor: 'pointer' }}
+            >
+              Import
+            </button>
+          )}
+          {onAddContact && (
+            <button
+              onClick={onAddContact}
+              style={{ padding: '10px 16px', backgroundColor: '#9333ea', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 500, cursor: 'pointer' }}
+            >
+              + Add Contact
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{ backgroundColor: '#1f2937', borderRadius: '12px', border: '1px solid #374151', overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ backgroundColor: '#111827' }}>
+              <th style={{ padding: '12px 16px', textAlign: 'left', width: '48px' }}>
+                <button onClick={handleSelectAll} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                  {selectedIds.size === filteredContacts.length && filteredContacts.length > 0 ? (
+                    <CheckSquare style={{ width: 20, height: 20, color: '#a855f7' }} />
+                  ) : (
+                    <Square style={{ width: 20, height: 20, color: '#4b5563' }} />
+                  )}
+                </button>
+              </th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>
+                <button onClick={() => handleSort('firstname')} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Contact
+                  {sortField === 'firstname' && (sortDirection === 'asc' ? <ChevronUp style={{ width: 14, height: 14 }} /> : <ChevronDown style={{ width: 14, height: 14 }} />)}
+                </button>
+              </th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>
+                <button onClick={() => handleSort('company')} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Company
+                  {sortField === 'company' && (sortDirection === 'asc' ? <ChevronUp style={{ width: 14, height: 14 }} /> : <ChevronDown style={{ width: 14, height: 14 }} />)}
+                </button>
+              </th>
+              <th style={{ padding: '12px 16px', textAlign: 'left' }}>
+                <button onClick={() => handleSort('title')} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Title
+                  {sortField === 'title' && (sortDirection === 'asc' ? <ChevronUp style={{ width: 14, height: 14 }} /> : <ChevronDown style={{ width: 14, height: 14 }} />)}
+                </button>
+              </th>
+              <th style={{ padding: '12px 16px', textAlign: 'center', width: '80px' }}>
+                <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>APEX</span>
+              </th>
+              <th style={{ padding: '12px 16px', textAlign: 'center', width: '120px' }}>
+                <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Status</span>
+              </th>
+              <th style={{ padding: '12px 16px', textAlign: 'center', width: '100px' }}>
+                <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredContacts.length === 0 ? (
               <tr>
-                <th className="px-4 py-3 text-left w-12">
-                  <button onClick={handleSelectAll} className="p-1 hover:bg-gray-700 rounded">
-                    {selectedIds.size === filteredContacts.length && filteredContacts.length > 0 ? (
-                      <CheckSquare className="w-5 h-5 text-purple-400" />
-                    ) : (
-                      <Square className="w-5 h-5 text-gray-600" />
-                    )}
-                  </button>
-                </th>
-                <th className="px-4 py-3 text-left"><SortHeader field="firstname">Contact</SortHeader></th>
-                <th className="px-4 py-3 text-left"><SortHeader field="company">Company</SortHeader></th>
-                <th className="px-4 py-3 text-left"><SortHeader field="title">Title</SortHeader></th>
-                <th className="px-4 py-3 text-center w-24"><SortHeader field="apex_score">APEX</SortHeader></th>
-                <th className="px-4 py-3 text-center w-32"><SortHeader field="enrichment_status">Status</SortHeader></th>
-                <th className="px-4 py-3 text-center w-28">Actions</th>
+                <td colSpan={7} style={{ padding: '60px', textAlign: 'center' }}>
+                  <p style={{ color: 'white', marginBottom: 4 }}>No contacts found</p>
+                  <p style={{ color: '#6b7280', fontSize: 14 }}>
+                    {searchQuery ? 'Try a different search' : 'Add or import contacts to get started'}
+                  </p>
+                </td>
               </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-800">
-              {filteredContacts.length === 0 ? (
-                <tr>
-                  <td colSpan={7} className="px-4 py-16 text-center">
-                    <Users className="w-12 h-12 text-gray-700 mx-auto mb-4" />
-                    <p className="text-white font-medium mb-1">No contacts found</p>
-                    <p className="text-gray-500 text-sm">
-                      {searchQuery ? 'Try a different search' : 'Add or import contacts to get started'}
-                    </p>
+            ) : (
+              filteredContacts.map((contact) => (
+                <tr 
+                  key={contact.id}
+                  onClick={() => setSelectedContact(contact)}
+                  style={{ borderTop: '1px solid #374151', cursor: 'pointer' }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#374151'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                >
+                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => handleSelectOne(contact.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                      {selectedIds.has(contact.id) ? (
+                        <CheckSquare style={{ width: 20, height: 20, color: '#a855f7' }} />
+                      ) : (
+                        <Square style={{ width: 20, height: 20, color: '#4b5563' }} />
+                      )}
+                    </button>
+                  </td>
+                  <td style={{ padding: '12px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ 
+                        width: 40, 
+                        height: 40, 
+                        borderRadius: '50%', 
+                        background: 'linear-gradient(135deg, #9333ea, #3b82f6)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'white',
+                        fontWeight: 600,
+                        fontSize: 14
+                      }}>
+                        {getInitials(contact)}
+                      </div>
+                      <div>
+                        <p style={{ color: 'white', fontWeight: 500, margin: 0 }}>{getDisplayName(contact)}</p>
+                        <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>{contact.email}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ padding: '12px 16px', color: '#d1d5db' }}>{contact.company || '—'}</td>
+                  <td style={{ padding: '12px 16px', color: '#9ca3af', fontSize: 14, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {contact.title || '—'}
+                  </td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    {getScoreBadge(contact.apex_score)}
+                  </td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
+                    {getStatusBadge(contact.enrichment_status)}
+                  </td>
+                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                      <EnrichButton
+                        contactId={contact.id}
+                        enrichmentStatus={contact.enrichment_status || undefined}
+                        onEnrichComplete={refetch}
+                        variant="icon"
+                      />
+                      <button
+                        onClick={async () => {
+                          if (confirm('Delete this contact?')) {
+                            await removeContact(contact.id)
+                          }
+                        }}
+                        style={{ padding: 8, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#6b7280' }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
+                      >
+                        <Trash2 style={{ width: 18, height: 18 }} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
-              ) : (
-                filteredContacts.map((contact) => (
-                  <tr 
-                    key={contact.id}
-                    className="hover:bg-gray-800/50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedContact(contact)}
-                  >
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => handleSelectOne(contact.id)} className="p-1 hover:bg-gray-700 rounded">
-                        {selectedIds.has(contact.id) ? (
-                          <CheckSquare className="w-5 h-5 text-purple-400" />
-                        ) : (
-                          <Square className="w-5 h-5 text-gray-600" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-blue-500 flex items-center justify-center text-white font-semibold text-sm">
-                          {getInitials(contact)}
-                        </div>
-                        <div>
-                          <p className="text-white font-medium">{getDisplayName(contact)}</p>
-                          <p className="text-gray-500 text-sm">{contact.email}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-gray-300">{contact.company || '—'}</p>
-                    </td>
-                    <td className="px-4 py-3">
-                      <p className="text-gray-400 text-sm line-clamp-1">{contact.title || '—'}</p>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {getScoreBadge(contact.apex_score)}
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      {getStatusBadge(contact.enrichment_status)}
-                    </td>
-                    <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-center gap-1">
-                        <EnrichButton
-                          contactId={contact.id}
-                          enrichmentStatus={contact.enrichment_status || undefined}
-                          onEnrichComplete={refetch}
-                          variant="icon"
-                        />
-                        <button
-                          onClick={async () => {
-                            if (confirm('Delete this contact?')) {
-                              await removeContact(contact.id)
-                            }
-                          }}
-                          className="p-2 rounded-lg text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        >
-                          <Trash2 className="w-5 h-5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-gray-800 text-sm text-gray-500">
-          Showing {filteredContacts.length} of {contacts.length} contacts
-        </div>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
-      {/* Contact Detail Modal */}
+      {/* Footer */}
+      <div style={{ marginTop: 12, padding: '0 4px', color: '#6b7280', fontSize: 13 }}>
+        Showing {filteredContacts.length} of {contacts.length} contacts
+      </div>
+
+      {/* Modal */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
