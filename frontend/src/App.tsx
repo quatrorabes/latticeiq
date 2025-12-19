@@ -10,6 +10,8 @@ import Contacts from './pages/Contacts';
 import Dashboard from './pages/Dashboard';
 import Sidebar from './components/Sidebar';
 import Loader from './components/Loader';
+import ContactsTable from './components/ContactsTable';
+
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);

@@ -1,444 +1,373 @@
-"""
-LatticeIQ Enrichment V3 - API Routes
-FastAPI endpoints with Supabase integration
-"""
-import json
-import logging
+# backend/enrichment_v3/api_routes.py
 import os
-import uuid
+import json
 from datetime import datetime
-from typing import List, Optional
-
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from jose import jwt, JWTError
-from supabase import create_client
+from typing import Optional, Callable
+from supabase import create_client, Client
 
-from .parallel_enricher import ParallelEnricher, EnrichmentResult
-from .synthesizer import EnrichmentSynthesizer, profile_to_dict
-from .query_templates import QueryDomain
+router = APIRouter(prefix="/api/v3/enrichment", tags=["enrichment"])
 
-logger = logging.getLogger(__name__)
+# Auth dependency placeholder - set via set_auth_dependency()
+_auth_dependency: Optional[Callable] = None
 
-router = APIRouter(prefix="/api/v3/enrichment", tags=["Enrichment V3"])
+def set_auth_dependency(dep: Callable):
+    global _auth_dependency
+    _auth_dependency = dep
+
+def get_auth():
+    if _auth_dependency is None:
+        raise HTTPException(status_code=500, detail="Auth not configured")
+    return Depends(_auth_dependency)
 
 # Supabase client
-supabase = create_client(
-    os.getenv("SUPABASE_URL"),
-    os.getenv("SUPABASE_KEY")
-)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# AUTH & UUID HELPERS
-# ═══════════════════════════════════════════════════════════════════════════════
+# Output directory for enrichment TXT files
+OUTPUT_DIR = os.getenv("ENRICHMENT_OUTPUT_DIR", "/tmp/enrichment_outputs")
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-def _get_bearer_token(request: Request) -> str:
-    auth = request.headers.get("Authorization") or ""
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing Bearer token")
-    return auth.split(" ", 1)[1].strip()
-
-async def get_current_user(request: Request) -> dict:
-    """
-    Extract and validate JWT from Authorization header.
-    Returns the full decoded JWT payload as a dict.
-    """
-    token = _get_bearer_token(request)
-    jwt_secret = (os.getenv("SUPABASE_JWT_SECRET") or "").strip()
-    
-    if not jwt_secret:
-        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET not configured")
-    
-    try:
-        payload = jwt.decode(
-            token,
-            jwt_secret,
-            algorithms=["HS256"],
-            options={"verify_aud": False},
-        )
-        if not payload.get("sub"):
-            raise HTTPException(status_code=401, detail="Token missing sub")
-        return payload
-    except JWTError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
-
-def extract_user_id(user: dict) -> str:
-    """
-    Safely extract and validate user_id (UUID) from JWT payload.
-    
-    Supabase JWT structure:
-    - 'sub': The user's UUID (primary)
-    - 'id': Sometimes present
-    - 'user_id': Custom claims
-    
-    Returns validated UUID as string for Supabase queries.
-    """
-    user_id = user.get("sub") or user.get("id") or user.get("user_id")
-    
-    if not user_id:
-        logger.error(f"No user_id found in token. Keys: {list(user.keys())}")
-        raise HTTPException(status_code=401, detail="User ID not found in token")
-    
-    # Validate UUID format
-    try:
-        validated = uuid.UUID(str(user_id))
-        return str(validated)  # Return lowercase, properly formatted UUID string
-    except (ValueError, TypeError) as e:
-        logger.error(f"Invalid UUID format: {user_id}, error: {e}")
-        raise HTTPException(status_code=401, detail="Invalid user ID format")
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# MODELS
-# ═══════════════════════════════════════════════════════════════════════════════
 
 class EnrichRequest(BaseModel):
     contact_id: int
-    domains: Optional[List[str]] = None
-    skip_cache: bool = False
     synthesize: bool = True
 
-class BatchEnrichRequest(BaseModel):
-    contact_ids: Optional[List[int]] = None
+
+class EnrichBatchRequest(BaseModel):
+    contact_ids: list[int] = []
     limit: int = 10
-    domains: Optional[List[str]] = None
-    synthesize: bool = True
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SINGLETON INSTANCES
-# ═══════════════════════════════════════════════════════════════════════════════
 
-_enricher: Optional[ParallelEnricher] = None
-_synthesizer: Optional[EnrichmentSynthesizer] = None
+def generate_enrichment_txt(contact: dict, enrichment_data: dict, output_path: str) -> str:
+    """Generate a TXT file with enrichment results"""
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    filename = f"enrichment_{contact.get('id')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    filepath = os.path.join(output_path, filename)
+    
+    # Build the TXT content
+    lines = [
+        "=" * 60,
+        "LATTICEIQ ENRICHMENT REPORT",
+        "=" * 60,
+        f"Generated: {timestamp}",
+        "",
+        "-" * 60,
+        "CONTACT INFORMATION",
+        "-" * 60,
+        f"Name: {contact.get('first_name', '')} {contact.get('last_name', '')}",
+        f"Email: {contact.get('email', 'N/A')}",
+        f"Phone: {contact.get('phone', 'N/A')}",
+        f"Company: {contact.get('company', 'N/A')}",
+        f"Title: {contact.get('title', 'N/A')}",
+        f"LinkedIn: {contact.get('linkedin_url', 'N/A')}",
+        f"Website: {contact.get('website', 'N/A')}",
+        "",
+        "-" * 60,
+        "SCORES",
+        "-" * 60,
+        f"APEX Score: {contact.get('apex_score', 'N/A')}",
+        f"MDCP Score: {contact.get('mdcp_score', 'N/A')}",
+        f"RSS Score: {contact.get('rss_score', 'N/A')}",
+        f"Match Tier: {contact.get('match_tier', 'N/A')}",
+        "",
+    ]
+    
+    # Add synthesized profile if available
+    if enrichment_data:
+        synthesized = enrichment_data.get("synthesized", {})
+        
+        lines.extend([
+            "-" * 60,
+            "EXECUTIVE SUMMARY",
+            "-" * 60,
+            synthesized.get("summary", "No summary available"),
+            "",
+            "-" * 60,
+            "OPENING LINE",
+            "-" * 60,
+            synthesized.get("opening_line", "N/A"),
+            "",
+            "-" * 60,
+            "HOOK",
+            "-" * 60,
+            synthesized.get("hook", "N/A"),
+            "",
+            "-" * 60,
+            "WHY NOW",
+            "-" * 60,
+            synthesized.get("why_now", "N/A"),
+            "",
+            "-" * 60,
+            "TALKING POINTS",
+            "-" * 60,
+        ])
+        
+        talking_points = synthesized.get("talking_points", [])
+        if talking_points:
+            for i, point in enumerate(talking_points, 1):
+                lines.append(f"  {i}. {point}")
+        else:
+            lines.append("  No talking points available")
+        
+        lines.extend([
+            "",
+            "-" * 60,
+            "BANT ANALYSIS",
+            "-" * 60,
+        ])
+        bant = synthesized.get("bant", {})
+        lines.append(f"  Budget: {bant.get('budget', 'N/A')}")
+        lines.append(f"  Authority: {bant.get('authority', 'N/A')}")
+        lines.append(f"  Need: {bant.get('need', 'N/A')}")
+        lines.append(f"  Timeline: {bant.get('timeline', 'N/A')}")
+        
+        lines.extend([
+            "",
+            "-" * 60,
+            "COMPANY INTELLIGENCE",
+            "-" * 60,
+        ])
+        company_info = synthesized.get("company_info", {})
+        lines.append(f"  Industry: {company_info.get('industry', 'N/A')}")
+        lines.append(f"  Size: {company_info.get('size', 'N/A')}")
+        lines.append(f"  Recent News: {company_info.get('recent_news', 'N/A')}")
+        
+        lines.extend([
+            "",
+            "-" * 60,
+            "OBJECTION HANDLERS",
+            "-" * 60,
+        ])
+        objections = synthesized.get("objection_handlers", [])
+        if objections:
+            for obj in objections:
+                lines.append(f"  Objection: {obj.get('objection', 'N/A')}")
+                lines.append(f"  Response: {obj.get('response', 'N/A')}")
+                lines.append("")
+        else:
+            lines.append("  No objection handlers available")
+        
+        # Add raw domain data summary
+        lines.extend([
+            "",
+            "-" * 60,
+            "RAW INTELLIGENCE SOURCES",
+            "-" * 60,
+        ])
+        raw = enrichment_data.get("raw", {})
+        for domain, data in raw.items():
+            lines.append(f"  [{domain.upper()}]: {'Available' if data else 'Not available'}")
+    
+    lines.extend([
+        "",
+        "=" * 60,
+        "END OF REPORT",
+        "=" * 60,
+    ])
+    
+    # Write to file
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    
+    return filepath
 
-def get_enricher() -> ParallelEnricher:
-    global _enricher
-    if _enricher is None:
-        _enricher = ParallelEnricher(max_concurrent=3, enable_cache=True)
-    return _enricher
-
-def get_synthesizer() -> EnrichmentSynthesizer:
-    global _synthesizer
-    if _synthesizer is None:
-        _synthesizer = EnrichmentSynthesizer()
-    return _synthesizer
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ROUTES
-# ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/enrich")
-async def enrich_contact_v3(request: EnrichRequest, user: dict = Depends(get_current_user)):
-    """
-    V3 Parallel Enrichment - Single Contact
-    Executes 5 parallel Perplexity queries + GPT-4 synthesis
-    """
-    try:
-        user_id = extract_user_id(user)
-        
-        # Get contact (with user_id filter for security)
-        result = supabase.table("contacts").select("*").eq("id", request.contact_id).eq("user_id", user_id).execute()
-
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Contact not found")
-
-        contact = result.data[0]
-
-        # Update status
-        supabase.table("contacts").update({
-            "enrichment_status": "enriching"
-        }).eq("id", request.contact_id).execute()
-
-        # Parse domains
-        domains = None
-        if request.domains:
-            domains = [QueryDomain(d) for d in request.domains]
-
-        # Execute parallel enrichment
-        enricher = get_enricher()
-        if request.skip_cache:
-            enricher.cache.clear()
-
-        enrichment_result = await enricher.enrich_contact(
-            contact=contact,
-            contact_id=request.contact_id,
-            domains=domains
-        )
-
-        # Synthesize
-        synthesized = None
-        if request.synthesize and enrichment_result.success:
-            synthesizer = get_synthesizer()
-            profile = await synthesizer.synthesize(enrichment_result, contact)
-            synthesized = profile_to_dict(profile)
-
-        # Save to database
-        enrichment_data = {
-            "v3_parallel": True,
-            "queries_executed": enrichment_result.queries_executed,
-            "queries_cached": enrichment_result.queries_cached,
-            "latency_ms": enrichment_result.total_latency_ms,
-            "raw_results": {
-                k: {"success": v.success, "latency_ms": v.latency_ms, "content": v.content[:500] if v.content else ""}
-                for k, v in enrichment_result.query_results.items()
-            },
-            "synthesized": synthesized
-        }
-
-        update_data = {
-            "enrichment_status": "enriched",
-            "enrichment_data": enrichment_data,
-            "enriched_at": datetime.now().isoformat()
-        }
-
-        # Add scores if synthesized
-        if synthesized:
-            update_data["apex_score"] = synthesized.get("apex_score")
-            update_data["bant_budget"] = synthesized.get("bant_budget")
-            update_data["bant_authority"] = synthesized.get("bant_authority")
-            update_data["bant_need"] = synthesized.get("bant_need")
-            update_data["bant_timing"] = synthesized.get("bant_timing")
-
-        supabase.table("contacts").update(update_data).eq("id", request.contact_id).execute()
-
-        return {
-            "success": True,
-            "contact_id": request.contact_id,
-            "enrichment_id": f"enr_{request.contact_id}",
-            "status": "completed",
-            "message": "Enrichment complete",
-            "version": "v3_parallel",
-            "metrics": {
-                "total_latency_ms": enrichment_result.total_latency_ms,
-                "queries_executed": enrichment_result.queries_executed,
-                "queries_cached": enrichment_result.queries_cached,
-                "queries_succeeded": sum(1 for r in enrichment_result.query_results.values() if r.success)
-            },
-            "synthesized_profile": synthesized
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"V3 Enrichment error: {e}")
-        supabase.table("contacts").update({
-            "enrichment_status": "failed"
-        }).eq("id", request.contact_id).execute()
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/enrich/batch")
-async def batch_enrich_v3(request: BatchEnrichRequest, user: dict = Depends(get_current_user)):
-    """Batch V3 Enrichment - Multiple Contacts"""
-    try:
-        user_id = extract_user_id(user)
-        
-        # Get contacts to enrich
-        if request.contact_ids:
-            result = supabase.table("contacts").select("*").eq("user_id", user_id).in_("id", request.contact_ids).execute()
-        else:
-            result = supabase.table("contacts").select("*").eq("user_id", user_id).eq("enrichment_status", "pending").limit(request.limit).execute()
-
-        if not result.data:
-            return {"success": True, "message": "No contacts to enrich", "enriched": 0}
-
-        contacts = result.data
-        enricher = get_enricher()
-        synthesizer = get_synthesizer()
-
-        domains = [QueryDomain(d) for d in request.domains] if request.domains else None
-
-        enriched_count = 0
-        failed_count = 0
-        results = []
-
-        for contact in contacts:
-            try:
-                # Update status
-                supabase.table("contacts").update({
-                    "enrichment_status": "enriching"
-                }).eq("id", contact["id"]).execute()
-
-                # Enrich
-                enrichment_result = await enricher.enrich_contact(
-                    contact=contact,
-                    contact_id=contact["id"],
-                    domains=domains
-                )
-
-                # Synthesize
-                synthesized = None
-                if request.synthesize and enrichment_result.success:
-                    profile = await synthesizer.synthesize(enrichment_result, contact)
-                    synthesized = profile_to_dict(profile)
-
-                # Save
-                enrichment_data = {
-                    "v3_parallel": True,
-                    "queries_executed": enrichment_result.queries_executed,
-                    "latency_ms": enrichment_result.total_latency_ms,
-                    "synthesized": synthesized
-                }
-
-                update_data = {
-                    "enrichment_status": "enriched",
-                    "enrichment_data": enrichment_data,
-                    "enriched_at": datetime.now().isoformat()
-                }
-
-                if synthesized:
-                    update_data["apex_score"] = synthesized.get("apex_score")
-                    update_data["bant_budget"] = synthesized.get("bant_budget")
-                    update_data["bant_authority"] = synthesized.get("bant_authority")
-                    update_data["bant_need"] = synthesized.get("bant_need")
-                    update_data["bant_timing"] = synthesized.get("bant_timing")
-
-                supabase.table("contacts").update(update_data).eq("id", contact["id"]).execute()
-
-                enriched_count += 1
-                results.append({
-                    "contact_id": contact["id"],
-                    "success": True,
-                    "apex_score": synthesized.get("apex_score") if synthesized else None
-                })
-
-            except Exception as e:
-                logger.error(f"Failed to enrich contact {contact['id']}: {e}")
-                supabase.table("contacts").update({
-                    "enrichment_status": "failed"
-                }).eq("id", contact["id"]).execute()
-                failed_count += 1
-                results.append({
-                    "contact_id": contact["id"],
-                    "success": False,
-                    "error": str(e)
-                })
-
-        return {
-            "success": True,
-            "enriched": enriched_count,
-            "failed": failed_count,
-            "total": len(contacts),
-            "results": results
-        }
-
-    except Exception as e:
-        logger.error(f"Batch enrichment error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/enrich/{contact_id}/status")
-async def get_enrichment_status(contact_id: int, user: dict = Depends(get_current_user)):
-    """Get enrichment status for a contact"""
-    user_id = extract_user_id(user)
-    result = supabase.table("contacts").select("enrichment_status, enrichment_data").eq("id", contact_id).eq("user_id", user_id).execute()
+async def enrich_contact(
+    request: EnrichRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(lambda: _auth_dependency)
+):
+    """Enrich a single contact and generate TXT output file"""
+    
+    # Fetch contact
+    result = supabase.table("contacts").select("*").eq("id", request.contact_id).eq("user_id", user["sub"]).execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
     
     contact = result.data[0]
-    status = contact.get("enrichment_status", "pending")
     
-    # Map internal status to frontend expected status
-    status_map = {"enriched": "completed", "enriching": "processing"}
-    mapped_status = status_map.get(status, status)
+    # Update status to processing
+    supabase.table("contacts").update({
+        "enrichment_status": "processing"
+    }).eq("id", request.contact_id).execute()
+    
+    try:
+        # Import and run enrichment engine
+        from .routes import EnrichmentEngine
+        engine = EnrichmentEngine()
+        
+        # Run parallel enrichment
+        enrichment_result = await engine.enrich(
+            name=f"{contact.get('first_name', '')} {contact.get('last_name', '')}",
+            email=contact.get("email"),
+            company=contact.get("company"),
+            title=contact.get("title"),
+            linkedin_url=contact.get("linkedin_url"),
+            synthesize=request.synthesize
+        )
+        
+        # Generate TXT file
+        txt_filepath = generate_enrichment_txt(contact, enrichment_result, OUTPUT_DIR)
+        
+        # Update contact with enrichment data
+        update_data = {
+            "enrichment_status": "completed",
+            "enrichment_data": enrichment_result,
+            "enriched_at": datetime.utcnow().isoformat(),
+            "enrichment_txt_path": txt_filepath
+        }
+        
+        # Extract scores if synthesized
+        if request.synthesize and "synthesized" in enrichment_result:
+            scores = enrichment_result["synthesized"].get("scores", {})
+            update_data["apex_score"] = scores.get("apex")
+            update_data["mdcp_score"] = scores.get("mdcp")
+            update_data["rss_score"] = scores.get("rss")
+        
+        supabase.table("contacts").update(update_data).eq("id", request.contact_id).execute()
+        
+        return {
+            "success": True,
+            "contact_id": request.contact_id,
+            "status": "completed",
+            "txt_file": txt_filepath,
+            "enrichment_data": enrichment_result
+        }
+        
+    except Exception as e:
+        # Update status to failed
+        supabase.table("contacts").update({
+            "enrichment_status": "failed"
+        }).eq("id", request.contact_id).execute()
+        
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/enrich/{contact_id}/download")
+async def download_enrichment_txt(
+    contact_id: int,
+    user: dict = Depends(lambda: _auth_dependency)
+):
+    """Download the enrichment TXT file for a contact"""
+    
+    result = supabase.table("contacts").select("enrichment_txt_path, first_name, last_name").eq("id", contact_id).eq("user_id", user["sub"]).execute()
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    contact = result.data[0]
+    txt_path = contact.get("enrichment_txt_path")
+    
+    if not txt_path or not os.path.exists(txt_path):
+        raise HTTPException(status_code=404, detail="Enrichment file not found. Please run enrichment first.")
+    
+    filename = f"enrichment_{contact.get('first_name', '')}_{contact.get('last_name', '')}.txt"
+    
+    return FileResponse(
+        path=txt_path,
+        filename=filename,
+        media_type="text/plain"
+    )
+
+
+@router.post("/enrich/batch")
+async def enrich_batch(
+    request: EnrichBatchRequest,
+    background_tasks: BackgroundTasks,
+    user: dict = Depends(lambda: _auth_dependency)
+):
+    """Batch enrich multiple contacts"""
+    
+    if request.contact_ids:
+        # Enrich specific contacts
+        result = supabase.table("contacts").select("*").in_("id", request.contact_ids).eq("user_id", user["sub"]).execute()
+    else:
+        # Enrich pending contacts up to limit
+        result = supabase.table("contacts").select("*").eq("user_id", user["sub"]).eq("enrichment_status", "pending").limit(request.limit).execute()
+    
+    if not result.data:
+        return {"success": True, "enriched": 0, "message": "No contacts to enrich"}
+    
+    enriched_count = 0
+    txt_files = []
+    
+    for contact in result.data:
+        try:
+            enrich_result = await enrich_contact(
+                EnrichRequest(contact_id=contact["id"], synthesize=True),
+                background_tasks,
+                user
+            )
+            enriched_count += 1
+            txt_files.append(enrich_result.get("txt_file"))
+        except Exception as e:
+            print(f"Failed to enrich contact {contact['id']}: {e}")
     
     return {
-        "enrichment_id": f"enr_{contact_id}",
+        "success": True,
+        "enriched": enriched_count,
+        "total": len(result.data),
+        "txt_files": txt_files
+    }
+
+
+@router.get("/enrich/{contact_id}/status")
+async def get_enrichment_status(
+    contact_id: int,
+    user: dict = Depends(lambda: _auth_dependency)
+):
+    """Get enrichment status for a contact"""
+    
+    result = supabase.table("contacts").select(
+        "enrichment_status, enriched_at, apex_score, enrichment_txt_path"
+    ).eq("id", contact_id).eq("user_id", user["sub"]).execute()
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    contact = result.data[0]
+    
+    return {
         "contact_id": contact_id,
-        "status": mapped_status,
-        "progress": 100 if mapped_status == "completed" else 0,
-        "domains_completed": ["COMPANY", "PERSON", "INDUSTRY", "NEWS", "OPEN_ENDED"] if mapped_status == "completed" else [],
-        "domains_pending": [] if mapped_status == "completed" else ["COMPANY", "PERSON", "INDUSTRY", "NEWS", "OPEN_ENDED"]
+        "status": contact.get("enrichment_status"),
+        "enriched_at": contact.get("enriched_at"),
+        "apex_score": contact.get("apex_score"),
+        "has_txt_file": bool(contact.get("enrichment_txt_path"))
     }
 
 
 @router.get("/enrich/{contact_id}/profile")
-async def get_contact_profile(contact_id: int, user: dict = Depends(get_current_user)):
-    """Get enriched profile for a contact"""
-    user_id = extract_user_id(user)
-    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user_id).execute()
-
+async def get_enrichment_profile(
+    contact_id: int,
+    user: dict = Depends(lambda: _auth_dependency)
+):
+    """Get full enrichment profile for a contact"""
+    
+    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user["sub"]).execute()
+    
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
-
-    contact = result.data[0]
-    enrichment_data = contact.get("enrichment_data", {})
-
-    if not enrichment_data:
-        raise HTTPException(status_code=404, detail="Contact not enriched yet")
-
-    return {
-        "contact_id": contact_id,
-        "name": f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip(),
-        "company": contact.get("company"),
-        "title": contact.get("title"),
-        "apex_score": contact.get("apex_score"),
-        "enrichment_status": contact.get("enrichment_status"),
-        "profile": enrichment_data.get("synthesized", {}),
-        "enriched_at": contact.get("enriched_at")
-    }
-
-from .profile_parser import ProfileParser
-
-@router.post('/parse-profile/{contact_id}')
-async def parse_contact_profile(
-    contact_id: int,
-    user: dict = Depends(get_current_user)
-) -> dict:
-    """Parse enrichment data into structured contact profile."""
-    from .profile_parser import ProfileParser
     
-    userid = extract_user_id(user)
-    
-    result = supabase.table('contacts').select(
-        'enrichment_data'
-    ).eq('id', contact_id).eq('user_id', userid).execute()
-
-    if not result.data:
-        raise HTTPException(status_code=404, detail='Contact not found')
-        
-    enrichment_data = result.data[0].get('enrichment_data', {})
-    
-    parser = ProfileParser(enrichment_data)
-    profile = parser.to_profile()
-    
-    # Save parsed profile back to contact
-    supabase.table('contacts').update({
-        'parsed_profile': profile
-    }).eq('id', contact_id).execute()
-
-    return {
-        'success': True,
-        'contact_id': contact_id,
-        'profile': profile,
-    }
-
+    return result.data[0]
 
 
 @router.post("/cache/clear")
-async def clear_enrichment_cache(user: dict = Depends(get_current_user)):
-    """Clear the enrichment cache"""
-    _ = extract_user_id(user)  # Validate auth
-    enricher = get_enricher()
-    enricher.cache.clear()
+async def clear_cache(user: dict = Depends(lambda: _auth_dependency)):
+    """Clear enrichment cache"""
+    from .routes import EnrichmentEngine
+    engine = EnrichmentEngine()
+    engine.clear_cache()
     return {"success": True, "message": "Cache cleared"}
 
 
 @router.get("/health")
-async def enrichment_health():
-    """Health check - no auth required"""
-    try:
-        enricher = get_enricher()
-        synthesizer = get_synthesizer()
-        return {
-            "status": "healthy",
-            "version": "v3_parallel",
-            "enricher_ready": enricher is not None,
-            "synthesizer_ready": synthesizer is not None,
-            "cache_enabled": enricher.cache is not None
-        }
-    except Exception as e:
-        return {"status": "unhealthy", "error": str(e)}
-    
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "service": "enrichment_v3"}

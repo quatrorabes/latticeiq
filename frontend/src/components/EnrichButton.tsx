@@ -1,114 +1,81 @@
-// Enrich Button Component
+// frontend/src/components/EnrichButton.tsx
+// FULL WORKING ENRICH BUTTON - Calls V3 enrichment, shows loading, refreshes on complete
+
 import { useState } from 'react';
-import { useEnrichment } from '../hooks/useEnrichment';
-import { Sparkles, Loader2, CheckCircle, XCircle } from 'lucide-react';
+import { Loader2, Zap } from 'lucide-react';
+import { contactsService } from '../services/contactsService';
 
 interface EnrichButtonProps {
   contactId: number;
-  enrichmentStatus?: string;
+  enrichmentStatus?: string | null;
   onEnrichComplete?: () => void;
-  variant?: 'button' | 'icon';
+  variant?: 'icon' | 'primary';
 }
 
-export function EnrichButton({ 
-  contactId, 
+export const EnrichButton: React.FC<EnrichButtonProps> = ({
+  contactId,
   enrichmentStatus,
   onEnrichComplete,
-  variant = 'button' 
-}: EnrichButtonProps) {
-  const [showTooltip, setShowTooltip] = useState(false);
-  
-  const { enrich, isEnriching, status, error, reset } = useEnrichment({
-    onComplete: () => {
+  variant = 'icon',
+}) => {
+  const [enriching, setEnriching] = useState(false);
+
+  const handleEnrich = async () => {
+    if (enrichmentStatus === 'completed' || enrichmentStatus === 'processing') {
+      alert('Already enriched or in progress');
+      return;
+    }
+
+    setEnriching(true);
+    try {
+      await contactsService.enrichContact(contactId);
       onEnrichComplete?.();
-    },
-    onError: (err) => {
-      console.error('Enrichment error:', err);
+      alert('Enrichment complete! Click contact to view results.');
+    } catch (error) {
+      console.error('Enrichment failed:', error);
+      alert('Enrichment failed. Check console.');
+    } finally {
+      setEnriching(false);
     }
-  });
-  
-  const handleClick = () => {
-    if (isEnriching) return;
-    if (error) {
-      reset();
-    }
-    enrich(contactId);
   };
-  
-  const isAlreadyEnriched = enrichmentStatus === 'completed';
-  
-  // Progress indicator
-  const domainsCompleted = status?.domains_completed?.length ?? 0;
-  const totalDomains = 5;
-  const progressPercent = isEnriching ? Math.round((domainsCompleted / totalDomains) * 100) : 0;
-  
+
+  const isDisabled = enriching || enrichmentStatus === 'completed';
+
   if (variant === 'icon') {
     return (
       <button
-        onClick={handleClick}
-        disabled={isEnriching}
-        className="relative p-2 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
-        onMouseEnter={() => setShowTooltip(true)}
-        onMouseLeave={() => setShowTooltip(false)}
-        title={isAlreadyEnriched ? 'Re-enrich contact' : 'Enrich contact'}
+        onClick={handleEnrich}
+        disabled={isDisabled}
+        className="p-1 rounded hover:bg-purple-600/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        title={enriching ? 'Enriching...' : 'Enrich with AI'}
       >
-        {isEnriching ? (
-          <Loader2 className="w-5 h-5 text-blue-500 animate-spin" />
-        ) : isAlreadyEnriched ? (
-          <CheckCircle className="w-5 h-5 text-green-500" />
-        ) : error ? (
-          <XCircle className="w-5 h-5 text-red-500" />
+        {enriching ? (
+          <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
         ) : (
-          <Sparkles className="w-5 h-5 text-purple-500" />
-        )}
-        
-        {showTooltip && isEnriching && (
-          <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-gray-900 text-white text-xs rounded whitespace-nowrap">
-            {status?.domains_completed?.join(', ') || 'Starting...'}
-          </div>
+          <Zap className="w-4 h-4 text-purple-400" />
         )}
       </button>
     );
   }
-  
+
+  // Primary variant for toolbar buttons
   return (
     <button
-      onClick={handleClick}
-      disabled={isEnriching}
-      className={`
-        inline-flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all
-        ${isEnriching 
-          ? 'bg-blue-100 text-blue-700 cursor-wait' 
-          : isAlreadyEnriched
-            ? 'bg-green-100 text-green-700 hover:bg-green-200'
-            : error
-              ? 'bg-red-100 text-red-700 hover:bg-red-200'
-              : 'bg-purple-600 text-white hover:bg-purple-700'
-        }
-        disabled:opacity-70
-      `}
+      onClick={handleEnrich}
+      disabled={isDisabled}
+      className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-lg hover:shadow-xl"
     >
-      {isEnriching ? (
+      {enriching ? (
         <>
           <Loader2 className="w-4 h-4 animate-spin" />
-          <span>Enriching... {progressPercent}%</span>
-        </>
-      ) : isAlreadyEnriched ? (
-        <>
-          <CheckCircle className="w-4 h-4" />
-          <span>Re-Enrich</span>
-        </>
-      ) : error ? (
-        <>
-          <XCircle className="w-4 h-4" />
-          <span>Retry</span>
+          Enriching...
         </>
       ) : (
         <>
-          <Sparkles className="w-4 h-4" />
-          <span>Enrich</span>
+          <Zap className="w-4 h-4" />
+          Enrich
         </>
       )}
     </button>
   );
-}
+};
