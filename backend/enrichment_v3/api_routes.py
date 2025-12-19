@@ -380,6 +380,40 @@ async def get_contact_profile(contact_id: int, user: dict = Depends(get_current_
         "enriched_at": contact.get("enriched_at")
     }
 
+from .profile_parser import ProfileParser
+
+@router.post('/parse-profile/{contact_id}')
+async def parse_contact_profile(
+    contact_id: int,
+    user: dict = Depends(get_current_user),
+    db = Depends(get_db)
+) -> dict:
+    """Parse enrichment data into structured contact profile."""
+    userid = extract_user_id(user)
+    
+    result = supabase.table('contacts').select(
+        'enrichment_data'
+    ).eq('id', contact_id).eq('user_id', userid).execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail='Contact not found')
+        
+    enrichment_data = result.data[0].get('enrichment_data', {})
+    
+    parser = ProfileParser(enrichment_data)
+    profile = parser.to_profile()
+    
+    # Save parsed profile back to contact
+    supabase.table('contacts').update({
+        'parsed_profile': profile
+    }).eq('id', contact_id).execute()
+
+    return {
+        'success': True,
+        'contact_id': contact_id,
+        'profile': profile,
+    }
+
 
 @router.post("/cache/clear")
 async def clear_enrichment_cache(user: dict = Depends(get_current_user)):
@@ -405,3 +439,4 @@ async def enrichment_health():
         }
     except Exception as e:
         return {"status": "unhealthy", "error": str(e)}
+    

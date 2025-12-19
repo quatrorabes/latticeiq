@@ -467,6 +467,86 @@ async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current
         'stats': validator.stats
     }
 
+# Add this endpoint to main.py (near other contact endpoints)
+
+@app.get("/api/contacts/{contact_id}/download-enrichment")
+async def download_enrichment(contact_id: int, user_id: str = Depends(get_current_user)):
+    """Download enrichment data as a text file"""
+    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user_id).execute()
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+        
+    contact = result.data[0]
+    
+    # Build text content
+    lines = [
+        "=" * 60,
+        f"LATTICEIQ ENRICHMENT REPORT",
+        "=" * 60,
+        "",
+        f"Name: {contact.get('first_name', '')} {contact.get('last_name', '')}",
+        f"Email: {contact.get('email', 'N/A')}",
+        f"Phone: {contact.get('phone', 'N/A')}",
+        f"Company: {contact.get('company', 'N/A')}",
+        f"Title: {contact.get('title', 'N/A')}",
+        "",
+        "-" * 60,
+        "SCORES",
+        "-" * 60,
+        f"APEX Score: {contact.get('apex_score', 'N/A')}",
+        f"Match Tier: {contact.get('match_tier', 'N/A')}",
+        f"MDCP Score: {contact.get('mdcp_score', 'N/A')}",
+        f"RSS Score: {contact.get('rss_score', 'N/A')}",
+        f"BANT Score: {contact.get('bant_total_score', 'N/A')}",
+        f"SPICE Score: {contact.get('spice_total_score', 'N/A')}",
+        "",
+        "-" * 60,
+        "ENRICHMENT STATUS",
+        "-" * 60,
+        f"Status: {contact.get('enrichment_status', 'N/A')}",
+        f"Enriched At: {contact.get('enriched_at', 'N/A')}",
+        "",
+        "-" * 60,
+        "RAW ENRICHMENT DATA",
+        "-" * 60,
+    ]
+    
+    # Add enrichment data
+    enrichment_data = contact.get('enrichment_data')
+    if enrichment_data:
+        if isinstance(enrichment_data, str):
+            import json
+            try:
+                enrichment_data = json.loads(enrichment_data)
+            except:
+                pass
+                
+        if isinstance(enrichment_data, dict):
+            lines.append(json.dumps(enrichment_data, indent=2))
+        else:
+            lines.append(str(enrichment_data))
+    else:
+        lines.append("No enrichment data available")
+        
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("END OF REPORT")
+    lines.append("=" * 60)
+    
+    content = "\n".join(lines)
+    
+    filename = f"{contact.get('first_name', 'contact')}_{contact.get('last_name', '')}_{contact_id}_enrichment.txt"
+    
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=content,
+        media_type="text/plain",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
+    
 # ============= ENRICHMENT V3 ROUTER =============
 try:
     from enrichment_v3.api_routes import router as enrichment_v3_router
