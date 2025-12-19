@@ -110,14 +110,15 @@ class ContactUpdate(BaseModel):
 # HEALTH CHECK
 # ============================================================================
 
-@app.get("/api/health")
-async def health_check():
+@app.get("/health")
+async def health_check_root():
+    """Health check for Render (no /api prefix)"""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
     }
-
+    
 
 # ============================================================================
 # CONTACTS CRUD (UUID-SAFE)
@@ -228,3 +229,4 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
     }
+    
