@@ -549,9 +549,13 @@ async def download_enrichment(contact_id: int, user_id: str = Depends(get_curren
     
 # ============= ENRICHMENT V3 ROUTER =============
 try:
-    from enrichment_v3.api_routes import router as enrichment_v3_router
+    from enrichment_v3.api_routes import router as enrichment_v3_router, set_auth_dependency
+    
+    # Wire up the auth dependency to enrichment routes
+    set_auth_dependency(get_current_user)
+    
     app.include_router(enrichment_v3_router)
-    print("✓ Enrichment V3 routes registered")
+    print("✓ Enrichment V3 routes registered with auth")
 except ImportError as e:
     print(f"⚠ Enrichment V3 not available: {e}")
     
