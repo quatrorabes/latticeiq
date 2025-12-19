@@ -1,15 +1,5 @@
-"""
-LatticeIQ Enrichment V3 - Parallel Multi-Query Architecture
-"""
-from .parallel_enricher import ParallelEnricher
-from .query_templates import ENRICHMENT_QUERIES, EnrichmentQuery, ContactContext
-from .synthesizer import EnrichmentSynthesizer
+# backend/enrichment_v3/__init__.py
+from .api_routes import router, set_auth_dependency
+from .routes import EnrichmentEngine
 
-__all__ = [
-    "ParallelEnricher",
-    "EnrichmentSynthesizer", 
-    "ENRICHMENT_QUERIES",
-    "EnrichmentQuery",
-    "ContactContext"
-]
-__version__ = "3.0.0"
+__all__ = ["router", "set_auth_dependency", "EnrichmentEngine"]
