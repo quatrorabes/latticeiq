@@ -481,13 +481,3 @@ async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)
         'filter_reasons': filter_reasons,
         'stats': validator.stats
     }
-
-
-# ============= ENRICHMENT V3 - PARALLEL ARCHITECTURE =============
-try:
-    from enrichment_v3.api_routes import router as enrichment_v3_router, set_auth_dependency
-    set_auth_dependency(get_current_user)
-    app.include_router(enrichment_v3_router)
-    print("✓ Enrichment V3 (Parallel) routes registered")
-except ImportError as e:
-    print(f"⚠ Enrichment V3 not available: {e}")
