@@ -426,7 +426,7 @@ export function ContactsTable({ onAddContact, onImport }: ContactsTableProps) {
                     {contact.title || '—'}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    {getScoreBadge(contact.apex_score)}
+                    {getScoreBadge(contact.apex_score ?? undefined)}
                   </td>
                   <td style={{ padding: '12px 16px', textAlign: 'center' }}>
                     {getStatusBadge(contact.enrichment_status)}

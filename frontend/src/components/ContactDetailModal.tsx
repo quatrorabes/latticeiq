@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabase';
+import { useState } from 'react';
 
 interface Contact {
   id: number;
@@ -15,21 +14,33 @@ interface Contact {
 
 interface ContactDetailModalProps {
   contact: Contact | null;
-  isOpen: boolean;
+  isOpen?: boolean;
   onClose: () => void;
+  onEnrichComplete?: () => void;
 }
 
 export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   contact,
-  isOpen,
+  isOpen = true,
   onClose,
+  onEnrichComplete,
 }) => {
-  const [loading, setLoading] = useState(false);
+  const [enriching, setEnriching] = useState(false);
 
   if (!isOpen || !contact) return null;
 
   const enrichment = contact.enrichment_data || {};
   const synthesized = enrichment.synthesized || {};
+
+  const handleEnrich = async () => {
+    setEnriching(true);
+    try {
+      // Enrichment logic here
+      if (onEnrichComplete) onEnrichComplete();
+    } finally {
+      setEnriching(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -70,6 +81,16 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 {JSON.stringify(synthesized, null, 2)}
               </pre>
             </div>
+          )}
+
+          {contact.enrichment_status !== 'completed' && (
+            <button
+              onClick={handleEnrich}
+              disabled={enriching}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            >
+              {enriching ? 'Enriching...' : 'Enrich Contact'}
+            </button>
           )}
         </div>
       </div>
