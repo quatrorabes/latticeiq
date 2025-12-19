@@ -40,53 +40,58 @@ export function ContactsTable({ onAddContact, onImport }: ContactsTableProps) {
 
   // Filtered & sorted contacts
   const filteredContacts = useMemo(() => {
-    let result = [...contacts];
+    // Safety check - ensure contacts is always an array
+    if (!Array.isArray(contacts)) {
+      console.warn('contacts is not an array:', contacts)
+      return []
+    }
+    
+    let result = [...contacts]
     
     // Search filter
     if (searchQuery) {
-      const query = searchQuery.toLowerCase();
+      const query = searchQuery.toLowerCase()
       result = result.filter(c => 
         c.firstname?.toLowerCase().includes(query) ||
         c.lastname?.toLowerCase().includes(query) ||
         c.email?.toLowerCase().includes(query) ||
         c.company?.toLowerCase().includes(query) ||
         c.title?.toLowerCase().includes(query)
-      );
+      )
     }
     
     // Status filter
     if (filterStatus !== 'all') {
       if (filterStatus === 'enriched') {
-        result = result.filter(c => c.enrichment_status === 'completed');
+        result = result.filter(c => c.enrichment_status === 'completed')
       } else if (filterStatus === 'not_enriched') {
-        result = result.filter(c => !c.enrichment_status || c.enrichment_status === 'pending');
+        result = result.filter(c => !c.enrichment_status || c.enrichment_status === 'pending')
       } else if (filterStatus === 'high_score') {
-        result = result.filter(c => (c.apex_score ?? 0) >= 75);
+        result = result.filter(c => (c.apex_score ?? 0) >= 75)
       }
     }
     
     // Sort
     result.sort((a, b) => {
-      let aVal: any = a[sortField];
-      let bVal: any = b[sortField];
+      let aVal: any = a[sortField]
+      let bVal: any = b[sortField]
       
-      // Handle nulls
-      if (aVal == null) aVal = sortDirection === 'asc' ? Infinity : -Infinity;
-      if (bVal == null) bVal = sortDirection === 'asc' ? Infinity : -Infinity;
+      if (aVal == null) aVal = sortDirection === 'asc' ? Infinity : -Infinity
+      if (bVal == null) bVal = sortDirection === 'asc' ? Infinity : -Infinity
       
-      // String comparison
       if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase();
-        bVal = (bVal as string).toLowerCase();
+        aVal = aVal.toLowerCase()
+        bVal = (bVal as string).toLowerCase()
       }
       
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
     
-    return result;
-  }, [contacts, searchQuery, sortField, sortDirection, filterStatus]);
+    return result
+  }, [contacts, searchQuery, sortField, sortDirection, filterStatus])
+  
 
   // Handlers
   const handleSort = (field: SortField) => {
