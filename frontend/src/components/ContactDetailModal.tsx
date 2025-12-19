@@ -35,7 +35,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   const handleEnrich = async () => {
     setEnriching(true);
     try {
-      // Enrichment logic here
       if (onEnrichComplete) onEnrichComplete();
     } finally {
       setEnriching(false);
@@ -53,7 +52,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
             &times;
           </button>
         </div>
-
         <div className="p-6 space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -73,7 +71,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
               <p className="font-medium">{contact.apex_score ?? '-'}</p>
             </div>
           </div>
-
           {contact.enrichment_status === 'completed' && (
             <div className="mt-6">
               <h3 className="font-semibold mb-2">Enrichment Data</h3>
@@ -82,13 +79,9 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
               </pre>
             </div>
           )}
-
           {contact.enrichment_status !== 'completed' && (
-            <button
-              onClick={handleEnrich}
-              disabled={enriching}
-              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-            >
+            <button onClick={handleEnrich} disabled={enriching}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
               {enriching ? 'Enriching...' : 'Enrich Contact'}
             </button>
           )}
