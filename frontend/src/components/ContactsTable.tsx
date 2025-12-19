@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { contactsService } from '../services/contactsService';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { ContactDetailModal } from './ContactDetailModal';
 import { Loader } from './Loader';
 

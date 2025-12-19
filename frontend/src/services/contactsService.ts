@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase';
-import type { Contact, ContactFormData } from '../types/contact';
+import type { Contact } from '../types/contact';
 
 export const contactsService = {
   async getContacts(): Promise<Contact[]> {
@@ -22,5 +22,18 @@ export const contactsService = {
       .eq('id', id);
 
     if (error) throw error;
+  },
+
+  async deleteContacts(ids: number[]): Promise<void> {
+    const { error } = await supabase
+      .from('contacts')
+      .delete()
+      .in('id', ids);
+
+    if (error) throw error;
+  },
+
+  async fetchContacts(): Promise<Contact[]> {
+    return this.getContacts();
   },
 };

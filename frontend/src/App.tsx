@@ -556,10 +556,7 @@ function Dashboard({ onLogout }: { onLogout: () => void }) {
         </div>
 
         {/* Contacts Table */}
-        <ContactsTable
-          key={refreshKey}
-          onAddContact={() => setShowAddModal(true)}
-          onImport={() => setShowImportModal(true)}
+        <ContactsTable />
         />
       </main>
 
