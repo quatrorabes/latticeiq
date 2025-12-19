@@ -2,11 +2,16 @@
 import os
 import asyncio
 import httpx
+import json
 from typing import Optional
 from datetime import datetime
 
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# Markdown code fence markers (avoiding triple backtick syntax issues)
+CODE_FENCE = chr(96) + chr(96) + chr(96)
+CODE_FENCE_JSON = CODE_FENCE + "json"
 
 
 class EnrichmentEngine:
@@ -39,7 +44,7 @@ class EnrichmentEngine:
             "enriched_at": datetime.utcnow().isoformat()
         }
         
-        if synthesize and OPENAI_API_KEY:
+        if synthesize:
             synthesized = await self._synthesize_profile(
                 name=name,
                 email=email,
@@ -177,20 +182,17 @@ Return ONLY valid JSON, no markdown or explanation."""
                     
                     # Clean up JSON if wrapped in markdown code fences
                     content = content.strip()
-                    json_marker = "```
-                    code_marker = "```"
                     
-                    if content.startswith(json_marker):
-                        content = content[len(json_marker):]
-                    elif content.startswith(code_marker):
-                        content = content[len(code_marker):]
+                    if content.startswith(CODE_FENCE_JSON):
+                        content = content[len(CODE_FENCE_JSON):]
+                    elif content.startswith(CODE_FENCE):
+                        content = content[len(CODE_FENCE):]
                     
-                    if content.endswith(code_marker):
-                        content = content[:-len(code_marker)]
+                    if content.endswith(CODE_FENCE):
+                        content = content[:-len(CODE_FENCE)]
                     
                     content = content.strip()
                     
-                    import json
                     return json.loads(content)
                 else:
                     return self._mock_synthesis(name, company, title)
@@ -225,12 +227,12 @@ Return ONLY valid JSON, no markdown or explanation."""
             },
             "objection_handlers": [
                 {
-                    "objection": "We're happy with our current solution",
+                    "objection": "We are happy with our current solution",
                     "response": "I understand. Many of our best customers said the same thing before seeing our ROI numbers."
                 },
                 {
-                    "objection": "We don't have budget right now",
-                    "response": "That's fair. Would it make sense to explore this for next quarter's planning?"
+                    "objection": "We do not have budget right now",
+                    "response": "That is fair. Would it make sense to explore this for next quarter planning?"
                 }
             ],
             "scores": {
