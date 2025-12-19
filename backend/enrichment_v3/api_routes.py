@@ -26,7 +26,7 @@ def get_supabase() -> Client:
     global _supabase_client
     if _supabase_client is None:
         url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_SERVICE_KEY")
+        key = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
         print(f"[ENRICHMENT] Initializing Supabase - URL exists: {bool(url)}, KEY exists: {bool(key)}")
         if not url or not key:
             raise HTTPException(status_code=500, detail="Supabase not configured")
