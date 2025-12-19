@@ -1,79 +1,109 @@
 """
 LatticeIQ FastAPI Application
-Core API entry point with auth, CRUD, and enrichment wiring
+Core API entry point with Supabase auth and contacts CRUD.
 """
 
-from fastapi import FastAPI, Depends, HTTPException, status, Request
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-import logging
-import os
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from typing import List, Dict, Optional
 from uuid import UUID
-from typing import List, Optional
 from datetime import datetime
+import os
 
-# Import models
-from models import (
-    ContactResponse, ContactCreateRequest, ContactUpdateRequest, ContactListResponse,
-    EnrichRequest, EnrichmentStatusResponse, ErrorDetail, ErrorCode,
-    BatchEnrichRequest, BatchEnrichResponse
-)
+from supabase import create_client, Client
+from pydantic import BaseModel, EmailStr
 
-# Import auth
-from auth import get_current_user
-
-# Import services
-from services.contact_service import ContactService
-from services.enrichment_service import EnrichmentService
-
-# Import enrichment router
-from enrichment_v3.api_routes import router as enrichment_router
+# Optional: import enrichment router (existing enrichment_v3 implementation)
+try:
+    from enrichment_v3.api_routes import router as enrichment_router, set_auth_dependency
+except ImportError:
+    enrichment_router = None
+    set_auth_dependency = None
 
 # ============================================================================
-# LOGGING
+# APP & CORS
 # ============================================================================
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+app = FastAPI(title="LatticeIQ API", version="1.0.0", description="Sales Intelligence Platform")
 
-# ============================================================================
-# FASTAPI APP INITIALIZATION
-# ============================================================================
-
-app = FastAPI(
-    title="LatticeIQ API",
-    version="1.0.0",
-    description="Sales Intelligence Platform"
-)
-
-# CORS Configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # tighten later for production
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # ============================================================================
-# EXCEPTION HANDLERS
+# SUPABASE CLIENT & AUTH
 # ============================================================================
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    """Handle Pydantic validation errors"""
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "type": "https://example.com/errors/validation-error",
-            "title": "Validation Error",
-            "status": 422,
-            "detail": "Request validation failed",
-            "error_code": ErrorCode.VALIDATION_ERROR,
-            "errors": exc.errors()
-        }
-    )
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
+
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+security = HTTPBearer()
+
+
+class CurrentUser(BaseModel):
+    id: str
+    email: Optional[str] = None
+
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> CurrentUser:
+    """
+    Validate Supabase JWT from Authorization: Bearer <token>
+    and return the Supabase user object.
+    """
+    try:
+        user_response = supabase.auth.get_user(credentials.credentials)
+        user = user_response.user
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid token (no user)")
+        return CurrentUser(id=user.id, email=user.email)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+
+# If enrichment_v3 supports auth injection, wire it
+if set_auth_dependency is not None:
+    set_auth_dependency(get_current_user)
+if enrichment_router is not None:
+    app.include_router(enrichment_router, prefix="/api/v3", tags=["enrichment"])
+
+# ============================================================================
+# Pydantic Models for Contacts
+# ============================================================================
+
+class ContactCreate(BaseModel):
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    title: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    website: Optional[str] = None
+    vertical: Optional[str] = None
+    persona_type: Optional[str] = None
+
+
+class ContactUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    title: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    website: Optional[str] = None
+    vertical: Optional[str] = None
+    persona_type: Optional[str] = None
 
 
 # ============================================================================
@@ -82,219 +112,109 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint"""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0"
+        "version": "1.0.0",
     }
 
 
 # ============================================================================
-# CONTACT CRUD ENDPOINTS
+# CONTACTS CRUD (UUID-SAFE)
 # ============================================================================
 
-@app.get("/api/contacts", response_model=ContactListResponse)
-async def list_contacts(
-    limit: int = 50,
-    offset: int = 0,
-    search: Optional[str] = None,
-    enrichment_status: Optional[str] = None,
-    current_user: dict = Depends(get_current_user)
-):
+@app.get("/api/contacts")
+async def list_contacts(user: CurrentUser = Depends(get_current_user)):
     """
-    List contacts for current user
-    
-    Query Parameters:
-    - limit: Max results (default 50)
-    - offset: Pagination offset (default 0)
-    - search: Filter by name, email, company
-    - enrichment_status: Filter by pending/processing/completed/failed
+    Return all contacts for the current Supabase user.
+    Shape: { "contacts": [ ... ] }
     """
-    try:
-        user_id = UUID(current_user["uid"])
-        service = ContactService()
-        
-        contacts, total = await service.list_contacts(
-            user_id=user_id,
-            limit=limit,
-            offset=offset,
-            search=search,
-            enrichment_status=enrichment_status
-        )
-        
-        return ContactListResponse(
-            success=True,
-            contacts=contacts,
-            total=total,
-            limit=limit,
-            offset=offset
-        )
-    except Exception as e:
-        logger.error(f"Error listing contacts: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to list contacts")
+    result = (
+        supabase
+        .table("contacts")
+        .select("*")
+        .eq("user_id", user.id)
+        .execute()
+    )
+    return {"contacts": result.data or []}
 
 
-@app.get("/api/contacts/{contact_id}", response_model=ContactResponse)
-async def get_contact(
-    contact_id: UUID,
-    current_user: dict = Depends(get_current_user)
-):
-    """Get single contact by ID"""
-    try:
-        user_id = UUID(current_user["uid"])
-        service = ContactService()
-        
-        contact = await service.get_contact(
-            contact_id=contact_id,
-            user_id=user_id
-        )
-        
-        if not contact:
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorDetail(
-                    type="https://example.com/errors/not-found",
-                    title="Contact Not Found",
-                    status=404,
-                    detail=f"Contact {contact_id} not found",
-                    error_code=ErrorCode.NOT_FOUND,
-                    instance=f"/api/contacts/{contact_id}"
-                ).dict()
-            )
-        
-        return contact
-    except Exception as e:
-        logger.error(f"Error fetching contact: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to fetch contact")
+@app.get("/api/contacts/{contact_id}")
+async def get_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
+    """
+    Get a single contact by UUID.
+    """
+    result = (
+        supabase
+        .table("contacts")
+        .select("*")
+        .eq("id", str(contact_id))  # UUID column, pass as string
+        .eq("user_id", user.id)
+        .execute()
+    )
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return result.data[0]
 
 
-@app.post("/api/contacts", response_model=ContactResponse, status_code=201)
-async def create_contact(
-    request: ContactCreateRequest,
-    current_user: dict = Depends(get_current_user)
-):
-    """Create a new contact"""
-    try:
-        user_id = UUID(current_user["uid"])
-        service = ContactService()
-        
-        contact = await service.create_contact(
-            user_id=user_id,
-            **request.dict()
-        )
-        
-        return contact
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        logger.error(f"Error creating contact: {str(e)}")
+@app.post("/api/contacts")
+async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get_current_user)):
+    """
+    Create a new contact for the current user.
+    `id` will be generated by Postgres as UUID (default gen_random_uuid()).
+    """
+    data = contact.dict()
+    data["user_id"] = user.id
+    data.setdefault("enrichment_status", "pending")
+
+    result = supabase.table("contacts").insert(data).execute()
+    if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create contact")
+    return result.data[0]
 
 
-@app.put("/api/contacts/{contact_id}", response_model=ContactResponse)
+@app.put("/api/contacts/{contact_id}")
 async def update_contact(
     contact_id: UUID,
-    request: ContactUpdateRequest,
-    current_user: dict = Depends(get_current_user)
+    patch: ContactUpdate,
+    user: CurrentUser = Depends(get_current_user),
 ):
-    """Update contact fields"""
-    try:
-        user_id = UUID(current_user["uid"])
-        service = ContactService()
-        
-        contact = await service.update_contact(
-            contact_id=contact_id,
-            user_id=user_id,
-            **request.dict(exclude_unset=True)
-        )
-        
-        if not contact:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        
-        return contact
-    except Exception as e:
-        logger.error(f"Error updating contact: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update contact")
+    """
+    Update an existing contact (partial update).
+    """
+    update_data = {k: v for k, v in patch.dict().items() if v is not None}
+    if not update_data:
+        return {"updated": False, "message": "No fields to update"}
+
+    result = (
+        supabase
+        .table("contacts")
+        .update(update_data)
+        .eq("id", str(contact_id))
+        .eq("user_id", user.id)
+        .execute()
+    )
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return result.data[0]
 
 
-@app.delete("/api/contacts/{contact_id}", status_code=204)
-async def delete_contact(
-    contact_id: UUID,
-    current_user: dict = Depends(get_current_user)
-):
-    """Delete a contact"""
-    try:
-        user_id = UUID(current_user["uid"])
-        service = ContactService()
-        
-        success = await service.delete_contact(
-            contact_id=contact_id,
-            user_id=user_id
-        )
-        
-        if not success:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        
-        return None
-    except Exception as e:
-        logger.error(f"Error deleting contact: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete contact")
-
-
-# ============================================================================
-# ENRICHMENT ROUTER INCLUSION
-# ============================================================================
-
-from enrichment_v3.api_routes import set_auth_dependency
-set_auth_dependency(get_current_user)
-
-app.include_router(enrichment_router, prefix="/api/v3", tags=["enrichment"])
-
-
-# ============================================================================
-# IMPORT/SYNC ENDPOINTS (PLACEHOLDER)
-# ============================================================================
-
-@app.post("/api/import/csv")
-async def import_csv(
-    file_contents: str,
-    current_user: dict = Depends(get_current_user)
-):
-    """Import contacts from CSV (file contents as string)"""
-    try:
-        user_id = UUID(current_user["uid"])
-        return {"message": "CSV import not yet implemented"}
-    except Exception as e:
-        logger.error(f"Error importing CSV: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to import CSV")
-
-
-@app.post("/api/import/hubspot")
-async def import_hubspot(
-    current_user: dict = Depends(get_current_user)
-):
-    """Sync contacts from HubSpot"""
-    try:
-        user_id = UUID(current_user["uid"])
-        return {"message": "HubSpot sync not yet implemented"}
-    except Exception as e:
-        logger.error(f"Error importing from HubSpot: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to sync HubSpot")
-
-
-# ============================================================================
-# STARTUP / SHUTDOWN
-# ============================================================================
-
-@app.on_event("startup")
-async def startup():
-    logger.info("LatticeIQ API starting up...")
-
-
-@app.on_event("shutdown")
-async def shutdown():
-    logger.info("LatticeIQ API shutting down...")
+@app.delete("/api/contacts/{contact_id}")
+async def delete_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
+    """
+    Delete a contact by UUID for the current user.
+    """
+    result = (
+        supabase
+        .table("contacts")
+        .delete()
+        .eq("id", str(contact_id))
+        .eq("user_id", user.id)
+        .execute()
+    )
+    # Supabase doesn't always return deleted rows; just assume success if no error
+    return {"deleted": True}
 
 
 # ============================================================================
@@ -306,5 +226,5 @@ async def root():
     return {
         "message": "LatticeIQ Sales Intelligence API",
         "version": "1.0.0",
-        "docs": "/docs"
+        "docs": "/docs",
     }
