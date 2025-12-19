@@ -1,5 +1,5 @@
 // frontend/src/components/ContactsTable.tsx
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 
 interface ContactsTableProps {
   contacts: Contact[];
@@ -86,14 +86,14 @@ export default function ContactsTable({ contacts, onRowClick, onDelete }: Contac
             >
               <td className="px-6 py-4">
                 <span className="text-white font-medium">
-                  {contact.first_name} {contact.last_name}
+                  {contact.first_name || ''} {contact.last_name || ''}
                 </span>
               </td>
               <td className="px-6 py-4">
                 <span className="text-gray-300">{contact.email || '—'}</span>
               </td>
               <td className="px-6 py-4">
-                <span className="text-gray-300">{contact.company}</span>
+                <span className="text-gray-300">{contact.company || '—'}</span>
               </td>
               <td className="px-6 py-4">
                 <span className="text-gray-300">{contact.title || '—'}</span>

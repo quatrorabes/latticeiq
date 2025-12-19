@@ -1,6 +1,6 @@
 // frontend/src/hooks/useContacts.ts
 import { useState, useEffect, useCallback } from 'react';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { getContacts, deleteContact, deleteContacts } from '../services/contactsService';
 
 interface UseContactsReturn {
@@ -35,21 +35,13 @@ export function useContacts(): UseContactsReturn {
   }, [loadContacts]);
 
   const removeContact = useCallback(async (id: number) => {
-    try {
-      await deleteContact(id);
-      setContacts(prev => prev.filter(c => c.id !== id));
-    } catch (err) {
-      throw err;
-    }
+    await deleteContact(id);
+    setContacts(prev => prev.filter(c => c.id !== id));
   }, []);
 
   const removeContacts = useCallback(async (ids: number[]) => {
-    try {
-      await deleteContacts(ids);
-      setContacts(prev => prev.filter(c => !ids.includes(c.id)));
-    } catch (err) {
-      throw err;
-    }
+    await deleteContacts(ids);
+    setContacts(prev => prev.filter(c => !ids.includes(c.id)));
   }, []);
 
   return {

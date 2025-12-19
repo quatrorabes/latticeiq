@@ -2,15 +2,12 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabaseClient';
-import { Session } from '@supabase/supabase-js';
+import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 
-// Pages
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Contacts from './pages/Contacts';
 import Dashboard from './pages/Dashboard';
-
-// Components
 import Sidebar from './components/Sidebar';
 import Loader from './components/Loader';
 
@@ -19,16 +16,14 @@ function App() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
+    supabase.auth.getSession().then(({ data: { session: currentSession } }) => {
+      setSession(currentSession);
       setLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setSession(session);
+      (_event: AuthChangeEvent, currentSession: Session | null) => {
+        setSession(currentSession);
       }
     );
 
@@ -47,7 +42,6 @@ function App() {
     );
   }
 
-  // Not authenticated - show auth pages
   if (!session) {
     return (
       <Router>
@@ -62,7 +56,6 @@ function App() {
     );
   }
 
-  // Authenticated - show app
   return (
     <Router>
       <div className="min-h-screen bg-gray-950 flex">

@@ -1,25 +1,39 @@
-export type Contact = {
+// frontend/src/types/contact.ts
+export interface Contact {
   id: number;
+  user_id: string;
   first_name?: string;
   last_name?: string;
   email?: string;
   phone?: string;
   company?: string;
   title?: string;
-  linkedin_url?: string;
+  industry?: string;
   enrichment_status?: string | null;
-  enrichment_data?: any;
+  enrichment_data?: string | object | null;
+  enriched_at?: string | null;
   apex_score?: number | null;
+  mdcp_score?: number | null;
+  rss_score?: number | null;
+  match_tier?: string | null;
+  bant_total_score?: number | null;
+  bant_budget_score?: number | null;
+  bant_authority_score?: number | null;
+  bant_need_score?: number | null;
+  bant_timeline_score?: number | null;
+  spice_total_score?: number | null;
+  persona_type?: string | null;
+  persona_confidence?: number | null;
   created_at?: string;
-  user_id?: string;
-} & Record<string, any>;
+  updated_at?: string;
+}
 
-export type ContactFormData = {
-  first_name?: string;
-  last_name?: string;
-  email: string;
+export interface ContactFormData {
+  first_name: string;
+  last_name: string;
+  email?: string;
   phone?: string;
-  company?: string;
+  company: string;
   title?: string;
-  linkedin_url?: string;
-};
+  industry?: string;
+}

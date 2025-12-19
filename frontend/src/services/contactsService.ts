@@ -1,6 +1,6 @@
 // frontend/src/services/contactsService.ts
 import { supabase } from '../lib/supabaseClient';
-import { Contact, ContactFormData } from '../types/contact';
+import type { Contact, ContactFormData } from '../types/contact';
 
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -15,7 +15,6 @@ async function getAuthHeaders(): Promise<HeadersInit> {
   };
 }
 
-// Fetch all contacts
 export async function getContacts(): Promise<Contact[]> {
   const headers = await getAuthHeaders();
   
@@ -32,10 +31,8 @@ export async function getContacts(): Promise<Contact[]> {
   return response.json();
 }
 
-// Alias for backward compatibility
 export const fetchContacts = getContacts;
 
-// Get single contact
 export async function getContact(id: number): Promise<Contact> {
   const headers = await getAuthHeaders();
   
@@ -52,7 +49,6 @@ export async function getContact(id: number): Promise<Contact> {
   return response.json();
 }
 
-// Create contact
 export async function createContact(data: ContactFormData): Promise<Contact> {
   const headers = await getAuthHeaders();
   
@@ -70,7 +66,6 @@ export async function createContact(data: ContactFormData): Promise<Contact> {
   return response.json();
 }
 
-// Update contact
 export async function updateContact(id: number, data: Partial<ContactFormData>): Promise<Contact> {
   const headers = await getAuthHeaders();
   
@@ -88,7 +83,6 @@ export async function updateContact(id: number, data: Partial<ContactFormData>):
   return response.json();
 }
 
-// Delete single contact
 export async function deleteContact(id: number): Promise<void> {
   const headers = await getAuthHeaders();
   
@@ -103,24 +97,13 @@ export async function deleteContact(id: number): Promise<void> {
   }
 }
 
-// Delete multiple contacts
 export async function deleteContacts(ids: number[]): Promise<void> {
   const headers = await getAuthHeaders();
   
-  // Delete each contact sequentially
   for (const id of ids) {
-    const response = await fetch(`${API_URL}/api/contacts/${id}`, {
+    await fetch(`${API_URL}/api/contacts/${id}`, {
       method: 'DELETE',
       headers,
     });
-    
-    if (!response.ok) {
-      console.error(`Failed to delete contact ${id}`);
-    }
   }
 }
-
-// Export all functions
-export {
-  getContacts as default,
-};

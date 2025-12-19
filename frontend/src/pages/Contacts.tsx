@@ -1,6 +1,6 @@
 // frontend/src/pages/Contacts.tsx
 import { useState, useEffect, useCallback } from 'react';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { getContacts, deleteContact as deleteContactApi } from '../services/contactsService';
 import ContactsTable from '../components/ContactsTable';
 import ContactDetailModal from '../components/ContactDetailModal';
@@ -46,7 +46,7 @@ export default function Contacts({ onLogout }: ContactsProps) {
   };
 
   const handleEnrichComplete = () => {
-    loadContacts(); // Refresh contacts after enrichment
+    loadContacts();
   };
 
   const handleDelete = async (contactId: number) => {
@@ -60,12 +60,18 @@ export default function Contacts({ onLogout }: ContactsProps) {
 
   const filteredContacts = contacts.filter(contact => {
     const query = searchQuery.toLowerCase();
+    const firstName = contact.first_name?.toLowerCase() || '';
+    const lastName = contact.last_name?.toLowerCase() || '';
+    const company = contact.company?.toLowerCase() || '';
+    const email = contact.email?.toLowerCase() || '';
+    const title = contact.title?.toLowerCase() || '';
+    
     return (
-      contact.first_name.toLowerCase().includes(query) ||
-      contact.last_name.toLowerCase().includes(query) ||
-      contact.company.toLowerCase().includes(query) ||
-      (contact.email?.toLowerCase().includes(query) ?? false) ||
-      (contact.title?.toLowerCase().includes(query) ?? false)
+      firstName.includes(query) ||
+      lastName.includes(query) ||
+      company.includes(query) ||
+      email.includes(query) ||
+      title.includes(query)
     );
   });
 
@@ -94,7 +100,6 @@ export default function Contacts({ onLogout }: ContactsProps) {
 
   return (
     <div>
-      {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-3xl font-bold text-white">Contacts</h1>
@@ -110,7 +115,6 @@ export default function Contacts({ onLogout }: ContactsProps) {
         </div>
       </div>
 
-      {/* Search */}
       <div className="mb-6">
         <input
           type="text"
@@ -121,14 +125,12 @@ export default function Contacts({ onLogout }: ContactsProps) {
         />
       </div>
 
-      {/* Contacts Table */}
       <ContactsTable
         contacts={filteredContacts}
         onRowClick={handleRowClick}
         onDelete={handleDelete}
       />
 
-      {/* Contact Detail Modal */}
       <ContactDetailModal
         contact={selectedContact}
         isOpen={isModalOpen}
