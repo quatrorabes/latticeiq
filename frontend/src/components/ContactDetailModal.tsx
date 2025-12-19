@@ -17,15 +17,17 @@ interface ContactDetailModalProps {
   contact: Contact | null;
   isOpen?: boolean;
   onClose: () => void;
-  onEnrichComplete?: () => void;
+  onEnrichComplete: _onEnrichComplete,
+  
 }
 
 export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
   contact,
   isOpen = true,
   onClose,
-  onEnrichComplete,
+  onEnrichComplete: _onEnrichComplete,
 }) => {
+  
   const [activeTab, setActiveTab] = useState<'profile' | 'raw'>('profile');
 
   if (!isOpen || !contact) return null;
