@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
@@ -9,10 +9,12 @@ import os
 import re
 import csv
 import httpx
+import uuid
 from io import StringIO
 from datetime import datetime
 
 app = FastAPI(title="LatticeIQ API")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -21,7 +23,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")  # Or use SUPABASE_KEY
+# ============= SUPABASE CLIENT =============
+supabase = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
+
+# ============= AUTH =============
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("SUPABASE_KEY")
 
 async def get_current_user(request: Request) -> dict:
     """
@@ -32,7 +41,7 @@ async def get_current_user(request: Request) -> dict:
     
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-        
+    
     token = auth_header.split(" ")[1]
     
     try:
@@ -44,18 +53,26 @@ async def get_current_user(request: Request) -> dict:
             audience="authenticated"
         )
         return payload  # Contains 'sub' (user UUID), 'email', 'role', etc.
-    
+        
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-        
-        # Wire up to enrichment routes
-        from enrichment_v3.api_routes import router as enrichment_router, set_auth_dependency
-        
-        set_auth_dependency(get_current_user)
-        app.include_router(enrichment_router)        
+
+
+def extract_user_id(user: dict) -> str:
+    """Safely extract and validate user_id (UUID) from JWT payload."""
+    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
+    
+    try:
+        validated = uuid.UUID(str(user_id))
+        return str(validated)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=401, detail="Invalid user ID format")
+
 
 # ============= CONTACT VALIDATOR =============
-
 class ContactValidator:
     """Validates and filters contacts during import."""
     
@@ -88,27 +105,23 @@ class ContactValidator:
         self.stats['total'] += 1
         raw = raw or {}
         
-        # Check email
         email = (contact.get('email') or '').strip().lower()
+        
         if self.require_email:
             if not email:
                 self.stats['filtered_no_email'] += 1
                 return False, 'missing_email'
             
-            # Check invalid patterns
             for pattern in self.INVALID_EMAIL_PATTERNS:
                 if re.match(pattern, email, re.IGNORECASE):
                     self.stats['filtered_invalid_email'] += 1
                     return False, 'invalid_email'
             
-            # Basic format check
             if not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
                 self.stats['filtered_invalid_email'] += 1
                 return False, 'invalid_email_format'
         
-        # Check DNC status
         if self.filter_dnc:
-            # HubSpot specific
             props = raw.get('properties', {})
             lead_status = str(props.get('hs_lead_status') or '').lower()
             if lead_status in self.DNC_STATUSES:
@@ -119,20 +132,18 @@ class ContactValidator:
                 self.stats['filtered_dnc'] += 1
                 return False, 'hs_email_optout'
             
-            # Salesforce specific
             if raw.get('HasOptedOutOfEmail') in [True, 'true']:
                 self.stats['filtered_dnc'] += 1
                 return False, 'sf_opted_out'
+            
             if raw.get('DoNotCall') in [True, 'true']:
                 self.stats['filtered_dnc'] += 1
                 return False, 'sf_do_not_call'
             
-            # Pipedrive specific
             if raw.get('active_flag') == False:
                 self.stats['filtered_dnc'] += 1
                 return False, 'pipedrive_inactive'
             
-            # General status check
             status = str(contact.get('status') or '').lower()
             if status in self.DNC_STATUSES:
                 self.stats['filtered_dnc'] += 1
@@ -143,7 +154,6 @@ class ContactValidator:
 
 
 # ============= CRM IMPORTERS =============
-
 class HubSpotImporter:
     BASE_URL = "https://api.hubapi.com"
     
@@ -157,6 +167,7 @@ class HubSpotImporter:
     async def fetch_all(self, max_contacts: int = 500) -> List[Dict]:
         all_contacts = []
         after = None
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(all_contacts) < max_contacts:
                 url = f"{self.BASE_URL}/crm/v3/objects/contacts"
@@ -166,24 +177,28 @@ class HubSpotImporter:
                 }
                 if after:
                     params['after'] = after
+                
                 response = await client.get(url, headers=self._headers(), params=params)
                 if response.status_code != 200:
                     raise Exception(f"HubSpot API error: {response.status_code} - {response.text}")
+                
                 data = response.json()
                 contacts = data.get('results', [])
                 if not contacts:
                     break
+                
                 all_contacts.extend(contacts)
                 after = data.get('paging', {}).get('next', {}).get('after')
                 if not after:
                     break
+        
         return all_contacts[:max_contacts]
     
     def normalize(self, raw: Dict) -> Dict:
         props = raw.get('properties', {})
         return {
-            'first_name': props.get('firstname') or '',
-            'last_name': props.get('lastname') or '',
+            'firstname': props.get('firstname') or '',
+            'lastname': props.get('lastname') or '',
             'email': props.get('email') or '',
             'phone': props.get('phone') or '',
             'company': props.get('company') or '',
@@ -206,7 +221,7 @@ class SalesforceImporter:
     
     async def fetch_all(self, max_contacts: int = 500) -> List[Dict]:
         query = f"""
-            SELECT Id, FirstName, LastName, Email, Phone, Account.Name, Title, 
+            SELECT Id, FirstName, LastName, Email, Phone, Account.Name, Title,
                    HasOptedOutOfEmail, DoNotCall
             FROM Contact
             WHERE Email != null
@@ -214,6 +229,7 @@ class SalesforceImporter:
             LIMIT {max_contacts}
         """
         url = f"{self.instance_url}/services/data/v58.0/query"
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url, headers=self._headers(), params={'q': query})
             if response.status_code != 200:
@@ -223,8 +239,8 @@ class SalesforceImporter:
     def normalize(self, raw: Dict) -> Dict:
         account = raw.get('Account') or {}
         return {
-            'first_name': raw.get('FirstName') or '',
-            'last_name': raw.get('LastName') or '',
+            'firstname': raw.get('FirstName') or '',
+            'lastname': raw.get('LastName') or '',
             'email': raw.get('Email') or '',
             'phone': raw.get('Phone') or '',
             'company': account.get('Name') or '',
@@ -244,24 +260,30 @@ class PipedriveImporter:
     async def fetch_all(self, max_contacts: int = 500) -> List[Dict]:
         all_contacts = []
         start = 0
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(all_contacts) < max_contacts:
                 url = f"{self.BASE_URL}/persons"
                 params = {'api_token': self.api_token, 'start': start, 'limit': 500}
+                
                 response = await client.get(url, params=params)
                 if response.status_code != 200:
                     raise Exception(f"Pipedrive API error: {response.status_code}")
+                
                 data = response.json()
                 if not data.get('success'):
                     break
+                
                 contacts = data.get('data') or []
                 if not contacts:
                     break
+                
                 all_contacts.extend(contacts)
                 pagination = data.get('additional_data', {}).get('pagination', {})
                 if not pagination.get('more_items_in_collection'):
                     break
                 start = pagination.get('next_start', start + 500)
+        
         return all_contacts[:max_contacts]
     
     def normalize(self, raw: Dict) -> Dict:
@@ -284,8 +306,8 @@ class PipedriveImporter:
             org = raw['org_id'].get('name', org)
         
         return {
-            'first_name': raw.get('first_name') or '',
-            'last_name': raw.get('last_name') or '',
+            'firstname': raw.get('first_name') or '',
+            'lastname': raw.get('last_name') or '',
             'email': primary_email,
             'phone': primary_phone,
             'company': org,
@@ -296,7 +318,6 @@ class PipedriveImporter:
 
 
 # ============= REQUEST MODELS =============
-
 class HubSpotImportRequest(BaseModel):
     access_token: str
     max_contacts: int = 500
@@ -318,49 +339,58 @@ class CSVImportRequest(BaseModel):
     filter_dnc: bool = True
 
 class ContactCreate(BaseModel):
-    first_name: str = ''
-    last_name: str = ''
+    firstname: str = ''
+    lastname: str = ''
     email: str
     phone: str = ''
     company: str = ''
     title: str = ''
     linkedin_url: str = ''
+    website: str = ''
+    vertical: str = ''
 
 
-# ============= EXISTING ENDPOINTS =============
-
+# ============= HEALTH CHECK =============
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
+
+# ============= CONTACT CRUD =============
 @app.get("/api/contacts")
-def get_contacts(user = Depends(get_current_user)):
-    result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
-    return {"contacts": result.data}
+def get_contacts(user: dict = Depends(get_current_user)):
+    user_id = extract_user_id(user)
+    result = supabase.table("contacts").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
+    return result.data
+
 
 @app.get("/api/contacts/{contact_id}")
-def get_contact(contact_id: int, user = Depends(get_current_user)):
-    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
+def get_contact(contact_id: int, user: dict = Depends(get_current_user)):
+    user_id = extract_user_id(user)
+    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
     return result.data[0]
 
+
 @app.post("/api/contacts")
-def create_contact(contact: ContactCreate, user = Depends(get_current_user)):
+def create_contact(contact: ContactCreate, user: dict = Depends(get_current_user)):
+    user_id = extract_user_id(user)
     data = contact.dict()
-    data["user_id"] = user.id
+    data["user_id"] = user_id
     data["enrichment_status"] = "pending"
     result = supabase.table("contacts").insert(data).execute()
     return result.data[0]
 
+
 @app.delete("/api/contacts/{contact_id}")
-def delete_contact(contact_id: int, user = Depends(get_current_user)):
-    supabase.table("contacts").delete().eq("id", contact_id).eq("user_id", user.id).execute()
+def delete_contact(contact_id: int, user: dict = Depends(get_current_user)):
+    user_id = extract_user_id(user)
+    supabase.table("contacts").delete().eq("id", contact_id).eq("user_id", user_id).execute()
     return {"deleted": True}
 
 
-# ============= IMPORT ENDPOINTS =============
-
+# ============= IMPORT HELPERS =============
 async def process_import(importer, raw_contacts: List[Dict], user_id: str) -> Dict:
     """Common import processing logic."""
     imported = 0
@@ -382,6 +412,7 @@ async def process_import(importer, raw_contacts: List[Dict], user_id: str) -> Di
             existing = supabase.table('contacts').select('id').eq(
                 'user_id', user_id
             ).eq('email', normalized['email']).execute()
+            
             if existing.data:
                 duplicates += 1
                 continue
@@ -400,46 +431,49 @@ async def process_import(importer, raw_contacts: List[Dict], user_id: str) -> Di
     }
 
 
+# ============= IMPORT ENDPOINTS =============
 @app.post("/api/import/hubspot")
-async def import_hubspot(request: HubSpotImportRequest, user = Depends(get_current_user)):
+async def import_hubspot(request: HubSpotImportRequest, user: dict = Depends(get_current_user)):
     """Import contacts from HubSpot with DNC filtering."""
     try:
+        user_id = extract_user_id(user)
         importer = HubSpotImporter(request.access_token, filter_dnc=request.filter_dnc)
         raw_contacts = await importer.fetch_all(request.max_contacts)
-        return await process_import(importer, raw_contacts, user.id)
+        return await process_import(importer, raw_contacts, user_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/import/salesforce")
-async def import_salesforce(request: SalesforceImportRequest, user = Depends(get_current_user)):
+async def import_salesforce(request: SalesforceImportRequest, user: dict = Depends(get_current_user)):
     """Import contacts from Salesforce with DNC filtering."""
     try:
+        user_id = extract_user_id(user)
         importer = SalesforceImporter(request.instance_url, request.access_token, filter_dnc=request.filter_dnc)
         raw_contacts = await importer.fetch_all(request.max_contacts)
-        return await process_import(importer, raw_contacts, user.id)
+        return await process_import(importer, raw_contacts, user_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/import/pipedrive")
-async def import_pipedrive(request: PipedriveImportRequest, user = Depends(get_current_user)):
+async def import_pipedrive(request: PipedriveImportRequest, user: dict = Depends(get_current_user)):
     """Import contacts from Pipedrive with DNC filtering."""
     try:
+        user_id = extract_user_id(user)
         importer = PipedriveImporter(request.api_token, filter_dnc=request.filter_dnc)
         raw_contacts = await importer.fetch_all(request.max_contacts)
-        return await process_import(importer, raw_contacts, user.id)
+        return await process_import(importer, raw_contacts, user_id)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/import/csv")
-async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)):
+async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current_user)):
     """Import contacts from CSV with DNC filtering."""
-    
     FIELD_MAP = {
-        'first name': 'first_name', 'firstname': 'first_name', 'first': 'first_name',
-        'last name': 'last_name', 'lastname': 'last_name', 'last': 'last_name',
+        'first name': 'firstname', 'firstname': 'firstname', 'first': 'firstname',
+        'last name': 'lastname', 'lastname': 'lastname', 'last': 'lastname',
         'full name': 'name', 'name': 'name',
         'email': 'email', 'email address': 'email', 'e-mail': 'email',
         'phone': 'phone', 'phone number': 'phone', 'mobile': 'phone', 'telephone': 'phone',
@@ -449,6 +483,7 @@ async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)
         'status': 'status', 'lead status': 'status'
     }
     
+    user_id = extract_user_id(user)
     validator = ContactValidator(filter_dnc=request.filter_dnc)
     
     try:
@@ -462,8 +497,8 @@ async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)
     filter_reasons = {}
     
     for row in reader:
-        # Normalize fields
         contact = {'enrichment_status': 'pending'}
+        
         for csv_field, value in row.items():
             if value:
                 key = csv_field.lower().strip()
@@ -471,12 +506,11 @@ async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)
                     contact[FIELD_MAP[key]] = value.strip()
         
         # Handle full name split
-        if contact.get('name') and not contact.get('first_name'):
+        if contact.get('name') and not contact.get('firstname'):
             parts = contact['name'].split(' ', 1)
-            contact['first_name'] = parts[0]
-            contact['last_name'] = parts[1] if len(parts) > 1 else ''
+            contact['firstname'] = parts[0]
+            contact['lastname'] = parts[1] if len(parts) > 1 else ''
         
-        # Validate
         is_valid, reason = validator.validate(contact, row)
         if not is_valid:
             filtered += 1
@@ -486,14 +520,15 @@ async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)
         # Check duplicate
         if contact.get('email'):
             existing = supabase.table('contacts').select('id').eq(
-                'user_id', user.id
+                'user_id', user_id
             ).eq('email', contact['email']).execute()
+            
             if existing.data:
                 duplicates += 1
                 continue
         
         # Insert
-        supabase.table('contacts').insert({**contact, 'user_id': user.id}).execute()
+        supabase.table('contacts').insert({**contact, 'user_id': user_id}).execute()
         imported += 1
     
     return {
@@ -506,7 +541,7 @@ async def import_csv(request: CSVImportRequest, user = Depends(get_current_user)
     }
 
 
-# ============= ENRICHMENT V3 - PARALLEL ARCHITECTURE =============
+# ============= ENRICHMENT V3 ROUTER =============
 try:
     from enrichment_v3.api_routes import router as enrichment_v3_router, set_auth_dependency
     set_auth_dependency(get_current_user)
@@ -514,4 +549,3 @@ try:
     print("✓ Enrichment V3 (Parallel) routes registered")
 except ImportError as e:
     print(f"⚠ Enrichment V3 not available: {e}")
-    
