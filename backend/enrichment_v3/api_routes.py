@@ -5,6 +5,7 @@ FastAPI endpoints with Supabase integration
 import json
 import logging
 import os
+import uuid
 from datetime import datetime
 from typing import List, Optional
 
@@ -27,7 +28,7 @@ supabase = create_client(
 )
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# AUTH - Import from main app
+# AUTH & UUID HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
 async def get_current_user_placeholder():
@@ -40,6 +41,33 @@ def set_auth_dependency(auth_func):
     """Called by main.py to inject auth"""
     global get_current_user
     get_current_user = auth_func
+
+
+def extract_user_id(user: dict) -> str:
+    """
+    Safely extract and validate user_id (UUID) from JWT payload.
+    
+    Supabase JWT structure:
+    - 'sub': The user's UUID (primary)
+    - 'id': Sometimes present
+    - 'user_id': Custom claims
+    
+    Returns validated UUID as string for Supabase queries.
+    """
+    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    
+    if not user_id:
+        logger.error(f"No user_id found in token. Keys: {list(user.keys())}")
+        raise HTTPException(status_code=401, detail="User ID not found in token")
+    
+    # Validate UUID format
+    try:
+        validated = uuid.UUID(str(user_id))
+        return str(validated)  # Return lowercase, properly formatted UUID string
+    except (ValueError, TypeError) as e:
+        logger.error(f"Invalid UUID format: {user_id}, error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid user ID format")
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODELS
@@ -87,8 +115,7 @@ async def enrich_contact_v3(request: EnrichRequest, user: dict = Depends(get_cur
     Executes 5 parallel Perplexity queries + GPT-4 synthesis
     """
     try:
-        # Get user_id from JWT token
-        user_id = user.get("sub") or user.get("id") or user.get("user_id")
+        user_id = extract_user_id(user)
         
         # Get contact (with user_id filter for security)
         result = supabase.table("contacts").select("*").eq("id", request.contact_id).eq("user_id", user_id).execute()
@@ -183,11 +210,9 @@ async def enrich_contact_v3(request: EnrichRequest, user: dict = Depends(get_cur
 
 @router.post("/enrich/batch")
 async def batch_enrich_v3(request: BatchEnrichRequest, user: dict = Depends(get_current_user)):
-    """
-    Batch V3 Enrichment - Multiple Contacts
-    """
+    """Batch V3 Enrichment - Multiple Contacts"""
     try:
-        user_id = user.get("sub") or user.get("id") or user.get("user_id")
+        user_id = extract_user_id(user)
         
         # Get contacts to enrich
         if request.contact_ids:
@@ -286,7 +311,7 @@ async def batch_enrich_v3(request: BatchEnrichRequest, user: dict = Depends(get_
 @router.get("/enrich/{contact_id}/status")
 async def get_enrichment_status(contact_id: int, user: dict = Depends(get_current_user)):
     """Get enrichment status for a contact"""
-    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    user_id = extract_user_id(user)
     result = supabase.table("contacts").select("enrichment_status, enrichment_data").eq("id", contact_id).eq("user_id", user_id).execute()
     
     if not result.data:
@@ -312,7 +337,7 @@ async def get_enrichment_status(contact_id: int, user: dict = Depends(get_curren
 @router.get("/enrich/{contact_id}/profile")
 async def get_contact_profile(contact_id: int, user: dict = Depends(get_current_user)):
     """Get enriched profile for a contact"""
-    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    user_id = extract_user_id(user)
     result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user_id).execute()
 
     if not result.data:
@@ -339,6 +364,7 @@ async def get_contact_profile(contact_id: int, user: dict = Depends(get_current_
 @router.post("/cache/clear")
 async def clear_enrichment_cache(user: dict = Depends(get_current_user)):
     """Clear the enrichment cache"""
+    _ = extract_user_id(user)  # Validate auth
     enricher = get_enricher()
     enricher.cache.clear()
     return {"success": True, "message": "Cache cleared"}
@@ -346,7 +372,7 @@ async def clear_enrichment_cache(user: dict = Depends(get_current_user)):
 
 @router.get("/health")
 async def enrichment_health():
-    """Health check"""
+    """Health check - no auth required"""
     try:
         enricher = get_enricher()
         synthesizer = get_synthesizer()

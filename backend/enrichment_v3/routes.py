@@ -2,6 +2,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 import logging
+import uuid
+
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
@@ -34,6 +36,32 @@ async def health_check():
         "synthesizer_ready": True,
         "cache_enabled": True
     }
+
+def extract_user_id(user: dict) -> str:
+    """Safely extract and validate user_id from JWT"""
+    user_id = user.get("sub") or user.get("id") or user.get("user_id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID not found in token")
+    try:
+        return str(uuid.UUID(str(user_id)))
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Invalid user ID format")
+        
+        
+@router.get("/contacts")
+async def get_contacts(user: dict = Depends(get_current_user)):
+    user_id = extract_user_id(user)
+    result = supabase.table("contacts").select("*").eq("user_id", user_id).execute()
+    return result.data
+
+
+@router.post("/contacts")
+async def create_contact(contact: ContactCreate, user: dict = Depends(get_current_user)):
+    user_id = extract_user_id(user)
+    data = contact.dict()
+    data["user_id"] = user_id  # Attach validated UUID
+    result = supabase.table("contacts").insert(data).execute()
+    return result.data[0]
 
 
 @router.post("/enrich")

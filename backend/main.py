@@ -4,6 +4,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client
 from typing import List, Dict, Optional, Tuple
+from jose import jwt, JWTError
 import os
 import re
 import csv
@@ -20,16 +21,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
-security = HTTPBearer()
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")  # Or use SUPABASE_KEY
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(request: Request) -> dict:
+    """
+    Extract and validate JWT from Authorization header.
+    Returns the full decoded JWT payload as a dict.
+    """
+    auth_header = request.headers.get("Authorization")
+    
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
+        
+    token = auth_header.split(" ")[1]
+    
     try:
-        user = supabase.auth.get_user(credentials.credentials)
-        return user.user
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
+        # Decode JWT - Supabase uses HS256
+        payload = jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated"
+        )
+        return payload  # Contains 'sub' (user UUID), 'email', 'role', etc.
+    
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        
+        # Wire up to enrichment routes
+        from enrichment_v3.api_routes import router as enrichment_router, set_auth_dependency
+        
+        set_auth_dependency(get_current_user)
+        app.include_router(enrichment_router)        
 
 # ============= CONTACT VALIDATOR =============
 
@@ -491,3 +514,4 @@ try:
     print("✓ Enrichment V3 (Parallel) routes registered")
 except ImportError as e:
     print(f"⚠ Enrichment V3 not available: {e}")
+    
