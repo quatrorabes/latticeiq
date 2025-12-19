@@ -9,8 +9,9 @@ import uuid
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, Request
 from pydantic import BaseModel
+from jose import jwt, JWTError
 from supabase import create_client
 
 from .parallel_enricher import ParallelEnricher, EnrichmentResult
@@ -31,16 +32,35 @@ supabase = create_client(
 # AUTH & UUID HELPERS
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def get_current_user_placeholder():
-    """Placeholder - replaced by main.py import"""
-    raise HTTPException(status_code=401, detail="Auth not configured")
+def _get_bearer_token(request: Request) -> str:
+    auth = request.headers.get("Authorization") or ""
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    return auth.split(" ", 1)[1].strip()
 
-get_current_user = get_current_user_placeholder
-
-def set_auth_dependency(auth_func):
-    """Called by main.py to inject auth"""
-    global get_current_user
-    get_current_user = auth_func
+async def get_current_user(request: Request) -> dict:
+    """
+    Extract and validate JWT from Authorization header.
+    Returns the full decoded JWT payload as a dict.
+    """
+    token = _get_bearer_token(request)
+    jwt_secret = (os.getenv("SUPABASE_JWT_SECRET") or "").strip()
+    
+    if not jwt_secret:
+        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET not configured")
+    
+    try:
+        payload = jwt.decode(
+            token,
+            jwt_secret,
+            algorithms=["HS256"],
+            options={"verify_aud": False},
+        )
+        if not payload.get("sub"):
+            raise HTTPException(status_code=401, detail="Token missing sub")
+        return payload
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 
 def extract_user_id(user: dict) -> str:
