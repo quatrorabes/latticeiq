@@ -1,14 +1,8 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { ContactsTable } from './components/ContactsTable'
-import { 
-  LogOut, 
-  Plus, 
-  Upload, 
-  X, 
-  Loader2,
-  Zap
-} from 'lucide-react'
+
+import { LogOut, X, Loader2, Zap } from 'lucide-react'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
 

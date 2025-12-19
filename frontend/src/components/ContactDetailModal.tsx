@@ -1,7 +1,6 @@
 // Contact Detail Modal with Enrichment Display
-import { Fragment } from 'react';
-import type { Contact } from '../types/contact';
-import { EnrichButton } from './EnrichButton';
+import type { Contact } from '../types/contact'
+import { EnrichButton } from './EnrichButton'
 import { 
   X, 
   Mail, 
@@ -14,9 +13,8 @@ import {
   AlertTriangle,
   Lightbulb,
   TrendingUp,
-  User,
   FileText
-} from 'lucide-react';
+} from 'lucide-react'
 
 interface ContactDetailModalProps {
   contact: Contact;

@@ -8,8 +8,7 @@ import {
   Search, 
   ChevronUp, 
   ChevronDown, 
-  Trash2, 
-  Filter,
+  Trash2,
   CheckSquare,
   Square,
   Loader2,
@@ -17,7 +16,7 @@ import {
   User,
   Building2,
   Sparkles
-} from 'lucide-react';
+} from 'lucide-react'
 
 type SortField = 'firstname' | 'company' | 'title' | 'apex_score' | 'enrichment_status' | 'created_at';
 type SortDirection = 'asc' | 'desc';
