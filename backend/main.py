@@ -33,30 +33,39 @@ supabase = create_client(
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("SUPABASE_KEY")
 
 async def get_current_user(request: Request) -> dict:
-    """
-    Extract and validate JWT from Authorization header.
-    Returns the full decoded JWT payload as a dict.
-    """
+    """Extract and validate JWT from Authorization header."""
+    import logging
+    logger = logging.getLogger(__name__)
+    
     auth_header = request.headers.get("Authorization")
+    logger.info(f"Auth header present: {bool(auth_header)}")
     
     if not auth_header or not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-    
+        
     token = auth_header.split(" ")[1]
+    logger.info(f"Token length: {len(token)}")
     
+    jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
+    logger.info(f"JWT secret present: {bool(jwt_secret)}, length: {len(jwt_secret) if jwt_secret else 0}")
+    
+    if not jwt_secret:
+        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET not configured")
+        
     try:
-        # Decode JWT - Supabase uses HS256
         payload = jwt.decode(
             token,
-            SUPABASE_JWT_SECRET,
+            jwt_secret,
             algorithms=["HS256"],
             audience="authenticated"
         )
-        return payload  # Contains 'sub' (user UUID), 'email', 'role', etc.
-        
+        logger.info(f"JWT decoded successfully. User: {payload.get('sub')}")
+        return payload
+    
     except JWTError as e:
+        logger.error(f"JWT decode error: {str(e)}")
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
+        
 
 def extract_user_id(user: dict) -> str:
     """Safely extract and validate user_id (UUID) from JWT payload."""
@@ -549,3 +558,4 @@ try:
     print("✓ Enrichment V3 (Parallel) routes registered")
 except ImportError as e:
     print(f"⚠ Enrichment V3 not available: {e}")
+    
