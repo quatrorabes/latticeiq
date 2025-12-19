@@ -1,457 +1,173 @@
-import { useState, useMemo } from 'react'
-import { useContacts } from '../hooks/useContacts'
-import { EnrichButton } from './EnrichButton'
-import { ContactDetailModal } from './ContactDetailModal'
-import type { Contact } from '../types/contact'
-import { 
-  Search, 
-  ChevronUp, 
-  ChevronDown, 
-  Trash2,
-  CheckSquare,
-  Square,
-  Loader2,
-  AlertCircle,
-  RefreshCw
-} from 'lucide-react'
+import { useState, useEffect } from 'react';
+import { contactsService } from '../services/contactsService';
+import { Contact } from '../types/contact';
+import { ContactDetailModal } from './ContactDetailModal';
+import { Loader } from './Loader';
 
-type SortField = 'firstname' | 'company' | 'title' | 'apex_score' | 'enrichment_status' | 'created_at'
-type SortDirection = 'asc' | 'desc'
+export const ContactsTable: React.FC = () => {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
-interface ContactsTableProps {
-  onAddContact?: () => void
-  onImport?: () => void
-}
+  useEffect(() => {
+    loadContacts();
+  }, []);
 
-export function ContactsTable({ onAddContact, onImport }: ContactsTableProps) {
-  const { contacts, isLoading, error, refetch, removeContact, removeContacts } = useContacts()
-  
-  const [searchQuery, setSearchQuery] = useState('')
-  const [sortField, setSortField] = useState<SortField>('created_at')
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-  const [isDeleting, setIsDeleting] = useState(false)
-
-  const filteredContacts = useMemo(() => {
-    if (!Array.isArray(contacts)) return []
-    
-    let result = [...contacts]
-    
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(c => 
-        c.firstname?.toLowerCase().includes(query) ||
-        c.lastname?.toLowerCase().includes(query) ||
-        c.email?.toLowerCase().includes(query) ||
-        c.company?.toLowerCase().includes(query) ||
-        c.title?.toLowerCase().includes(query)
-      )
-    }
-    
-    if (filterStatus !== 'all') {
-      if (filterStatus === 'enriched') {
-        result = result.filter(c => c.enrichment_status === 'completed')
-      } else if (filterStatus === 'not_enriched') {
-        result = result.filter(c => !c.enrichment_status || c.enrichment_status === 'pending')
-      } else if (filterStatus === 'high_score') {
-        result = result.filter(c => (c.apex_score ?? 0) >= 75)
-      }
-    }
-    
-    result.sort((a, b) => {
-      let aVal: any = a[sortField]
-      let bVal: any = b[sortField]
-      
-      if (aVal == null) aVal = sortDirection === 'asc' ? Infinity : -Infinity
-      if (bVal == null) bVal = sortDirection === 'asc' ? Infinity : -Infinity
-      
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase()
-        bVal = (bVal as string).toLowerCase()
-      }
-      
-      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-      return 0
-    })
-    
-    return result
-  }, [contacts, searchQuery, sortField, sortDirection, filterStatus])
-
-  const stats = useMemo(() => ({
-    total: contacts.length,
-    enriched: contacts.filter(c => c.enrichment_status === 'completed').length,
-    companies: new Set(contacts.map(c => c.company).filter(Boolean)).size
-  }), [contacts])
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortDirection(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortField(field)
-      setSortDirection('asc')
-    }
-  }
-
-  const handleSelectAll = () => {
-    if (selectedIds.size === filteredContacts.length) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(filteredContacts.map(c => c.id)))
-    }
-  }
-
-  const handleSelectOne = (id: number) => {
-    const newSelected = new Set(selectedIds)
-    if (newSelected.has(id)) {
-      newSelected.delete(id)
-    } else {
-      newSelected.add(id)
-    }
-    setSelectedIds(newSelected)
-  }
-
-  const handleDeleteSelected = async () => {
-    if (selectedIds.size === 0) return
-    if (!confirm(`Delete ${selectedIds.size} contact(s)?`)) return
-    
-    setIsDeleting(true)
+  const loadContacts = async () => {
     try {
-      await removeContacts(Array.from(selectedIds))
-      setSelectedIds(new Set())
+      setLoading(true);
+      const data = await contactsService.getContacts();
+      setContacts(data);
+      setFilteredContacts(data);
+      setError(null);
     } catch (err) {
-      console.error('Delete failed:', err)
+      setError(err instanceof Error ? err : new Error('Failed to load contacts'));
     } finally {
-      setIsDeleting(false)
+      setLoading(false);
     }
-  }
+  };
 
-  const getDisplayName = (contact: Contact) => {
-    if (contact.firstname || contact.lastname) {
-      return `${contact.firstname || ''} ${contact.lastname || ''}`.trim()
+  const handleSearch = (query: string) => {
+    setSearchQuery(query);
+    const filtered = contacts.filter(contact => {
+      const searchTerm = query.toLowerCase();
+      return (
+        contact.first_name?.toLowerCase().includes(searchTerm) ||
+        contact.last_name?.toLowerCase().includes(searchTerm) ||
+        contact.email?.toLowerCase().includes(searchTerm) ||
+        contact.company?.toLowerCase().includes(searchTerm)
+      );
+    });
+    setFilteredContacts(filtered);
+  };
+
+  const handleRowClick = (contact: Contact) => {
+    setSelectedContact(contact);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteContact = async (contactId: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm('Are you sure you want to delete this contact?')) {
+      try {
+        await contactsService.deleteContact(contactId);
+        setContacts(contacts.filter(c => c.id !== contactId));
+        setFilteredContacts(filteredContacts.filter(c => c.id !== contactId));
+      } catch (err) {
+        console.error('Failed to delete contact:', err);
+      }
     }
-    return contact.email?.split('@')[0] || 'Unknown'
-  }
+  };
 
-  const getInitials = (contact: Contact) => {
-    if (contact.firstname && contact.lastname) {
-      return `${contact.firstname[0]}${contact.lastname[0]}`.toUpperCase()
-    }
-    if (contact.firstname) return contact.firstname[0].toUpperCase()
-    if (contact.email) return contact.email[0].toUpperCase()
-    return '?'
-  }
+  const getInitials = (contact: Contact): string => {
+    const first = contact.first_name?.[0] || '';
+    const last = contact.last_name?.[0] || '';
+    return (first + last).toUpperCase() || '?';
+  };
 
-  const getScoreBadge = (score?: number) => {
-    if (score == null) return <span style={{ color: '#6b7280' }}>—</span>
-    const color = score >= 75 ? '#22c55e' : score >= 50 ? '#eab308' : '#6b7280'
-    return (
-      <span style={{ 
-        padding: '4px 10px', 
-        borderRadius: '12px', 
-        fontSize: '12px', 
-        fontWeight: 'bold',
-        backgroundColor: `${color}20`,
-        color: color
-      }}>
-        {score}
-      </span>
-    )
-  }
+  const getDisplayName = (contact: Contact): string => {
+    const first = contact.first_name || '';
+    const last = contact.last_name || '';
+    return `${first} ${last}`.trim() || 'Unknown';
+  };
 
-  const getStatusBadge = (status?: string | null) => {
-    const configs: Record<string, { color: string; label: string }> = {
-      completed: { color: '#22c55e', label: '✓ Enriched' },
-      processing: { color: '#3b82f6', label: '⟳ Processing' },
-      pending: { color: '#6b7280', label: 'Pending' },
-      failed: { color: '#ef4444', label: '✗ Failed' }
-    }
-    const c = configs[status || 'pending'] || configs.pending
-    return (
-      <span style={{ 
-        padding: '4px 10px', 
-        borderRadius: '12px', 
-        fontSize: '12px',
-        backgroundColor: `${c.color}20`,
-        color: c.color
-      }}>
-        {c.label}
-      </span>
-    )
-  }
+  const getScoreBadge = (score: number | undefined) => {
+    if (score === undefined || score === null) return '—';
+    if (score >= 80) return <span className="text-green-600 font-semibold">{score}</span>;
+    if (score >= 60) return <span className="text-yellow-600 font-semibold">{score}</span>;
+    return <span className="text-red-600 font-semibold">{score}</span>;
+  };
 
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
-        <Loader2 style={{ width: 32, height: 32, color: '#a855f7', animation: 'spin 1s linear infinite' }} />
-        <span style={{ marginLeft: 12, color: '#9ca3af' }}>Loading contacts...</span>
-      </div>
-    )
-  }
+  const getStatusBadge = (status: string | null | undefined) => {
+    if (!status) return <span className="text-gray-500">Pending</span>;
+    const statusStyles: Record<string, string> = {
+      completed: 'bg-green-100 text-green-800',
+      processing: 'bg-blue-100 text-blue-800',
+      failed: 'bg-red-100 text-red-800',
+      pending: 'bg-gray-100 text-gray-800',
+    };
+    const style = statusStyles[status] || 'bg-gray-100 text-gray-800';
+    return <span className={`px-2 py-1 rounded text-xs font-medium ${style}`}>{status}</span>;
+  };
+
+  if (loading) return <Loader />;
 
   if (error) {
     return (
-      <div style={{ textAlign: 'center', padding: '80px 0' }}>
-        <AlertCircle style={{ width: 48, height: 48, color: '#ef4444', margin: '0 auto 16px' }} />
-        <p style={{ color: 'white', fontWeight: 500, marginBottom: 8 }}>Failed to load contacts</p>
-        <p style={{ color: '#9ca3af', fontSize: 14, marginBottom: 16 }}>{error.message}</p>
-        <button 
-          onClick={refetch}
-          style={{ padding: '8px 16px', backgroundColor: '#a855f7', color: 'white', borderRadius: 8, border: 'none', cursor: 'pointer' }}
-        >
-          Try Again
-        </button>
+      <div className="p-6 text-center">
+        <h3 className="text-lg font-semibold text-red-600 mb-2">Failed to load contacts</h3>
+        <p className="text-gray-600">{error.message}</p>
       </div>
-    )
+    );
   }
 
   return (
-    <div>
-      {/* Stats Bar */}
-      <div style={{ 
-        display: 'flex', 
-        gap: '24px', 
-        marginBottom: '24px',
-        padding: '16px 20px',
-        backgroundColor: '#1f2937',
-        borderRadius: '12px',
-        border: '1px solid #374151'
-      }}>
-        <div>
-          <span style={{ fontSize: '24px', fontWeight: 'bold', color: 'white' }}>{stats.total}</span>
-          <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '14px' }}>contacts</span>
-        </div>
-        <div style={{ borderLeft: '1px solid #374151', paddingLeft: '24px' }}>
-          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#22c55e' }}>{stats.enriched}</span>
-          <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '14px' }}>enriched</span>
-        </div>
-        <div style={{ borderLeft: '1px solid #374151', paddingLeft: '24px' }}>
-          <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#3b82f6' }}>{stats.companies}</span>
-          <span style={{ marginLeft: '8px', color: '#9ca3af', fontSize: '14px' }}>companies</span>
-        </div>
-      </div>
-
-      {/* Toolbar */}
-      <div style={{ 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'space-between',
-        gap: '16px',
-        marginBottom: '16px',
-        flexWrap: 'wrap'
-      }}>
-        <div style={{ position: 'relative', flex: '1', maxWidth: '400px' }}>
-          <Search style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', width: 20, height: 20, color: '#6b7280' }} />
+    <div className="w-full">
+      <div className="mb-6 flex gap-4">
+        <div className="flex-1">
           <input
             type="text"
             placeholder="Search contacts..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 12px 10px 40px',
-              backgroundColor: '#1f2937',
-              border: '1px solid #374151',
-              borderRadius: '8px',
-              color: 'white',
-              fontSize: '14px'
-            }}
+            onChange={e => handleSearch(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-700 rounded-lg bg-gray-900 text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
-        </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <select
-            value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value)}
-            style={{
-              padding: '10px 12px',
-              backgroundColor: '#1f2937',
-              border: '1px solid #374151',
-              borderRadius: '8px',
-              color: 'white',
-              fontSize: '14px'
-            }}
-          >
-            <option value="all">All Contacts</option>
-            <option value="enriched">Enriched</option>
-            <option value="not_enriched">Not Enriched</option>
-            <option value="high_score">High Score (75+)</option>
-          </select>
-
-          <button
-            onClick={refetch}
-            style={{ padding: '10px', backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: '#9ca3af', cursor: 'pointer' }}
-            title="Refresh"
-          >
-            <RefreshCw style={{ width: 20, height: 20 }} />
-          </button>
-          
-          {selectedIds.size > 0 && (
-            <button
-              onClick={handleDeleteSelected}
-              disabled={isDeleting}
-              style={{ 
-                display: 'flex', 
-                alignItems: 'center', 
-                gap: '8px',
-                padding: '10px 16px', 
-                backgroundColor: '#7f1d1d', 
-                border: '1px solid #991b1b', 
-                borderRadius: '8px', 
-                color: '#fca5a5', 
-                cursor: 'pointer' 
-              }}
-            >
-              <Trash2 style={{ width: 16, height: 16 }} />
-              Delete ({selectedIds.size})
-            </button>
-          )}
-          
-          {onImport && (
-            <button
-              onClick={onImport}
-              style={{ padding: '10px 16px', backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '8px', color: 'white', cursor: 'pointer' }}
-            >
-              Import
-            </button>
-          )}
-          {onAddContact && (
-            <button
-              onClick={onAddContact}
-              style={{ padding: '10px 16px', backgroundColor: '#9333ea', border: 'none', borderRadius: '8px', color: 'white', fontWeight: 500, cursor: 'pointer' }}
-            >
-              + Add Contact
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Table */}
-      <div style={{ backgroundColor: '#1f2937', borderRadius: '12px', border: '1px solid #374151', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+      <div className="overflow-x-auto">
+        <table className="w-full">
           <thead>
-            <tr style={{ backgroundColor: '#111827' }}>
-              <th style={{ padding: '12px 16px', textAlign: 'left', width: '48px' }}>
-                <button onClick={handleSelectAll} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                  {selectedIds.size === filteredContacts.length && filteredContacts.length > 0 ? (
-                    <CheckSquare style={{ width: 20, height: 20, color: '#a855f7' }} />
-                  ) : (
-                    <Square style={{ width: 20, height: 20, color: '#4b5563' }} />
-                  )}
-                </button>
-              </th>
-              <th style={{ padding: '12px 16px', textAlign: 'left' }}>
-                <button onClick={() => handleSort('firstname')} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Contact
-                  {sortField === 'firstname' && (sortDirection === 'asc' ? <ChevronUp style={{ width: 14, height: 14 }} /> : <ChevronDown style={{ width: 14, height: 14 }} />)}
-                </button>
-              </th>
-              <th style={{ padding: '12px 16px', textAlign: 'left' }}>
-                <button onClick={() => handleSort('company')} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Company
-                  {sortField === 'company' && (sortDirection === 'asc' ? <ChevronUp style={{ width: 14, height: 14 }} /> : <ChevronDown style={{ width: 14, height: 14 }} />)}
-                </button>
-              </th>
-              <th style={{ padding: '12px 16px', textAlign: 'left' }}>
-                <button onClick={() => handleSort('title')} style={{ background: 'none', border: 'none', color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  Title
-                  {sortField === 'title' && (sortDirection === 'asc' ? <ChevronUp style={{ width: 14, height: 14 }} /> : <ChevronDown style={{ width: 14, height: 14 }} />)}
-                </button>
-              </th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', width: '80px' }}>
-                <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>APEX</span>
-              </th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', width: '120px' }}>
-                <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Status</span>
-              </th>
-              <th style={{ padding: '12px 16px', textAlign: 'center', width: '100px' }}>
-                <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600, textTransform: 'uppercase' }}>Actions</span>
-              </th>
+            <tr className="border-b border-gray-700">
+              <th className="text-left px-4 py-3 text-sm font-semibold text-gray-300">CONTACT</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-gray-300">COMPANY</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-gray-300">TITLE</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-gray-300">APEX</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-gray-300">STATUS</th>
+              <th className="text-left px-4 py-3 text-sm font-semibold text-gray-300">ACTIONS</th>
             </tr>
           </thead>
           <tbody>
             {filteredContacts.length === 0 ? (
               <tr>
-                <td colSpan={7} style={{ padding: '60px', textAlign: 'center' }}>
-                  <p style={{ color: 'white', marginBottom: 4 }}>No contacts found</p>
-                  <p style={{ color: '#6b7280', fontSize: 14 }}>
-                    {searchQuery ? 'Try a different search' : 'Add or import contacts to get started'}
-                  </p>
+                <td colSpan={6} className="text-center px-4 py-6 text-gray-400">
+                  No contacts found {searchQuery ? 'Try a different search' : 'Add or import contacts to get started'}
                 </td>
               </tr>
             ) : (
-              filteredContacts.map((contact) => (
-                <tr 
+              filteredContacts.map(contact => (
+                <tr
                   key={contact.id}
-                  onClick={() => setSelectedContact(contact)}
-                  style={{ borderTop: '1px solid #374151', cursor: 'pointer' }}
-                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#374151'}
-                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                  onClick={() => handleRowClick(contact)}
+                  className="border-b border-gray-700 hover:bg-gray-800 cursor-pointer transition"
                 >
-                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => handleSelectOne(contact.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
-                      {selectedIds.has(contact.id) ? (
-                        <CheckSquare style={{ width: 20, height: 20, color: '#a855f7' }} />
-                      ) : (
-                        <Square style={{ width: 20, height: 20, color: '#4b5563' }} />
-                      )}
-                    </button>
-                  </td>
-                  <td style={{ padding: '12px 16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <div style={{ 
-                        width: 40, 
-                        height: 40, 
-                        borderRadius: '50%', 
-                        background: 'linear-gradient(135deg, #9333ea, #3b82f6)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                        fontWeight: 600,
-                        fontSize: 14
-                      }}>
+                  <td className="px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-xs font-semibold text-white">
                         {getInitials(contact)}
                       </div>
                       <div>
-                        <p style={{ color: 'white', fontWeight: 500, margin: 0 }}>{getDisplayName(contact)}</p>
-                        <p style={{ color: '#6b7280', fontSize: 13, margin: 0 }}>{contact.email}</p>
+                        <p className="font-medium text-white">{getDisplayName(contact)}</p>
+                        <p className="text-xs text-gray-400">{contact.email}</p>
                       </div>
                     </div>
                   </td>
-                  <td style={{ padding: '12px 16px', color: '#d1d5db' }}>{contact.company || '—'}</td>
-                  <td style={{ padding: '12px 16px', color: '#9ca3af', fontSize: 14, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {contact.title || '—'}
-                  </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    {getScoreBadge(contact.apex_score ?? undefined)}
-                  </td>
-                  <td style={{ padding: '12px 16px', textAlign: 'center' }}>
-                    {getStatusBadge(contact.enrichment_status)}
-                  </td>
-                  <td style={{ padding: '12px 16px' }} onClick={(e) => e.stopPropagation()}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                      <EnrichButton
-                        contactId={contact.id}
-                        enrichmentStatus={contact.enrichment_status || undefined}
-                        onEnrichComplete={refetch}
-                        variant="icon"
-                      />
-                      <button
-                        onClick={async () => {
-                          if (confirm('Delete this contact?')) {
-                            await removeContact(contact.id)
-                          }
-                        }}
-                        style={{ padding: 8, background: 'none', border: 'none', cursor: 'pointer', borderRadius: 8, color: '#6b7280' }}
-                        onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
-                        onMouseLeave={(e) => e.currentTarget.style.color = '#6b7280'}
-                      >
-                        <Trash2 style={{ width: 18, height: 18 }} />
-                      </button>
-                    </div>
+                  <td className="px-4 py-4 text-sm text-gray-300">{contact.company || '—'}</td>
+                  <td className="px-4 py-4 text-sm text-gray-300">{contact.title || '—'}</td>
+                  <td className="px-4 py-4 text-sm">{getScoreBadge(contact.apex_score ?? undefined)}</td>
+                  <td className="px-4 py-4 text-sm">{getStatusBadge(contact.enrichment_status)}</td>
+                  <td className="px-4 py-4 text-sm">
+                    <button
+                      onClick={e => handleDeleteContact(contact.id, e)}
+                      className="text-red-500 hover:text-red-700"
+                      title="Delete contact"
+                    >
+                      ✕
+                    </button>
                   </td>
                 </tr>
               ))
@@ -460,19 +176,18 @@ export function ContactsTable({ onAddContact, onImport }: ContactsTableProps) {
         </table>
       </div>
 
-      {/* Footer */}
-      <div style={{ marginTop: 12, padding: '0 4px', color: '#6b7280', fontSize: 13 }}>
-        Showing {filteredContacts.length} of {contacts.length} contacts
-      </div>
-
-      {/* Modal */}
-      {selectedContact && (
-        <ContactDetailModal
-          contact={selectedContact}
-          onClose={() => setSelectedContact(null)}
-          onEnrichComplete={refetch}
-        />
-      )}
+      {/* Modal Component */}
+      <ContactDetailModal
+        contact={selectedContact}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onEnrichComplete={() => {
+          setIsModalOpen(false);
+          loadContacts();
+        }}
+      />
     </div>
-  )
-}
+  );
+};
+
+export default ContactsTable;
