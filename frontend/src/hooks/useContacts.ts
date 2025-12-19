@@ -3,7 +3,7 @@ import type { Contact } from '../types/contact'
 import { fetchContacts, deleteContact, deleteContacts } from '../services/contactsService'
 
 export function useContacts() {
-  const [contacts, setContacts] = useState<Contact[]>([])  // Ensure empty array default
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
@@ -12,12 +12,12 @@ export function useContacts() {
     setError(null)
     try {
       const data = await fetchContacts()
-      // Ensure we always set an array
-      setContacts(Array.isArray(data) ? data : data?.contacts || data?.data || [])
+      // fetchContacts already returns Contact[] - just set it
+      setContacts(data)
     } catch (err) {
       console.error('Load contacts error:', err)
       setError(err instanceof Error ? err : new Error('Failed to load contacts'))
-      setContacts([])  // Reset to empty array on error
+      setContacts([])
     } finally {
       setIsLoading(false)
     }
