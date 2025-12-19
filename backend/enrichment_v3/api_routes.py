@@ -22,10 +22,18 @@ def get_auth():
         raise HTTPException(status_code=500, detail="Auth not configured")
     return Depends(_auth_dependency)
 
-# Supabase client
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Lazy Supabase client initialization
+_supabase_client: Optional[Client] = None
+
+def get_supabase() -> Client:
+    global _supabase_client
+    if _supabase_client is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            raise HTTPException(status_code=500, detail="Supabase not configured")
+        _supabase_client = create_client(url, key)
+    return _supabase_client
 
 # Output directory for enrichment TXT files
 OUTPUT_DIR = os.getenv("ENRICHMENT_OUTPUT_DIR", "/tmp/enrichment_outputs")
@@ -49,7 +57,6 @@ def generate_enrichment_txt(contact: dict, enrichment_data: dict, output_path: s
     filename = f"enrichment_{contact.get('id')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     filepath = os.path.join(output_path, filename)
     
-    # Build the TXT content
     lines = [
         "=" * 60,
         "LATTICEIQ ENRICHMENT REPORT",
@@ -77,7 +84,6 @@ def generate_enrichment_txt(contact: dict, enrichment_data: dict, output_path: s
         "",
     ]
     
-    # Add synthesized profile if available
     if enrichment_data:
         synthesized = enrichment_data.get("synthesized", {})
         
@@ -152,7 +158,6 @@ def generate_enrichment_txt(contact: dict, enrichment_data: dict, output_path: s
         else:
             lines.append("  No objection handlers available")
         
-        # Add raw domain data summary
         lines.extend([
             "",
             "-" * 60,
@@ -170,7 +175,6 @@ def generate_enrichment_txt(contact: dict, enrichment_data: dict, output_path: s
         "=" * 60,
     ])
     
-    # Write to file
     with open(filepath, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
     
@@ -185,7 +189,8 @@ async def enrich_contact(
 ):
     """Enrich a single contact and generate TXT output file"""
     
-    # Fetch contact
+    supabase = get_supabase()
+    
     result = supabase.table("contacts").select("*").eq("id", request.contact_id).eq("user_id", user["sub"]).execute()
     
     if not result.data:
@@ -193,17 +198,14 @@ async def enrich_contact(
     
     contact = result.data[0]
     
-    # Update status to processing
     supabase.table("contacts").update({
         "enrichment_status": "processing"
     }).eq("id", request.contact_id).execute()
     
     try:
-        # Import and run enrichment engine
         from .routes import EnrichmentEngine
         engine = EnrichmentEngine()
         
-        # Run parallel enrichment
         enrichment_result = await engine.enrich(
             name=f"{contact.get('first_name', '')} {contact.get('last_name', '')}",
             email=contact.get("email"),
@@ -213,10 +215,8 @@ async def enrich_contact(
             synthesize=request.synthesize
         )
         
-        # Generate TXT file
         txt_filepath = generate_enrichment_txt(contact, enrichment_result, OUTPUT_DIR)
         
-        # Update contact with enrichment data
         update_data = {
             "enrichment_status": "completed",
             "enrichment_data": enrichment_result,
@@ -224,7 +224,6 @@ async def enrich_contact(
             "enrichment_txt_path": txt_filepath
         }
         
-        # Extract scores if synthesized
         if request.synthesize and "synthesized" in enrichment_result:
             scores = enrichment_result["synthesized"].get("scores", {})
             update_data["apex_score"] = scores.get("apex")
@@ -242,7 +241,6 @@ async def enrich_contact(
         }
         
     except Exception as e:
-        # Update status to failed
         supabase.table("contacts").update({
             "enrichment_status": "failed"
         }).eq("id", request.contact_id).execute()
@@ -256,6 +254,8 @@ async def download_enrichment_txt(
     user: dict = Depends(lambda: _auth_dependency)
 ):
     """Download the enrichment TXT file for a contact"""
+    
+    supabase = get_supabase()
     
     result = supabase.table("contacts").select("enrichment_txt_path, first_name, last_name").eq("id", contact_id).eq("user_id", user["sub"]).execute()
     
@@ -285,11 +285,11 @@ async def enrich_batch(
 ):
     """Batch enrich multiple contacts"""
     
+    supabase = get_supabase()
+    
     if request.contact_ids:
-        # Enrich specific contacts
         result = supabase.table("contacts").select("*").in_("id", request.contact_ids).eq("user_id", user["sub"]).execute()
     else:
-        # Enrich pending contacts up to limit
         result = supabase.table("contacts").select("*").eq("user_id", user["sub"]).eq("enrichment_status", "pending").limit(request.limit).execute()
     
     if not result.data:
@@ -325,6 +325,8 @@ async def get_enrichment_status(
 ):
     """Get enrichment status for a contact"""
     
+    supabase = get_supabase()
+    
     result = supabase.table("contacts").select(
         "enrichment_status, enriched_at, apex_score, enrichment_txt_path"
     ).eq("id", contact_id).eq("user_id", user["sub"]).execute()
@@ -349,6 +351,8 @@ async def get_enrichment_profile(
     user: dict = Depends(lambda: _auth_dependency)
 ):
     """Get full enrichment profile for a contact"""
+    
+    supabase = get_supabase()
     
     result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user["sub"]).execute()
     

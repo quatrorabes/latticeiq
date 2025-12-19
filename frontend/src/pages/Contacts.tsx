@@ -156,4 +156,49 @@ export default function Contacts() {
                     </div>
                   </div>
                 </td>
-                <td className="px-6 py-4 text-gray-300">{contact.company ||
+                <td className="px-6 py-4 text-gray-300">{contact.company || '—'}</td>
+                <td className="px-6 py-4 text-gray-300">{contact.title || '—'}</td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-sm font-medium ${getScoreBadge(contact.apex_score)}`}>
+                    {contact.apex_score ?? '—'}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <span className={`px-2 py-1 rounded text-xs font-medium capitalize ${getStatusBadge(contact.enrichment_status)}`}>
+                    {contact.enrichment_status || 'pending'}
+                  </span>
+                </td>
+                <td className="px-6 py-4">
+                  <button
+                    onClick={(e) => contact.id && handleDeleteContact(contact.id, e)}
+                    className="text-red-400 hover:text-red-300 transition-colors"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {filteredContacts.length === 0 && (
+          <div className="text-center py-12 text-gray-400">
+            {searchQuery ? 'No contacts match your search' : 'No contacts yet'}
+          </div>
+        )}
+      </div>
+
+      <ContactDetailModal
+        contact={selectedContact}
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onEnrichComplete={() => {
+          setIsModalOpen(false);
+          loadContacts();
+        }}
+      />
+    </div>
+  );
+}
