@@ -385,10 +385,11 @@ from .profile_parser import ProfileParser
 @router.post('/parse-profile/{contact_id}')
 async def parse_contact_profile(
     contact_id: int,
-    user: dict = Depends(get_current_user),
-    db = Depends(get_db)
+    user: dict = Depends(get_current_user)
 ) -> dict:
     """Parse enrichment data into structured contact profile."""
+    from .profile_parser import ProfileParser
+    
     userid = extract_user_id(user)
     
     result = supabase.table('contacts').select(
@@ -413,6 +414,7 @@ async def parse_contact_profile(
         'contact_id': contact_id,
         'profile': profile,
     }
+
 
 
 @router.post("/cache/clear")
