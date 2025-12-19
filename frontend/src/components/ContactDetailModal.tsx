@@ -1,226 +1,250 @@
-// Contact Detail Modal with Enrichment Display
-import type { Contact } from '../types/contact'
-import { EnrichButton } from './EnrichButton'
-import { 
-  X, 
-  Mail, 
-  Phone, 
-  Building2, 
-  Briefcase, 
-  Linkedin, 
-  Globe,
-  Target,
-  AlertTriangle,
-  Lightbulb,
-  TrendingUp,
-  FileText
-} from 'lucide-react'
+#!/usr/bin/env python3
+
+// frontend/src/components/ContactDetailModal.tsx
+import React, { useEffect, useState } from 'react';
+import { supabase } from '../lib/supabase';
+
+interface EnrichmentData {
+	apex_score?: number;
+	bant_budget?: string;
+	bant_authority?: string;
+	bant_need?: string;
+	bant_timing?: string;
+	enrichment_status?: string;
+	enrichment_data?: {
+		synthesized?: Record<string, any>;
+		raw_results?: Record<string, any>;
+		queries_executed?: number;
+	};
+	enriched_at?: string;
+}
+
+interface Contact {
+	id: number;
+	firstname: string;
+	lastname: string;
+	email: string;
+	company: string;
+	title: string;
+	apex_score?: number;
+	enrichment_data?: any;
+	enrichment_status?: string;
+}
 
 interface ContactDetailModalProps {
-  contact: Contact;
-  onClose: () => void;
-  onEnrichComplete?: () => void;
+	contact: Contact | null;
+	isOpen: boolean;
+	onClose: () => void;
 }
 
-export function ContactDetailModal({ contact, onClose, onEnrichComplete }: ContactDetailModalProps) {
-  const enrichment = contact.enrichment_data;
-  const isEnriched = contact.enrichment_status === 'completed' && enrichment;
-
-  const ScoreCard = ({ label, score, color }: { label: string; score?: number; color: string }) => (
-    <div className={`p-3 rounded-lg ${color}`}>
-      <p className="text-xs font-medium opacity-80">{label}</p>
-      <p className="text-2xl font-bold">{score ?? '—'}</p>
-    </div>
-  );
-
-  const Section = ({ title, icon: Icon, children }: { title: string; icon: any; children: React.ReactNode }) => (
-    <div className="mb-6">
-      <h4 className="flex items-center gap-2 text-sm font-semibold text-gray-700 mb-2">
-        <Icon className="w-4 h-4" />
-        {title}
-      </h4>
-      <div className="text-gray-600 text-sm leading-relaxed">{children}</div>
-    </div>
-  );
-
-  return (
-    <div className="fixed inset-0 z-50 overflow-y-auto">
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/50 transition-opacity"
-        onClick={onClose}
-      />
-      
-      {/* Modal */}
-      <div className="relative min-h-screen flex items-center justify-center p-4">
-        <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
-          {/* Header */}
-          <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-start justify-between">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">
-                {contact.firstname} {contact.lastname}
-              </h2>
-              <p className="text-gray-500">{contact.title} at {contact.company}</p>
-            </div>
-            <div className="flex items-center gap-3">
-              <EnrichButton
-                contactId={contact.id}
-                enrichmentStatus={contact.enrichment_status || undefined}
-                onEnrichComplete={onEnrichComplete}
-                variant="button"
-              />
-              <button
-                onClick={onClose}
-                className="p-2 rounded-lg hover:bg-gray-100 transition-colors"
-              >
-                <X className="w-5 h-5 text-gray-500" />
-              </button>
-            </div>
-          </div>
-
-          {/* Content */}
-          <div className="p-6 overflow-y-auto max-h-[calc(90vh-80px)]">
-            {/* Contact Info Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-              <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                <Mail className="w-5 h-5 text-gray-400" />
-                <div className="truncate">
-                  <p className="text-xs text-gray-500">Email</p>
-                  <a href={`mailto:${contact.email}`} className="text-sm text-blue-600 hover:underline truncate block">
-                    {contact.email}
-                  </a>
-                </div>
-              </div>
-              {contact.phone && (
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <Phone className="w-5 h-5 text-gray-400" />
-                  <div>
-                    <p className="text-xs text-gray-500">Phone</p>
-                    <a href={`tel:${contact.phone}`} className="text-sm text-blue-600 hover:underline">
-                      {contact.phone}
-                    </a>
-                  </div>
-                </div>
-              )}
-              {contact.linkedin_url && (
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <Linkedin className="w-5 h-5 text-gray-400" />
-                  <div className="truncate">
-                    <p className="text-xs text-gray-500">LinkedIn</p>
-                    <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate block">
-                      Profile
-                    </a>
-                  </div>
-                </div>
-              )}
-              {contact.website && (
-                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <Globe className="w-5 h-5 text-gray-400" />
-                  <div className="truncate">
-                    <p className="text-xs text-gray-500">Website</p>
-                    <a href={contact.website} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-600 hover:underline truncate block">
-                      {new URL(contact.website).hostname}
-                    </a>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Scores */}
-            {isEnriched && (
-              <div className="grid grid-cols-5 gap-3 mb-8">
-                <ScoreCard label="APEX" score={contact.apex_score} color="bg-purple-100 text-purple-800" />
-                <ScoreCard label="MDCP" score={contact.mdcp_score} color="bg-blue-100 text-blue-800" />
-                <ScoreCard label="RSS" score={contact.rss_score} color="bg-green-100 text-green-800" />
-                <ScoreCard label="BANT" score={contact.bant_score} color="bg-yellow-100 text-yellow-800" />
-                <ScoreCard label="SPICE" score={contact.spice_score} color="bg-orange-100 text-orange-800" />
-              </div>
-            )}
-
-            {/* Enrichment Data */}
-            {isEnriched ? (
-              <div className="space-y-6">
-                {/* Executive Summary */}
-                {enrichment.executive_summary && (
-                  <Section title="Executive Summary" icon={FileText}>
-                    <p className="whitespace-pre-wrap">{enrichment.executive_summary}</p>
-                  </Section>
-                )}
-
-                {/* Role & Responsibilities */}
-                {enrichment.role_responsibilities && (
-                  <Section title="Role & Responsibilities" icon={Briefcase}>
-                    <p className="whitespace-pre-wrap">{enrichment.role_responsibilities}</p>
-                  </Section>
-                )}
-
-                {/* Company Intelligence */}
-                {enrichment.company_intelligence && (
-                  <Section title="Company Intelligence" icon={Building2}>
-                    <p className="whitespace-pre-wrap">{enrichment.company_intelligence}</p>
-                  </Section>
-                )}
-
-                {/* Deal Triggers */}
-                {enrichment.deal_triggers && enrichment.deal_triggers.length > 0 && (
-                  <Section title="Deal Triggers" icon={Target}>
-                    <ul className="list-disc list-inside space-y-1">
-                      {enrichment.deal_triggers.map((trigger, i) => (
-                        <li key={i}>{trigger}</li>
-                      ))}
-                    </ul>
-                  </Section>
-                )}
-
-                {/* Objection Handlers */}
-                {enrichment.objection_handlers && enrichment.objection_handlers.length > 0 && (
-                  <Section title="Objection Handlers" icon={AlertTriangle}>
-                    <ul className="list-disc list-inside space-y-1">
-                      {enrichment.objection_handlers.map((handler, i) => (
-                        <li key={i}>{handler}</li>
-                      ))}
-                    </ul>
-                  </Section>
-                )}
-
-                {/* Connection Angles */}
-                {enrichment.connection_angles && enrichment.connection_angles.length > 0 && (
-                  <Section title="Connection Angles" icon={Lightbulb}>
-                    <ul className="list-disc list-inside space-y-1">
-                      {enrichment.connection_angles.map((angle, i) => (
-                        <li key={i}>{angle}</li>
-                      ))}
-                    </ul>
-                  </Section>
-                )}
-
-                {/* Enriched At */}
-                {contact.enriched_at && (
-                  <p className="text-xs text-gray-400 mt-6">
-                    Last enriched: {new Date(contact.enriched_at).toLocaleString()}
-                  </p>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <TrendingUp className="w-8 h-8 text-purple-600" />
-                </div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-2">No Enrichment Data Yet</h3>
-                <p className="text-gray-500 mb-6">
-                  Click "Enrich" to gather sales intelligence from 5 parallel AI queries
-                </p>
-                <EnrichButton
-                  contactId={contact.id}
-                  enrichmentStatus={contact.enrichment_status || undefined}
-                  onEnrichComplete={onEnrichComplete}
-                  variant="button"
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
+	contact,
+	isOpen,
+	onClose,
+}) => {
+	const [enrichmentData, setEnrichmentData] = useState<EnrichmentData | null>(null);
+	const [loading, setLoading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	
+	useEffect(() => {
+		if (isOpen && contact) {
+			fetchEnrichmentData();
+		}
+	}, [isOpen, contact]);
+	
+	const fetchEnrichmentData = async () => {
+		if (!contact) return;
+		
+		setLoading(true);
+		setError(null);
+		
+		try {
+			const { data, error } = await supabase
+				.from('contacts')
+				.select('*')
+				.eq('id', contact.id)
+				.single();
+			
+			if (error) throw error;
+			
+			setEnrichmentData({
+				apex_score: data.apex_score,
+				bant_budget: data.bant_budget,
+				bant_authority: data.bant_authority,
+				bant_need: data.bant_need,
+				bant_timing: data.bant_timing,
+				enrichment_status: data.enrichment_status,
+				enrichment_data: data.enrichment_data,
+				enriched_at: data.enriched_at,
+			});
+		} catch (err) {
+			setError(err instanceof Error ? err.message : 'Failed to fetch enrichment data');
+		} finally {
+			setLoading(false);
+		}
+	};
+	
+	if (!isOpen || !contact) return null;
+	
+	return (
+		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+			<div className="bg-gray-900 rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+				{/* Header */}
+				<div className="sticky top-0 bg-gray-800 border-b border-gray-700 p-6 flex justify-between items-start">
+					<div>
+						<h2 className="text-2xl font-bold text-white">
+							{contact.firstname} {contact.lastname}
+						</h2>
+						<p className="text-gray-400 text-sm mt-1">{contact.email}</p>
+					</div>
+					<button
+						onClick={onClose}
+						className="text-gray-400 hover:text-white text-2xl"
+					>
+						×
+					</button>
+				</div>
+		
+				{/* Content */}
+				<div className="p-6 space-y-6">
+					{/* Basic Info */}
+					<div className="grid grid-cols-2 gap-4 bg-gray-800 p-4 rounded">
+						<div>
+							<label className="text-xs text-gray-400 uppercase">Company</label>
+							<p className="text-white font-semibold">{contact.company || '—'}</p>
+						</div>
+						<div>
+							<label className="text-xs text-gray-400 uppercase">Title</label>
+							<p className="text-white font-semibold">{contact.title || '—'}</p>
+						</div>
+					</div>
+		
+					{loading ? (
+						<div className="text-center py-8">
+							<div className="inline-block animate-spin">⚙️</div>
+							<p className="text-gray-400 mt-2">Loading enrichment data...</p>
+						</div>
+					) : error ? (
+						<div className="bg-red-900 bg-opacity-20 border border-red-500 text-red-200 p-4 rounded">
+							{error}
+						</div>
+					) : enrichmentData ? (
+						<>
+							{/* APEX Score */}
+							{enrichmentData.apex_score !== undefined && (
+								<div className="bg-purple-900 bg-opacity-20 border border-purple-500 p-4 rounded">
+									<h3 className="text-lg font-semibold text-purple-300 mb-2">
+										APEX Score
+									</h3>
+									<div className="text-4xl font-bold text-purple-400">
+										{enrichmentData.apex_score}
+									</div>
+									<p className="text-sm text-gray-400 mt-2">
+										Sales readiness score (0-100)
+									</p>
+								</div>
+							)}
+						
+							{/* BANT Breakdown */}
+							{(enrichmentData.bant_budget ||
+								enrichmentData.bant_authority ||
+								enrichmentData.bant_need ||
+								enrichmentData.bant_timing) && (
+								<div className="bg-blue-900 bg-opacity-20 border border-blue-500 p-4 rounded">
+									<h3 className="text-lg font-semibold text-blue-300 mb-4">
+										BANT Analysis
+									</h3>
+									<div className="grid grid-cols-2 gap-4">
+										<div>
+											<label className="text-sm text-gray-400">Budget</label>
+											<p className="text-white font-semibold">
+												{enrichmentData.bant_budget || '—'}
+											</p>
+										</div>
+										<div>
+											<label className="text-sm text-gray-400">Authority</label>
+											<p className="text-white font-semibold">
+												{enrichmentData.bant_authority || '—'}
+											</p>
+										</div>
+										<div>
+											<label className="text-sm text-gray-400">Need</label>
+											<p className="text-white font-semibold">
+												{enrichmentData.bant_need || '—'}
+											</p>
+										</div>
+										<div>
+											<label className="text-sm text-gray-400">Timing</label>
+											<p className="text-white font-semibold">
+												{enrichmentData.bant_timing || '—'}
+											</p>
+										</div>
+									</div>
+								</div>
+							)}
+						
+							{/* Synthesized Profile */}
+							{enrichmentData.enrichment_data?.synthesized && (
+								<div className="bg-green-900 bg-opacity-20 border border-green-500 p-4 rounded">
+									<h3 className="text-lg font-semibold text-green-300 mb-4">
+										AI-Synthesized Profile
+									</h3>
+									<pre className="bg-gray-800 p-4 rounded text-xs text-gray-300 overflow-x-auto">
+										{JSON.stringify(
+											enrichmentData.enrichment_data.synthesized,
+											null,
+											2
+										)}
+									</pre>
+								</div>
+							)}
+						
+							{/* Raw Query Results */}
+							{enrichmentData.enrichment_data?.raw_results && (
+								<div className="bg-gray-800 border border-gray-600 p-4 rounded">
+									<h3 className="text-lg font-semibold text-gray-200 mb-4">
+										Raw Enrichment Data
+									</h3>
+									<div className="space-y-4">
+										{Object.entries(
+											enrichmentData.enrichment_data.raw_results
+										).map(([domain, result]: [string, any]) => (
+											<div key={domain} className="bg-gray-700 p-3 rounded">
+												<h4 className="font-semibold text-gray-300 text-sm mb-2">
+													{domain}
+												</h4>
+												<p className="text-xs text-gray-400 mb-2">
+													Status: <span className={result.success ? 'text-green-400' : 'text-red-400'}>
+														{result.success ? '✓ Success' : '✗ Failed'}
+													</span>
+													{' | '}
+													Latency: {result.latency_ms}ms
+												</p>
+												<pre className="bg-gray-800 p-2 rounded text-xs text-gray-300 overflow-x-auto max-h-40">
+													{result.content || 'No content'}
+												</pre>
+											</div>
+										))}
+									</div>
+								</div>
+							)}
+						
+							{/* Metadata */}
+							<div className="text-xs text-gray-500 pt-4 border-t border-gray-700">
+								<p>Status: {enrichmentData.enrichment_status}</p>
+								<p>Enriched: {enrichmentData.enriched_at || 'Not enriched'}</p>
+								<p>
+									Queries: {enrichmentData.enrichment_data?.queries_executed || 0}
+								</p>
+							</div>
+						</>
+					) : (
+						<div className="text-center py-8 text-gray-400">
+							No enrichment data available
+						</div>
+					)}
+				</div>
+			</div>
+		</div>
+	);
+};
