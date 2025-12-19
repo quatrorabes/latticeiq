@@ -16,15 +16,7 @@ interface Contact {
   title: string
   apex_score: number
   enrichment_status: string
-}
-
-interface ImportResult {
-  success?: boolean
-  imported?: number
-  filtered?: number
-  duplicates?: number
-  filter_reasons?: Record<string, number>
-  error?: string
+  enrichment_data?: any
 }
 
 function Auth({ onLogin }: { onLogin: () => void }) {
@@ -36,15 +28,11 @@ function Auth({ onLogin }: { onLogin: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    if (isSignUp) {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) setError(error.message)
-      else onLogin()
-    } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) setError(error.message)
-      else onLogin()
-    }
+    const { error } = isSignUp 
+      ? await supabase.auth.signUp({ email, password })
+      : await supabase.auth.signInWithPassword({ email, password })
+    if (error) setError(error.message)
+    else onLogin()
   }
 
   return (
@@ -63,65 +51,261 @@ function Auth({ onLogin }: { onLogin: () => void }) {
   )
 }
 
-function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: () => void, onSuccess: () => void }) {
-  const [importType, setImportType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'csv' | null>(null)
-  const [importing, setImporting] = useState(false)
-  const [result, setResult] = useState<ImportResult | null>(null)
+function ContactProfile({ contact, onClose }: { contact: Contact, onClose: () => void }) {
+  const profile = contact.enrichment_data?.synthesized || {}
   
-  const [hubspotToken, setHubspotToken] = useState('')
-  const [sfInstanceUrl, setSfInstanceUrl] = useState('')
-  const [sfAccessToken, setSfAccessToken] = useState('')
-  const [pipedriveToken, setPipedriveToken] = useState('')
-  const [filterDnc, setFilterDnc] = useState(true)
-  const [maxContacts, setMaxContacts] = useState(50)
+  return (
+    <div className="modal-overlay">
+      <div className="modal profile-modal">
+        <div className="modal-header">
+          <h2>{contact.first_name} {contact.last_name}</h2>
+          <button onClick={onClose} className="close-btn">×</button>
+        </div>
+        
+        <div className="profile-content">
+          <div className="profile-header">
+            <p><strong>{contact.title}</strong> at <strong>{contact.company}</strong></p>
+            <div className="score-badge">APEX: {contact.apex_score || '-'}</div>
+          </div>
 
-  const doImport = async (endpoint: string, body: object) => {
-    setImporting(true)
-    setResult(null)
+          {profile.profile_summary && (
+            <section>
+              <h3>Summary</h3>
+              <p>{profile.profile_summary}</p>
+            </section>
+          )}
+
+          {profile.opening_line && (
+            <section>
+              <h3>🎯 Opening Line</h3>
+              <p className="highlight">{profile.opening_line}</p>
+            </section>
+          )}
+
+          {profile.hook_angle && (
+            <section>
+              <h3>🪝 Best Hook</h3>
+              <p>{profile.hook_angle}</p>
+            </section>
+          )}
+
+          {profile.why_buy_now && (
+            <section>
+              <h3>⏰ Why Now?</h3>
+              <p>{profile.why_buy_now}</p>
+            </section>
+          )}
+
+          {profile.talking_points?.length > 0 && (
+            <section>
+              <h3>💬 Talking Points</h3>
+              <ul>
+                {profile.talking_points.map((p: string, i: number) => <li key={i}>{p}</li>)}
+              </ul>
+            </section>
+          )}
+
+          {profile.likely_objections?.length > 0 && (
+            <section>
+              <h3>🛡️ Objection Handlers</h3>
+              {profile.likely_objections.map((obj: string, i: number) => (
+                <div key={i} className="objection">
+                  <p><strong>"{obj}"</strong></p>
+                  <p className="handler">→ {profile.objection_handlers?.[obj] || 'Handle with care'}</p>
+                </div>
+              ))}
+            </section>
+          )}
+
+          <section className="scores">
+            <h3>BANT Scores</h3>
+            <div className="score-grid">
+              <div>Budget: {profile.bant_budget || '-'}/10</div>
+              <div>Authority: {profile.bant_authority || '-'}/10</div>
+              <div>Need: {profile.bant_need || '-'}/10</div>
+              <div>Timing: {profile.bant_timing || '-'}/10</div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Dashboard({ token, onLogout }: { token: string, onLogout: () => void }) {
+  const [contacts, setContacts] = useState<Contact[]>([])
+  const [loading, setLoading] = useState(true)
+  const [enriching, setEnriching] = useState<number | null>(null)
+  const [batchEnriching, setBatchEnriching] = useState(false)
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
+  const [showImport, setShowImport] = useState(false)
+
+  const fetchContacts = () => {
+    fetch(`${API_URL}/api/contacts`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    .then(res => res.json())
+    .then(data => {
+      setContacts(data.contacts || [])
+      setLoading(false)
+    })
+  }
+
+  useEffect(() => { fetchContacts() }, [token])
+
+  const enrichContact = async (contactId: number) => {
+    setEnriching(contactId)
     try {
-      const response = await fetch(`${API_URL}${endpoint}`, {
+      const response = await fetch(`${API_URL}/api/v3/enrichment/enrich`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
+        body: JSON.stringify({ contact_id: contactId, synthesize: true })
+      })
+      const data = await response.json()
+      if (data.success) {
+        fetchContacts()
+      } else {
+        alert('Enrichment failed: ' + (data.detail || 'Unknown error'))
+      }
+    } catch (err: any) {
+      alert('Enrichment error: ' + err.message)
+    }
+    setEnriching(null)
+  }
+
+  const enrichBatch = async () => {
+    setBatchEnriching(true)
+    try {
+      const response = await fetch(`${API_URL}/api/v3/enrichment/enrich/batch`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ limit: 10, synthesize: true })
+      })
+      const data = await response.json()
+      if (data.success) {
+        alert(`Enriched ${data.enriched} contacts, ${data.failed} failed`)
+        fetchContacts()
+      }
+    } catch (err: any) {
+      alert('Batch enrichment error: ' + err.message)
+    }
+    setBatchEnriching(false)
+  }
+
+  const pendingCount = contacts.filter(c => c.enrichment_status === 'pending').length
+
+  if (loading) return <div className="loading">Loading...</div>
+
+  return (
+    <div className="dashboard">
+      <header>
+        <h1>LatticeIQ</h1>
+        <div className="header-actions">
+          {pendingCount > 0 && (
+            <button onClick={enrichBatch} disabled={batchEnriching} className="enrich-batch-btn">
+              {batchEnriching ? 'Enriching...' : `Enrich ${Math.min(pendingCount, 10)} Pending`}
+            </button>
+          )}
+          <button onClick={() => setShowImport(true)} className="import-btn">Import</button>
+          <button onClick={onLogout} className="logout-btn">Log Out</button>
+        </div>
+      </header>
+      
+      <div className="stats">
+        <span>Total: {contacts.length}</span>
+        <span>Enriched: {contacts.filter(c => c.enrichment_status === 'enriched').length}</span>
+        <span>Pending: {pendingCount}</span>
+      </div>
+      
+      {contacts.length === 0 ? (
+        <div className="empty-state">
+          <p>No contacts yet.</p>
+          <button onClick={() => setShowImport(true)}>Import from CRM</button>
+        </div>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Company</th>
+              <th>Title</th>
+              <th>Status</th>
+              <th>APEX</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {contacts.map(c => (
+              <tr key={c.id} className={c.enrichment_status === 'enriched' ? 'enriched' : ''}>
+                <td>{c.first_name} {c.last_name}</td>
+                <td>{c.company}</td>
+                <td>{c.title}</td>
+                <td>
+                  <span className={`status-badge ${c.enrichment_status}`}>
+                    {c.enrichment_status || 'pending'}
+                  </span>
+                </td>
+                <td className="apex-score">{c.apex_score || '-'}</td>
+                <td className="actions">
+                  {c.enrichment_status === 'enriched' ? (
+                    <button onClick={() => setSelectedContact(c)} className="view-btn">
+                      View Profile
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={() => enrichContact(c.id)} 
+                      disabled={enriching === c.id}
+                      className="enrich-btn"
+                    >
+                      {enriching === c.id ? '⏳' : '🔍 Enrich'}
+                    </button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {selectedContact && (
+        <ContactProfile contact={selectedContact} onClose={() => setSelectedContact(null)} />
+      )}
+
+      {showImport && (
+        <ImportModal token={token} onClose={() => setShowImport(false)} onSuccess={fetchContacts} />
+      )}
+    </div>
+  )
+}
+
+function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: () => void, onSuccess: () => void }) {
+  const [importType, setImportType] = useState<'hubspot' | 'csv' | null>(null)
+  const [importing, setImporting] = useState(false)
+  const [result, setResult] = useState<any>(null)
+  const [hubspotToken, setHubspotToken] = useState('')
+  const [maxContacts, setMaxContacts] = useState(50)
+
+  const doImport = async (endpoint: string, body: object) => {
+    setImporting(true)
+    try {
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
       })
       const data = await response.json()
-      if (!response.ok) throw new Error(data.detail || 'Import failed')
       setResult(data)
       if (data.success && data.imported > 0) onSuccess()
     } catch (err: any) {
       setResult({ error: err.message })
     }
     setImporting(false)
-  }
-
-  const handleHubSpot = () => doImport('/api/import/hubspot', {
-    access_token: hubspotToken,
-    max_contacts: maxContacts,
-    filter_dnc: filterDnc
-  })
-
-  const handleSalesforce = () => doImport('/api/import/salesforce', {
-    instance_url: sfInstanceUrl,
-    access_token: sfAccessToken,
-    max_contacts: maxContacts,
-    filter_dnc: filterDnc
-  })
-
-  const handlePipedrive = () => doImport('/api/import/pipedrive', {
-    api_token: pipedriveToken,
-    max_contacts: maxContacts,
-    filter_dnc: filterDnc
-  })
-
-  const handleCSV = async (file: File) => {
-    const text = await file.text()
-    doImport('/api/import/csv', {
-      csv_content: text,
-      filter_dnc: filterDnc
-    })
   }
 
   return (
@@ -135,268 +319,58 @@ function ImportModal({ token, onClose, onSuccess }: { token: string, onClose: ()
         {!importType && (
           <div className="import-options">
             <button onClick={() => setImportType('hubspot')} className="import-btn hubspot">HubSpot</button>
-            <button onClick={() => setImportType('salesforce')} className="import-btn salesforce">Salesforce</button>
-            <button onClick={() => setImportType('pipedrive')} className="import-btn pipedrive">Pipedrive</button>
             <button onClick={() => setImportType('csv')} className="import-btn csv">CSV Upload</button>
           </div>
         )}
 
-        {importType && (
+        {importType === 'hubspot' && (
           <div className="import-form">
-            <button onClick={() => { setImportType(null); setResult(null) }} className="back-btn">← Back</button>
+            <button onClick={() => setImportType(null)} className="back-btn">← Back</button>
+            <h3>HubSpot Import</h3>
+            <input
+              type="password"
+              placeholder="HubSpot Private App Access Token"
+              value={hubspotToken}
+              onChange={e => setHubspotToken(e.target.value)}
+            />
+            <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
+              <option value={10}>10 contacts</option>
+              <option value={50}>50 contacts</option>
+              <option value={100}>100 contacts</option>
+            </select>
+            <button onClick={() => doImport('/api/import/hubspot', { access_token: hubspotToken, max_contacts: maxContacts })} disabled={importing || !hubspotToken}>
+              {importing ? 'Importing...' : 'Import'}
+            </button>
+          </div>
+        )}
 
-            <label className="filter-toggle">
-              <input type="checkbox" checked={filterDnc} onChange={e => setFilterDnc(e.target.checked)} />
-              Filter out unqualified/unsubscribed/DNC contacts
-            </label>
-
-            {importType === 'hubspot' && (
-              <div>
-                <h3>HubSpot Import</h3>
-                <input
-                  type="password"
-                  placeholder="HubSpot Private App Access Token"
-                  value={hubspotToken}
-                  onChange={e => setHubspotToken(e.target.value)}
-                />
-                <p className="hint">Get from HubSpot → Settings → Integrations → Private Apps</p>
-                <div className="max-contacts">
-                  <label>Max contacts: </label>
-                  <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
-                    <option value={10}>10 (test)</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={250}>250</option>
-                    <option value={500}>500</option>
-                  </select>
-                </div>
-                <button onClick={handleHubSpot} disabled={importing || !hubspotToken}>
-                  {importing ? 'Importing...' : `Import ${maxContacts} from HubSpot`}
-                </button>
-              </div>
-            )}
-
-            {importType === 'salesforce' && (
-              <div>
-                <h3>Salesforce Import</h3>
-                <input
-                  type="text"
-                  placeholder="Instance URL (e.g., https://yourorg.salesforce.com)"
-                  value={sfInstanceUrl}
-                  onChange={e => setSfInstanceUrl(e.target.value)}
-                />
-                <input
-                  type="password"
-                  placeholder="Access Token"
-                  value={sfAccessToken}
-                  onChange={e => setSfAccessToken(e.target.value)}
-                />
-                <p className="hint">Use OAuth or Connected App to get access token</p>
-                <div className="max-contacts">
-                  <label>Max contacts: </label>
-                  <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
-                    <option value={10}>10 (test)</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={250}>250</option>
-                    <option value={500}>500</option>
-                  </select>
-                </div>
-                <button onClick={handleSalesforce} disabled={importing || !sfInstanceUrl || !sfAccessToken}>
-                  {importing ? 'Importing...' : `Import ${maxContacts} from Salesforce`}
-                </button>
-              </div>
-            )}
-
-            {importType === 'pipedrive' && (
-              <div>
-                <h3>Pipedrive Import</h3>
-                <input
-                  type="password"
-                  placeholder="Pipedrive API Token"
-                  value={pipedriveToken}
-                  onChange={e => setPipedriveToken(e.target.value)}
-                />
-                <p className="hint">Get from Pipedrive → Settings → Personal preferences → API</p>
-                <div className="max-contacts">
-                  <label>Max contacts: </label>
-                  <select value={maxContacts} onChange={e => setMaxContacts(Number(e.target.value))}>
-                    <option value={10}>10 (test)</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={250}>250</option>
-                    <option value={500}>500</option>
-                  </select>
-                </div>
-                <button onClick={handlePipedrive} disabled={importing || !pipedriveToken}>
-                  {importing ? 'Importing...' : `Import ${maxContacts} from Pipedrive`}
-                </button>
-              </div>
-            )}
-
-            {importType === 'csv' && (
-              <div>
-                <h3>CSV Upload</h3>
-                <input
-                  type="file"
-                  accept=".csv"
-                  onChange={e => e.target.files?.[0] && handleCSV(e.target.files[0])}
-                  disabled={importing}
-                />
-                <p className="hint">Auto-maps columns: first name, last name, email, company, title, phone, linkedin</p>
-              </div>
-            )}
+        {importType === 'csv' && (
+          <div className="import-form">
+            <button onClick={() => setImportType(null)} className="back-btn">← Back</button>
+            <h3>CSV Upload</h3>
+            <input
+              type="file"
+              accept=".csv"
+              onChange={e => {
+                const file = e.target.files?.[0]
+                if (file) {
+                  file.text().then(text => doImport('/api/import/csv', { csv_content: text }))
+                }
+              }}
+            />
           </div>
         )}
 
         {result && (
           <div className={`import-result ${result.error ? 'error' : 'success'}`}>
             {result.success ? (
-              <div>
-                <p>✅ <strong>{result.imported}</strong> contacts imported</p>
-                <p>🚫 <strong>{result.filtered}</strong> filtered (DNC/invalid)</p>
-                <p>⚠️ <strong>{result.duplicates}</strong> duplicates skipped</p>
-              </div>
+              <p>✅ Imported {result.imported} contacts</p>
             ) : (
-              <p>❌ {result.error}</p>
+              <p>❌ {result.error || result.detail}</p>
             )}
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-function AddContactModal({ token, onClose, onSuccess }: { token: string, onClose: () => void, onSuccess: () => void }) {
-  const [form, setForm] = useState({
-    first_name: '', last_name: '', email: '', phone: '', company: '', title: '', linkedin_url: ''
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setSaving(true)
-    try {
-      const response = await fetch(`${API_URL}/api/contacts`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(form)
-      })
-      if (!response.ok) throw new Error('Failed to create contact')
-      onSuccess()
-      onClose()
-    } catch (err: any) {
-      setError(err.message)
-    }
-    setSaving(false)
-  }
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal">
-        <div className="modal-header">
-          <h2>Add Contact</h2>
-          <button onClick={onClose} className="close-btn">×</button>
-        </div>
-        <form onSubmit={handleSubmit} className="contact-form">
-          <div className="form-row">
-            <input placeholder="First Name" value={form.first_name} onChange={e => setForm({...form, first_name: e.target.value})} />
-            <input placeholder="Last Name" value={form.last_name} onChange={e => setForm({...form, last_name: e.target.value})} />
-          </div>
-          <input type="email" placeholder="Email *" value={form.email} onChange={e => setForm({...form, email: e.target.value})} required />
-          <input placeholder="Phone" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
-          <input placeholder="Company" value={form.company} onChange={e => setForm({...form, company: e.target.value})} />
-          <input placeholder="Title" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
-          <input placeholder="LinkedIn URL" value={form.linkedin_url} onChange={e => setForm({...form, linkedin_url: e.target.value})} />
-          {error && <p className="error">{error}</p>}
-          <button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Add Contact'}</button>
-        </form>
-      </div>
-    </div>
-  )
-}
-
-function Dashboard({ token, onLogout }: { token: string, onLogout: () => void }) {
-  const [contacts, setContacts] = useState<Contact[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showImport, setShowImport] = useState(false)
-  const [showAddContact, setShowAddContact] = useState(false)
-
-  const fetchContacts = () => {
-    fetch(`${API_URL}/api/contacts`, {
-      headers: { 'Authorization': `Bearer ${token}` }
-    })
-    .then(res => res.json())
-    .then(data => {
-      setContacts(data.contacts || [])
-      setLoading(false)
-    })
-    .catch(() => setLoading(false))
-  }
-
-  useEffect(() => { fetchContacts() }, [token])
-
-  if (loading) return <div className="loading">Loading...</div>
-
-  return (
-    <div className="dashboard">
-      <header>
-        <h1>LatticeIQ</h1>
-        <div className="header-actions">
-          <button onClick={() => setShowAddContact(true)} className="add-btn">+ Add Contact</button>
-          <button onClick={() => setShowImport(true)} className="import-btn">Import</button>
-          <button onClick={onLogout} className="logout-btn">Log Out</button>
-        </div>
-      </header>
-      
-      <h2>Your Contacts ({contacts.length})</h2>
-      
-      {contacts.length === 0 ? (
-        <div className="empty-state">
-          <p>No contacts yet.</p>
-          <div className="empty-actions">
-            <button onClick={() => setShowAddContact(true)}>Add Contact</button>
-            <button onClick={() => setShowImport(true)}>Import from CRM</button>
-          </div>
-        </div>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Company</th>
-              <th>Title</th>
-              <th>Email</th>
-              <th>Status</th>
-              <th>Score</th>
-            </tr>
-          </thead>
-          <tbody>
-            {contacts.map(c => (
-              <tr key={c.id}>
-                <td>{c.first_name} {c.last_name}</td>
-                <td>{c.company}</td>
-                <td>{c.title}</td>
-                <td>{c.email}</td>
-                <td>{c.enrichment_status || 'pending'}</td>
-                <td>{c.apex_score || '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {showImport && (
-        <ImportModal token={token} onClose={() => setShowImport(false)} onSuccess={fetchContacts} />
-      )}
-
-      {showAddContact && (
-        <AddContactModal token={token} onClose={() => setShowAddContact(false)} onSuccess={fetchContacts} />
-      )}
     </div>
   )
 }
@@ -410,9 +384,7 @@ export default function App() {
       setSession(data.session)
       setLoading(false)
     })
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session)
-    })
+    supabase.auth.onAuthStateChange((_event, session) => setSession(session))
   }, [])
 
   if (loading) return <div className="loading">Loading...</div>
