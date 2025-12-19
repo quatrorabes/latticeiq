@@ -1,6 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import create_client
 from typing import List, Dict, Optional, Tuple
@@ -30,61 +29,45 @@ supabase = create_client(
 )
 
 # ============= AUTH =============
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET") or os.getenv("SUPABASE_KEY")
+def _get_bearer_token(request: Request) -> str:
+    auth = request.headers.get("Authorization") or ""
+    if not auth.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+    return auth.split(" ", 1)[1].strip()
 
 async def get_current_user(request: Request) -> dict:
-    """Extract and validate JWT from Authorization header."""
-    import logging
-    logger = logging.getLogger(__name__)
-    
-    auth_header = request.headers.get("Authorization")
-    logger.info(f"Auth header present: {bool(auth_header)}")
-    
-    if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid authorization header")
-        
-    token = auth_header.split(" ")[1]
-    logger.info(f"Token length: {len(token)}")
-    
-    jwt_secret = os.getenv("SUPABASE_JWT_SECRET")
-    logger.info(f"JWT secret present: {bool(jwt_secret)}, length: {len(jwt_secret) if jwt_secret else 0}")
+    token = _get_bearer_token(request)
+    jwt_secret = (os.getenv("SUPABASE_JWT_SECRET") or "").strip()
     
     if not jwt_secret:
         raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET not configured")
-        
+    
     try:
         payload = jwt.decode(
             token,
             jwt_secret,
             algorithms=["HS256"],
-            audience="authenticated"
+            options={"verify_aud": False},
         )
-        logger.info(f"JWT decoded successfully. User: {payload.get('sub')}")
+        if not payload.get("sub"):
+            raise HTTPException(status_code=401, detail="Token missing sub")
         return payload
-    
     except JWTError as e:
-        logger.error(f"JWT decode error: {str(e)}")
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-        
 
 def extract_user_id(user: dict) -> str:
     """Safely extract and validate user_id (UUID) from JWT payload."""
     user_id = user.get("sub") or user.get("id") or user.get("user_id")
-    
     if not user_id:
         raise HTTPException(status_code=401, detail="User ID not found in token")
-    
     try:
         validated = uuid.UUID(str(user_id))
         return str(validated)
     except (ValueError, TypeError):
         raise HTTPException(status_code=401, detail="Invalid user ID format")
 
-
 # ============= CONTACT VALIDATOR =============
 class ContactValidator:
-    """Validates and filters contacts during import."""
-    
     DNC_STATUSES = {
         'unqualified', 'bad timing', 'do not contact', 'dnc',
         'unsubscribed', 'opted out', 'optedout', 'opt-out', 'opt out',
@@ -113,19 +96,16 @@ class ContactValidator:
     def validate(self, contact: Dict, raw: Dict = None) -> Tuple[bool, str]:
         self.stats['total'] += 1
         raw = raw or {}
-        
         email = (contact.get('email') or '').strip().lower()
         
         if self.require_email:
             if not email:
                 self.stats['filtered_no_email'] += 1
                 return False, 'missing_email'
-            
             for pattern in self.INVALID_EMAIL_PATTERNS:
                 if re.match(pattern, email, re.IGNORECASE):
                     self.stats['filtered_invalid_email'] += 1
                     return False, 'invalid_email'
-            
             if not re.match(r'^[^@]+@[^@]+\.[^@]+$', email):
                 self.stats['filtered_invalid_email'] += 1
                 return False, 'invalid_email_format'
@@ -136,23 +116,18 @@ class ContactValidator:
             if lead_status in self.DNC_STATUSES:
                 self.stats['filtered_dnc'] += 1
                 return False, f'dnc:{lead_status}'
-            
             if props.get('hs_email_optout') in ['true', True, '1']:
                 self.stats['filtered_dnc'] += 1
                 return False, 'hs_email_optout'
-            
             if raw.get('HasOptedOutOfEmail') in [True, 'true']:
                 self.stats['filtered_dnc'] += 1
                 return False, 'sf_opted_out'
-            
             if raw.get('DoNotCall') in [True, 'true']:
                 self.stats['filtered_dnc'] += 1
                 return False, 'sf_do_not_call'
-            
             if raw.get('active_flag') == False:
                 self.stats['filtered_dnc'] += 1
                 return False, 'pipedrive_inactive'
-            
             status = str(contact.get('status') or '').lower()
             if status in self.DNC_STATUSES:
                 self.stats['filtered_dnc'] += 1
@@ -160,7 +135,6 @@ class ContactValidator:
         
         self.stats['passed'] += 1
         return True, 'valid'
-
 
 # ============= CRM IMPORTERS =============
 class HubSpotImporter:
@@ -176,7 +150,6 @@ class HubSpotImporter:
     async def fetch_all(self, max_contacts: int = 500) -> List[Dict]:
         all_contacts = []
         after = None
-        
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(all_contacts) < max_contacts:
                 url = f"{self.BASE_URL}/crm/v3/objects/contacts"
@@ -186,21 +159,17 @@ class HubSpotImporter:
                 }
                 if after:
                     params['after'] = after
-                
                 response = await client.get(url, headers=self._headers(), params=params)
                 if response.status_code != 200:
                     raise Exception(f"HubSpot API error: {response.status_code} - {response.text}")
-                
                 data = response.json()
                 contacts = data.get('results', [])
                 if not contacts:
                     break
-                
                 all_contacts.extend(contacts)
                 after = data.get('paging', {}).get('next', {}).get('after')
                 if not after:
                     break
-        
         return all_contacts[:max_contacts]
     
     def normalize(self, raw: Dict) -> Dict:
@@ -218,7 +187,6 @@ class HubSpotImporter:
             'enrichment_status': 'pending'
         }
 
-
 class SalesforceImporter:
     def __init__(self, instance_url: str, access_token: str, filter_dnc: bool = True):
         self.instance_url = instance_url.rstrip('/')
@@ -232,13 +200,9 @@ class SalesforceImporter:
         query = f"""
             SELECT Id, FirstName, LastName, Email, Phone, Account.Name, Title,
                    HasOptedOutOfEmail, DoNotCall
-            FROM Contact
-            WHERE Email != null
-            ORDER BY CreatedDate DESC
-            LIMIT {max_contacts}
+            FROM Contact WHERE Email != null ORDER BY CreatedDate DESC LIMIT {max_contacts}
         """
         url = f"{self.instance_url}/services/data/v58.0/query"
-        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(url, headers=self._headers(), params={'q': query})
             if response.status_code != 200:
@@ -258,7 +222,6 @@ class SalesforceImporter:
             'enrichment_status': 'pending'
         }
 
-
 class PipedriveImporter:
     BASE_URL = "https://api.pipedrive.com/v1"
     
@@ -269,30 +232,24 @@ class PipedriveImporter:
     async def fetch_all(self, max_contacts: int = 500) -> List[Dict]:
         all_contacts = []
         start = 0
-        
         async with httpx.AsyncClient(timeout=30.0) as client:
             while len(all_contacts) < max_contacts:
                 url = f"{self.BASE_URL}/persons"
                 params = {'api_token': self.api_token, 'start': start, 'limit': 500}
-                
                 response = await client.get(url, params=params)
                 if response.status_code != 200:
                     raise Exception(f"Pipedrive API error: {response.status_code}")
-                
                 data = response.json()
                 if not data.get('success'):
                     break
-                
                 contacts = data.get('data') or []
                 if not contacts:
                     break
-                
                 all_contacts.extend(contacts)
                 pagination = data.get('additional_data', {}).get('pagination', {})
                 if not pagination.get('more_items_in_collection'):
                     break
                 start = pagination.get('next_start', start + 500)
-        
         return all_contacts[:max_contacts]
     
     def normalize(self, raw: Dict) -> Dict:
@@ -302,18 +259,15 @@ class PipedriveImporter:
             primary_email = emails[0].get('value', '')
         elif isinstance(emails, str):
             primary_email = emails
-        
         phones = raw.get('phone', [])
         primary_phone = ''
         if phones and isinstance(phones, list) and len(phones) > 0:
             primary_phone = phones[0].get('value', '')
         elif isinstance(phones, str):
             primary_phone = phones
-        
         org = raw.get('org_name') or ''
         if isinstance(raw.get('org_id'), dict):
             org = raw['org_id'].get('name', org)
-        
         return {
             'firstname': raw.get('first_name') or '',
             'lastname': raw.get('last_name') or '',
@@ -324,7 +278,6 @@ class PipedriveImporter:
             'linkedin_url': '',
             'enrichment_status': 'pending'
         }
-
 
 # ============= REQUEST MODELS =============
 class HubSpotImportRequest(BaseModel):
@@ -358,12 +311,10 @@ class ContactCreate(BaseModel):
     website: str = ''
     vertical: str = ''
 
-
 # ============= HEALTH CHECK =============
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
 
 # ============= CONTACT CRUD =============
 @app.get("/api/contacts")
@@ -372,7 +323,6 @@ def get_contacts(user: dict = Depends(get_current_user)):
     result = supabase.table("contacts").select("*").eq("user_id", user_id).order("created_at", desc=True).execute()
     return result.data
 
-
 @app.get("/api/contacts/{contact_id}")
 def get_contact(contact_id: int, user: dict = Depends(get_current_user)):
     user_id = extract_user_id(user)
@@ -380,7 +330,6 @@ def get_contact(contact_id: int, user: dict = Depends(get_current_user)):
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
     return result.data[0]
-
 
 @app.post("/api/contacts")
 def create_contact(contact: ContactCreate, user: dict = Depends(get_current_user)):
@@ -391,17 +340,14 @@ def create_contact(contact: ContactCreate, user: dict = Depends(get_current_user
     result = supabase.table("contacts").insert(data).execute()
     return result.data[0]
 
-
 @app.delete("/api/contacts/{contact_id}")
 def delete_contact(contact_id: int, user: dict = Depends(get_current_user)):
     user_id = extract_user_id(user)
     supabase.table("contacts").delete().eq("id", contact_id).eq("user_id", user_id).execute()
     return {"deleted": True}
 
-
 # ============= IMPORT HELPERS =============
 async def process_import(importer, raw_contacts: List[Dict], user_id: str) -> Dict:
-    """Common import processing logic."""
     imported = 0
     filtered = 0
     duplicates = 0
@@ -410,23 +356,15 @@ async def process_import(importer, raw_contacts: List[Dict], user_id: str) -> Di
     for raw in raw_contacts:
         normalized = importer.normalize(raw)
         is_valid, reason = importer.validator.validate(normalized, raw)
-        
         if not is_valid:
             filtered += 1
             filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
             continue
-        
-        # Check duplicate
         if normalized.get('email'):
-            existing = supabase.table('contacts').select('id').eq(
-                'user_id', user_id
-            ).eq('email', normalized['email']).execute()
-            
+            existing = supabase.table('contacts').select('id').eq('user_id', user_id).eq('email', normalized['email']).execute()
             if existing.data:
                 duplicates += 1
                 continue
-        
-        # Insert
         supabase.table('contacts').insert({**normalized, 'user_id': user_id}).execute()
         imported += 1
     
@@ -439,11 +377,9 @@ async def process_import(importer, raw_contacts: List[Dict], user_id: str) -> Di
         'stats': importer.validator.stats
     }
 
-
 # ============= IMPORT ENDPOINTS =============
 @app.post("/api/import/hubspot")
 async def import_hubspot(request: HubSpotImportRequest, user: dict = Depends(get_current_user)):
-    """Import contacts from HubSpot with DNC filtering."""
     try:
         user_id = extract_user_id(user)
         importer = HubSpotImporter(request.access_token, filter_dnc=request.filter_dnc)
@@ -452,10 +388,8 @@ async def import_hubspot(request: HubSpotImportRequest, user: dict = Depends(get
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.post("/api/import/salesforce")
 async def import_salesforce(request: SalesforceImportRequest, user: dict = Depends(get_current_user)):
-    """Import contacts from Salesforce with DNC filtering."""
     try:
         user_id = extract_user_id(user)
         importer = SalesforceImporter(request.instance_url, request.access_token, filter_dnc=request.filter_dnc)
@@ -464,10 +398,8 @@ async def import_salesforce(request: SalesforceImportRequest, user: dict = Depen
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.post("/api/import/pipedrive")
 async def import_pipedrive(request: PipedriveImportRequest, user: dict = Depends(get_current_user)):
-    """Import contacts from Pipedrive with DNC filtering."""
     try:
         user_id = extract_user_id(user)
         importer = PipedriveImporter(request.api_token, filter_dnc=request.filter_dnc)
@@ -476,10 +408,8 @@ async def import_pipedrive(request: PipedriveImportRequest, user: dict = Depends
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-
 @app.post("/api/import/csv")
 async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current_user)):
-    """Import contacts from CSV with DNC filtering."""
     FIELD_MAP = {
         'first name': 'firstname', 'firstname': 'firstname', 'first': 'firstname',
         'last name': 'lastname', 'lastname': 'lastname', 'last': 'lastname',
@@ -491,7 +421,6 @@ async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current
         'linkedin': 'linkedin_url', 'linkedin url': 'linkedin_url',
         'status': 'status', 'lead status': 'status'
     }
-    
     user_id = extract_user_id(user)
     validator = ContactValidator(filter_dnc=request.filter_dnc)
     
@@ -507,36 +436,25 @@ async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current
     
     for row in reader:
         contact = {'enrichment_status': 'pending'}
-        
         for csv_field, value in row.items():
             if value:
                 key = csv_field.lower().strip()
                 if key in FIELD_MAP:
                     contact[FIELD_MAP[key]] = value.strip()
-        
-        # Handle full name split
         if contact.get('name') and not contact.get('firstname'):
             parts = contact['name'].split(' ', 1)
             contact['firstname'] = parts[0]
             contact['lastname'] = parts[1] if len(parts) > 1 else ''
-        
         is_valid, reason = validator.validate(contact, row)
         if not is_valid:
             filtered += 1
             filter_reasons[reason] = filter_reasons.get(reason, 0) + 1
             continue
-        
-        # Check duplicate
         if contact.get('email'):
-            existing = supabase.table('contacts').select('id').eq(
-                'user_id', user_id
-            ).eq('email', contact['email']).execute()
-            
+            existing = supabase.table('contacts').select('id').eq('user_id', user_id).eq('email', contact['email']).execute()
             if existing.data:
                 duplicates += 1
                 continue
-        
-        # Insert
         supabase.table('contacts').insert({**contact, 'user_id': user_id}).execute()
         imported += 1
     
@@ -549,13 +467,11 @@ async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current
         'stats': validator.stats
     }
 
-
 # ============= ENRICHMENT V3 ROUTER =============
 try:
     from enrichment_v3.api_routes import router as enrichment_v3_router, set_auth_dependency
     set_auth_dependency(get_current_user)
     app.include_router(enrichment_v3_router)
-    print("✓ Enrichment V3 (Parallel) routes registered")
+    print("✓ Enrichment V3 routes registered")
 except ImportError as e:
     print(f"⚠ Enrichment V3 not available: {e}")
-    
