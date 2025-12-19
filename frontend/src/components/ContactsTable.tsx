@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react';
 import { useContacts } from '../hooks/useContacts';
 import { EnrichButton } from './EnrichButton';
 import { ContactDetailModal } from './ContactDetailModal';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { 
   Search, 
   ChevronUp, 

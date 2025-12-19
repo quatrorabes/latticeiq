@@ -1,6 +1,6 @@
 // Contact Detail Modal with Enrichment Display
 import { Fragment } from 'react';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { EnrichButton } from './EnrichButton';
 import { 
   X, 

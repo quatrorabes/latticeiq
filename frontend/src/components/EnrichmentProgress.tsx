@@ -1,5 +1,5 @@
 // Enrichment Progress Display
-import { EnrichmentStatus } from '../services/enrichmentService';
+import type { EnrichmentStatus } from '../services/enrichmentService';
 import { CheckCircle, Circle, Loader2 } from 'lucide-react';
 
 interface EnrichmentProgressProps {

@@ -1,6 +1,6 @@
 // Contacts API Service
 import { supabase } from '../lib/supabase';
-import { Contact, ContactFormData } from '../types/contact';
+import type { Contact, ContactFormData } from '../types/contact';
 
 const API_URL = import.meta.env.VITE_API_URL;
 

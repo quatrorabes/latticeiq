@@ -1,6 +1,6 @@
 // Contacts Hook
 import { useState, useEffect, useCallback } from 'react';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { fetchContacts, deleteContact, deleteContacts } from '../services/contactsService';
 
 export function useContacts() {
