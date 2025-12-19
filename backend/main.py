@@ -469,9 +469,9 @@ async def import_csv(request: CSVImportRequest, user: dict = Depends(get_current
 
 # ============= ENRICHMENT V3 ROUTER =============
 try:
-    from enrichment_v3.api_routes import router as enrichment_v3_router, set_auth_dependency
-    set_auth_dependency(get_current_user)
+    from enrichment_v3.api_routes import router as enrichment_v3_router
     app.include_router(enrichment_v3_router)
     print("✓ Enrichment V3 routes registered")
 except ImportError as e:
     print(f"⚠ Enrichment V3 not available: {e}")
+    
