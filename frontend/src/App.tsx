@@ -3,15 +3,12 @@ import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabaseClient';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
-
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import Contacts from './pages/Contacts';
 import Dashboard from './pages/Dashboard';
 import Sidebar from './components/Sidebar';
 import Loader from './components/Loader';
-import ContactsTable from './components/ContactsTable';
-
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -44,7 +41,6 @@ function App() {
     );
   }
 
-  // Not authenticated
   if (!session) {
     return (
       <Router>
@@ -59,7 +55,6 @@ function App() {
     );
   }
 
-  // Authenticated
   return (
     <Router>
       <div className="min-h-screen bg-gray-950">

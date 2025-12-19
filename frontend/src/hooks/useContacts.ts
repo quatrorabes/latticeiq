@@ -1,26 +1,17 @@
 // frontend/src/hooks/useContacts.ts
 import { useState, useEffect, useCallback } from 'react';
-import type { Contact } from '../types/contact';
 import { getContacts, deleteContact, deleteContacts } from '../services/contactsService';
+import type { Contact } from '../types/contact';
 
-interface UseContactsReturn {
-  contacts: Contact[];
-  loading: boolean;
-  error: string | null;
-  refresh: () => Promise<void>;
-  removeContact: (id: number) => Promise<void>;
-  removeContacts: (ids: number[]) => Promise<void>;
-}
-
-export function useContacts(): UseContactsReturn {
+export function useContacts() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const loadContacts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
       const data = await getContacts();
       setContacts(data);
     } catch (err) {
@@ -34,23 +25,31 @@ export function useContacts(): UseContactsReturn {
     loadContacts();
   }, [loadContacts]);
 
-  const removeContact = useCallback(async (id: number) => {
-    await deleteContact(id);
-    setContacts(prev => prev.filter(c => c.id !== id));
-  }, []);
+  const removeContact = async (id: number) => {
+    try {
+      await deleteContact(id);
+      setContacts(prev => prev.filter(c => c.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete contact');
+    }
+  };
 
-  const removeContacts = useCallback(async (ids: number[]) => {
-    await deleteContacts(ids);
-    setContacts(prev => prev.filter(c => !ids.includes(c.id)));
-  }, []);
+  const removeContacts = async (ids: number[]) => {
+    try {
+      await deleteContacts(ids);
+      setContacts(prev => prev.filter(c => !ids.includes(c.id!)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete contacts');
+    }
+  };
 
   return {
     contacts,
     loading,
     error,
-    refresh: loadContacts,
+    loadContacts,
     removeContact,
-    removeContacts,
+    removeContacts
   };
 }
 

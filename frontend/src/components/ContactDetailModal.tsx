@@ -1,7 +1,7 @@
 // frontend/src/components/ContactDetailModal.tsx
 import { useState } from 'react';
-import { Contact } from '../services/contactsService';
-import contactsService from '../services/contactsService';
+import type { Contact } from '../types/contact';
+import { enrichContact, downloadEnrichmentTxt } from '../services/contactsService';
 
 interface ContactDetailModalProps {
   contact: Contact | null;
@@ -24,11 +24,13 @@ export default function ContactDetailModal({
   if (!isOpen || !contact) return null;
 
   const handleEnrich = async () => {
+    if (!contact.id) return;
+    
     setIsEnriching(true);
     setError(null);
     
     try {
-      const result = await contactsService.enrichContact(contact.id, true);
+      const result = await enrichContact(contact.id, true);
       console.log('Enrichment complete:', result);
       
       if (onEnrichComplete) {
@@ -42,11 +44,13 @@ export default function ContactDetailModal({
   };
 
   const handleDownloadTxt = async () => {
+    if (!contact.id) return;
+    
     setIsDownloading(true);
     setError(null);
     
     try {
-      await contactsService.downloadEnrichmentTxt(contact.id);
+      await downloadEnrichmentTxt(contact.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Download failed');
     } finally {
@@ -61,25 +65,26 @@ export default function ContactDetailModal({
     return contact.email;
   };
 
-  const getScoreColor = (score?: number) => {
+  const getScoreColor = (score?: number | null) => {
     if (!score) return 'text-gray-400';
     if (score >= 75) return 'text-green-400';
     if (score >= 50) return 'text-yellow-400';
     return 'text-red-400';
   };
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status?: string | null) => {
     const styles: Record<string, string> = {
       pending: 'bg-gray-600 text-gray-200',
       processing: 'bg-blue-600 text-blue-200',
       completed: 'bg-green-600 text-green-200',
       failed: 'bg-red-600 text-red-200'
     };
-    return styles[status] || styles.pending;
+    return styles[status || 'pending'] || styles.pending;
   };
 
   const enrichmentData = contact.enrichment_data as Record<string, unknown> | undefined;
   const synthesized = enrichmentData?.synthesized as Record<string, unknown> | undefined;
+  const enrichmentStatus = contact.enrichment_status || 'pending';
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
@@ -89,7 +94,9 @@ export default function ContactDetailModal({
           <div className="flex justify-between items-start">
             <div>
               <h2 className="text-2xl font-bold text-white">{getDisplayName()}</h2>
-              <p className="text-gray-400 mt-1">{contact.title} at {contact.company}</p>
+              <p className="text-gray-400 mt-1">
+                {contact.title ? `${contact.title} at ` : ''}{contact.company || 'Unknown Company'}
+              </p>
             </div>
             <button
               onClick={onClose}
@@ -109,8 +116,8 @@ export default function ContactDetailModal({
             </div>
             <div className="bg-gray-800 px-4 py-2 rounded-lg">
               <span className="text-gray-400 text-sm">Status</span>
-              <p className={`text-sm font-medium px-2 py-1 rounded mt-1 ${getStatusBadge(contact.enrichment_status)}`}>
-                {contact.enrichment_status}
+              <p className={`text-sm font-medium px-2 py-1 rounded mt-1 ${getStatusBadge(enrichmentStatus)}`}>
+                {enrichmentStatus}
               </p>
             </div>
           </div>
@@ -119,9 +126,9 @@ export default function ContactDetailModal({
           <div className="flex gap-3 mt-4">
             <button
               onClick={handleEnrich}
-              disabled={isEnriching || contact.enrichment_status === 'processing'}
+              disabled={isEnriching || enrichmentStatus === 'processing'}
               className={`px-4 py-2 rounded-lg font-medium flex items-center gap-2 transition-colors ${
-                isEnriching || contact.enrichment_status === 'processing'
+                isEnriching || enrichmentStatus === 'processing'
                   ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
                   : 'bg-indigo-600 hover:bg-indigo-700 text-white'
               }`}
@@ -144,7 +151,7 @@ export default function ContactDetailModal({
               )}
             </button>
             
-            {contact.enrichment_status === 'completed' && (
+            {enrichmentStatus === 'completed' && (
               <button
                 onClick={handleDownloadTxt}
                 disabled={isDownloading}
@@ -292,7 +299,7 @@ export default function ContactDetailModal({
                 </>
               )}
               
-              {!synthesized && contact.enrichment_status === 'pending' && (
+              {!synthesized && enrichmentStatus === 'pending' && (
                 <div className="text-center py-8">
                   <p className="text-gray-400">No enrichment data yet. Click "Enrich Contact" to get started.</p>
                 </div>

@@ -1,13 +1,13 @@
 // frontend/src/pages/Contacts.tsx
 import { useState, useEffect, useCallback } from 'react';
 import type { Contact } from '../types/contact';
-import { getContacts, deleteContact as deleteContactApi } from '../services/contactsService';
-import ContactsTable from '../components/ContactsTable';
+import { getContacts, deleteContact } from '../services/contactsService';
 import ContactDetailModal from '../components/ContactDetailModal';
 import Loader from '../components/Loader';
 
 export default function Contacts() {
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -15,11 +15,12 @@ export default function Contacts() {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   const loadContacts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
       const data = await getContacts();
       setContacts(data);
+      setFilteredContacts(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load contacts');
     } finally {
@@ -31,45 +32,68 @@ export default function Contacts() {
     loadContacts();
   }, [loadContacts]);
 
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setFilteredContacts(contacts);
+      return;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered = contacts.filter(contact =>
+      (contact.first_name?.toLowerCase() || '').includes(query) ||
+      (contact.last_name?.toLowerCase() || '').includes(query) ||
+      (contact.email?.toLowerCase() || '').includes(query) ||
+      (contact.company?.toLowerCase() || '').includes(query)
+    );
+    setFilteredContacts(filtered);
+  }, [searchQuery, contacts]);
+
   const handleRowClick = (contact: Contact) => {
     setSelectedContact(contact);
     setIsModalOpen(true);
   };
 
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedContact(null);
-  };
+  const handleDeleteContact = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this contact?')) return;
 
-  const handleEnrichComplete = () => {
-    loadContacts();
-  };
-
-  const handleDelete = async (contactId: number) => {
     try {
-      await deleteContactApi(contactId);
-      setContacts(prev => prev.filter(c => c.id !== contactId));
+      await deleteContact(id);
+      setContacts(prev => prev.filter(c => c.id !== id));
     } catch (err) {
-      console.error('Failed to delete contact:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete contact');
     }
   };
 
-  const filteredContacts = contacts.filter(contact => {
-    const query = searchQuery.toLowerCase();
-    const firstName = contact.first_name?.toLowerCase() || '';
-    const lastName = contact.last_name?.toLowerCase() || '';
-    const company = contact.company?.toLowerCase() || '';
-    const email = contact.email?.toLowerCase() || '';
-    const title = contact.title?.toLowerCase() || '';
-    
-    return (
-      firstName.includes(query) ||
-      lastName.includes(query) ||
-      company.includes(query) ||
-      email.includes(query) ||
-      title.includes(query)
-    );
-  });
+  const getDisplayName = (contact: Contact) => {
+    if (contact.first_name || contact.last_name) {
+      return `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+    }
+    return contact.email;
+  };
+
+  const getInitials = (contact: Contact) => {
+    const first = contact.first_name?.[0] || '';
+    const last = contact.last_name?.[0] || '';
+    return (first + last).toUpperCase() || contact.email?.[0]?.toUpperCase() || '?';
+  };
+
+  const getScoreBadge = (score?: number | null) => {
+    if (!score) return 'bg-gray-700 text-gray-400';
+    if (score >= 75) return 'bg-green-900/50 text-green-400';
+    if (score >= 50) return 'bg-yellow-900/50 text-yellow-400';
+    return 'bg-red-900/50 text-red-400';
+  };
+
+  const getStatusBadge = (status?: string | null) => {
+    const styles: Record<string, string> = {
+      pending: 'bg-gray-700 text-gray-300',
+      processing: 'bg-blue-900/50 text-blue-400',
+      completed: 'bg-green-900/50 text-green-400',
+      failed: 'bg-red-900/50 text-red-400'
+    };
+    return styles[status || 'pending'] || styles.pending;
+  };
 
   if (loading) {
     return (
@@ -81,52 +105,55 @@ export default function Contacts() {
 
   if (error) {
     return (
-      <div className="bg-red-900/30 border border-red-700 rounded-lg p-6">
-        <h3 className="text-red-400 font-semibold mb-2">Error Loading Contacts</h3>
-        <p className="text-red-300">{error}</p>
-        <button
-          onClick={loadContacts}
-          className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg"
-        >
-          Retry
-        </button>
+      <div className="bg-red-900/50 border border-red-700 rounded-lg p-4 text-red-200">
+        {error}
       </div>
     );
   }
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-white">Contacts</h1>
-        <p className="text-gray-400 mt-1">{contacts.length} total contacts</p>
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-2xl font-bold text-white">Contacts</h1>
+        <div className="flex gap-4">
+          <input
+            type="text"
+            placeholder="Search contacts..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-indigo-500"
+          />
+        </div>
       </div>
 
-      {/* Search */}
-      <div className="mb-6">
-        <input
-          type="text"
-          placeholder="Search contacts..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full md:w-96 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
-      </div>
-
-      {/* Contacts Table */}
-      <ContactsTable
-        contacts={filteredContacts}
-        onRowClick={handleRowClick}
-        onDelete={handleDelete}
-      />
-
-      {/* Contact Detail Modal */}
-      <ContactDetailModal
-        contact={selectedContact}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        onEnrichComplete={handleEnrichComplete}
-      />
-    </div>
-  );
-}
+      <div className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-800">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Contact</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Company</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Title</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">APEX</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-800">
+            {filteredContacts.map((contact) => (
+              <tr
+                key={contact.id}
+                onClick={() => handleRowClick(contact)}
+                className="hover:bg-gray-800/50 cursor-pointer transition-colors"
+              >
+                <td className="px-6 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-600 rounded-full flex items-center justify-center text-white font-medium">
+                      {getInitials(contact)}
+                    </div>
+                    <div>
+                      <p className="text-white font-medium">{getDisplayName(contact)}</p>
+                      <p className="text-gray-400 text-sm">{contact.email}</p>
+                    </div>
+                  </div>
+                </td>
+                <td className="px-6 py-4 text-gray-300">{contact.company ||

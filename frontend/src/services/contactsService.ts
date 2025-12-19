@@ -1,42 +1,8 @@
 // frontend/src/services/contactsService.ts
 import { supabase } from '../lib/supabaseClient';
+import type { Contact, ContactFormData } from '../types/contact';
 
 const API_URL = import.meta.env.VITE_API_URL;
-
-export interface Contact {
-  id: number;
-  user_id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone?: string;
-  company?: string;
-  title?: string;
-  linkedin_url?: string;
-  website?: string;
-  vertical?: string;
-  persona_type?: string;
-  enrichment_status: 'pending' | 'processing' | 'completed' | 'failed';
-  enrichment_data?: Record<string, unknown>;
-  enriched_at?: string;
-  apex_score?: number;
-  mdcp_score?: number;
-  rss_score?: number;
-  match_tier?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-export interface ContactFormData {
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone?: string;
-  company?: string;
-  title?: string;
-  linkedin_url?: string;
-  website?: string;
-}
 
 export interface EnrichmentResult {
   success: boolean;
@@ -67,161 +33,183 @@ async function getAuthHeaders(): Promise<HeadersInit> {
   };
 }
 
-export const contactsService = {
-  // ========== CONTACT CRUD ==========
+// ========== CONTACT CRUD (Named Exports) ==========
+
+export async function getContacts(): Promise<Contact[]> {
+  const headers = await getAuthHeaders();
   
-  async getContacts(): Promise<Contact[]> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/contacts`, {
-      method: 'GET',
-      headers
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch contacts');
-    }
-    
-    return response.json();
-  },
+  const response = await fetch(`${API_URL}/api/contacts`, {
+    method: 'GET',
+    headers
+  });
   
-  async getContact(id: number): Promise<Contact> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/contacts/${id}`, {
-      method: 'GET',
-      headers
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to fetch contact');
-    }
-    
-    return response.json();
-  },
+  if (!response.ok) {
+    throw new Error('Failed to fetch contacts');
+  }
   
-  async createContact(data: ContactFormData): Promise<Contact> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/contacts`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(data)
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to create contact');
-    }
-    
-    return response.json();
-  },
+  return response.json();
+}
+
+export async function getContact(id: number): Promise<Contact> {
+  const headers = await getAuthHeaders();
   
-  async deleteContact(id: number): Promise<void> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/contacts/${id}`, {
+  const response = await fetch(`${API_URL}/api/contacts/${id}`, {
+    method: 'GET',
+    headers
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch contact');
+  }
+  
+  return response.json();
+}
+
+export async function createContact(data: ContactFormData): Promise<Contact> {
+  const headers = await getAuthHeaders();
+  
+  const response = await fetch(`${API_URL}/api/contacts`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data)
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to create contact');
+  }
+  
+  return response.json();
+}
+
+export async function deleteContact(id: number): Promise<void> {
+  const headers = await getAuthHeaders();
+  
+  const response = await fetch(`${API_URL}/api/contacts/${id}`, {
+    method: 'DELETE',
+    headers
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to delete contact');
+  }
+}
+
+export async function deleteContacts(ids: number[]): Promise<void> {
+  const headers = await getAuthHeaders();
+  
+  // Delete contacts one by one (or implement batch endpoint)
+  await Promise.all(ids.map(id => 
+    fetch(`${API_URL}/api/contacts/${id}`, {
       method: 'DELETE',
       headers
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to delete contact');
-    }
-  },
+    })
+  ));
+}
+
+// ========== ENRICHMENT ==========
+
+export async function enrichContact(contactId: number, synthesize: boolean = true): Promise<EnrichmentResult> {
+  const headers = await getAuthHeaders();
   
-  // ========== ENRICHMENT ==========
+  const response = await fetch(`${API_URL}/api/v3/enrichment/enrich`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      contact_id: contactId,
+      synthesize
+    })
+  });
   
-  async enrichContact(contactId: number, synthesize: boolean = true): Promise<EnrichmentResult> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/v3/enrichment/enrich`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        contact_id: contactId,
-        synthesize
-      })
-    });
-    
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.detail || 'Failed to enrich contact');
-    }
-    
-    return response.json();
-  },
-  
-  async getEnrichmentStatus(contactId: number): Promise<EnrichmentStatus> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/v3/enrichment/enrich/${contactId}/status`, {
-      method: 'GET',
-      headers
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to get enrichment status');
-    }
-    
-    return response.json();
-  },
-  
-  async downloadEnrichmentTxt(contactId: number): Promise<void> {
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session?.access_token) {
-      throw new Error('Not authenticated');
-    }
-    
-    // Open download in new tab with auth
-    const downloadUrl = `${API_URL}/api/v3/enrichment/enrich/${contactId}/download`;
-    
-    const response = await fetch(downloadUrl, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${session.access_token}`
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to download enrichment file');
-    }
-    
-    // Create blob and download
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `enrichment_${contactId}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  },
-  
-  async enrichBatch(contactIds?: number[], limit: number = 10): Promise<{
-    success: boolean;
-    enriched: number;
-    total: number;
-    txt_files: string[];
-  }> {
-    const headers = await getAuthHeaders();
-    
-    const response = await fetch(`${API_URL}/api/v3/enrichment/enrich/batch`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        contact_ids: contactIds || [],
-        limit
-      })
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to batch enrich contacts');
-    }
-    
-    return response.json();
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to enrich contact');
   }
+  
+  return response.json();
+}
+
+export async function getEnrichmentStatus(contactId: number): Promise<EnrichmentStatus> {
+  const headers = await getAuthHeaders();
+  
+  const response = await fetch(`${API_URL}/api/v3/enrichment/enrich/${contactId}/status`, {
+    method: 'GET',
+    headers
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to get enrichment status');
+  }
+  
+  return response.json();
+}
+
+export async function downloadEnrichmentTxt(contactId: number): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  
+  if (!session?.access_token) {
+    throw new Error('Not authenticated');
+  }
+  
+  const downloadUrl = `${API_URL}/api/v3/enrichment/enrich/${contactId}/download`;
+  
+  const response = await fetch(downloadUrl, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${session.access_token}`
+    }
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to download enrichment file');
+  }
+  
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `enrichment_${contactId}.txt`;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+export async function enrichBatch(contactIds?: number[], limit: number = 10): Promise<{
+  success: boolean;
+  enriched: number;
+  total: number;
+  txt_files: string[];
+}> {
+  const headers = await getAuthHeaders();
+  
+  const response = await fetch(`${API_URL}/api/v3/enrichment/enrich/batch`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      contact_ids: contactIds || [],
+      limit
+    })
+  });
+  
+  if (!response.ok) {
+    throw new Error('Failed to batch enrich contacts');
+  }
+  
+  return response.json();
+}
+
+// ========== SERVICE OBJECT (Default Export) ==========
+
+export const contactsService = {
+  getContacts,
+  getContact,
+  createContact,
+  deleteContact,
+  deleteContacts,
+  enrichContact,
+  getEnrichmentStatus,
+  downloadEnrichmentTxt,
+  enrichBatch
 };
 
 export default contactsService;
