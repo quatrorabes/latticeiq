@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { ContactsTable } from './components/ContactsTable';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -74,7 +73,7 @@ function Auth({ onLogin }: { onLogin: () => void }) {
   );
 }
 
-function Dashboard({ token, onLogout }: { token: string; onLogout: () => void }) {
+function Dashboard({ onLogout }: { onLogout: () => void }) {
   return (
     <div className="min-h-screen bg-gray-900 text-white p-8">
       <div className="flex justify-between items-center mb-8">
