@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import ContactDetailModal from '../components/ContactDetailModal';
 import { Zap, Trash2, Search, Plus } from 'lucide-react';
 
@@ -137,12 +137,12 @@ export default function ContactsPage() {
       const enrichmentResult = await response.json();
 
       // Update the contact with enrichment data
-      const updatedContact = {
+      const updatedContact: Contact = {
         ...contact,
-        enrichment_status: 'processing',
+        enrichment_status: 'processing' as const,
         enrichment_data: enrichmentResult,
       };
-
+      
       // Update contacts list
       setContacts(contacts.map(c => (c.id === contact.id ? updatedContact : c)));
       setFilteredContacts(
@@ -377,7 +377,7 @@ export default function ContactsPage() {
       {/* Detail modal */}
       {selectedContact && (
         <ContactDetailModal
-          contact={selectedContact}
+          contact={selectedContact as Contact}
           onClose={() => setSelectedContact(null)}
           onEnrich={() => {
             handleQuickEnrich(selectedContact);

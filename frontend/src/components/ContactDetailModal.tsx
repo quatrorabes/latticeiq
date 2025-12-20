@@ -1,5 +1,4 @@
-import React from 'react';
-import { Contact } from '../types/contact';
+import type { Contact } from '../types/contact';
 import { X, Zap, Mail, Phone, Building, Briefcase } from 'lucide-react';
 
 interface ContactDetailModalProps {
