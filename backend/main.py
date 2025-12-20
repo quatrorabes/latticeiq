@@ -1,6 +1,9 @@
 """
+
 LatticeIQ FastAPI Application
+
 Core API entry point with Supabase auth and contacts CRUD.
+
 """
 
 from fastapi import FastAPI, HTTPException, Depends
@@ -9,16 +12,22 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Optional
 from uuid import UUID
 import os
-
+from datetime import datetime
 from supabase import create_client, Client
 from pydantic import BaseModel, EmailStr
 
-# Optional: import enrichment router (existing enrichment_v3 implementation)
+# ============================================================================
+# ENRICHMENT ROUTER (CRITICAL)
+# ============================================================================
+
 try:
     from enrichment_v3.api_routes import router as enrichment_router, set_auth_dependency
-except ImportError:
+    ENRICHMENT_AVAILABLE = True
+except ImportError as e:
+    print(f"⚠️  WARNING: enrichment_v3 module not found: {e}")
     enrichment_router = None
     set_auth_dependency = None
+    ENRICHMENT_AVAILABLE = False
 
 # ============================================================================
 # APP & CORS
@@ -45,18 +54,15 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set in environment variables")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-
 security = HTTPBearer()
-
 
 class CurrentUser(BaseModel):
     id: str
     email: Optional[str] = None
 
-
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> CurrentUser:
     """
-    Validate Supabase JWT from Authorization: Bearer <token>
+    Validate Supabase JWT from Authorization: Bearer
     and return the Supabase user object.
     """
     try:
@@ -68,20 +74,24 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-
-# If enrichment_v3 supports auth injection, wire it
+# Wire enrichment auth if available
 if set_auth_dependency is not None:
     set_auth_dependency(get_current_user)
+
+# Register enrichment router with clear logging
 if enrichment_router is not None:
+    print("✅ Registering enrichment_v3 router at /api/v3")
     app.include_router(enrichment_router, prefix="/api/v3", tags=["enrichment"])
+else:
+    print("❌ enrichment_v3 router NOT available")
 
 # ============================================================================
 # Pydantic Models for Contacts
 # ============================================================================
 
 class ContactCreate(BaseModel):
-    first_name: str
-    last_name: str
+    firstname: str
+    lastname: str
     email: EmailStr
     phone: Optional[str] = None
     company: Optional[str] = None
@@ -91,10 +101,9 @@ class ContactCreate(BaseModel):
     vertical: Optional[str] = None
     persona_type: Optional[str] = None
 
-
 class ContactUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     company: Optional[str] = None
@@ -104,30 +113,52 @@ class ContactUpdate(BaseModel):
     vertical: Optional[str] = None
     persona_type: Optional[str] = None
 
-
 # ============================================================================
 # HEALTH CHECK
 # ============================================================================
 
 @app.get("/health")
-async def health_check_root():
-    """Health check for Render (no /api prefix)"""
+async def health_check():
+    """Health check for Render"""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
+        "enrichment_available": ENRICHMENT_AVAILABLE,
     }
-    
 
 # ============================================================================
-# CONTACTS CRUD (UUID-SAFE)
+# ROOT ENDPOINT
+# ============================================================================
+
+@app.get("/")
+async def root():
+    return {
+        "message": "LatticeIQ Sales Intelligence API",
+        "version": "1.0.0",
+        "docs": "/docs",
+        "enrichment": "available" if ENRICHMENT_AVAILABLE else "unavailable",
+    }
+
+@app.get("/api/health")
+async def api_health():
+    """API health check"""
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+    }
+
+# ============================================================================
+# CONTACTS CRUD (UUID-SAFE, FIELD-NAME MATCHED)
 # ============================================================================
 
 @app.get("/api/contacts")
 async def list_contacts(user: CurrentUser = Depends(get_current_user)):
     """
     Return all contacts for the current Supabase user.
-    Shape: { "contacts": [ ... ] }
+    Returns: [ { id, firstname, lastname, email, ... } ]
     """
     result = (
         supabase
@@ -136,8 +167,9 @@ async def list_contacts(user: CurrentUser = Depends(get_current_user)):
         .eq("user_id", user.id)
         .execute()
     )
-    return {"contacts": result.data or []}
-
+    
+    # Return array directly (not wrapped in {"contacts": ...})
+    return result.data or []
 
 @app.get("/api/contacts/{contact_id}")
 async def get_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
@@ -148,14 +180,14 @@ async def get_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_
         supabase
         .table("contacts")
         .select("*")
-        .eq("id", str(contact_id))  # UUID column, pass as string
+        .eq("id", str(contact_id))
         .eq("user_id", user.id)
         .execute()
     )
+    
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
     return result.data[0]
-
 
 @app.post("/api/contacts")
 async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get_current_user)):
@@ -166,12 +198,12 @@ async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get
     data = contact.dict()
     data["user_id"] = user.id
     data.setdefault("enrichment_status", "pending")
-
+    
     result = supabase.table("contacts").insert(data).execute()
+    
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create contact")
     return result.data[0]
-
 
 @app.put("/api/contacts/{contact_id}")
 async def update_contact(
@@ -183,9 +215,10 @@ async def update_contact(
     Update an existing contact (partial update).
     """
     update_data = {k: v for k, v in patch.dict().items() if v is not None}
+    
     if not update_data:
         return {"updated": False, "message": "No fields to update"}
-
+    
     result = (
         supabase
         .table("contacts")
@@ -194,11 +227,10 @@ async def update_contact(
         .eq("user_id", user.id)
         .execute()
     )
-
+    
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
     return result.data[0]
-
 
 @app.delete("/api/contacts/{contact_id}")
 async def delete_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
@@ -213,37 +245,6 @@ async def delete_contact(contact_id: UUID, user: CurrentUser = Depends(get_curre
         .eq("user_id", user.id)
         .execute()
     )
+    
     # Supabase doesn't always return deleted rows; just assume success if no error
     return {"deleted": True}
-
-
-# ============================================================================
-# ROOT ENDPOINT
-# ============================================================================
-
-from datetime import datetime
-
-@app.get("/")
-async def root():
-    return {
-        "message": "LatticeIQ Sales Intelligence API",
-        "version": "1.0.0",
-        "docs": "/docs",
-    }
-    
-@app.get("/health")
-async def health_check_root():
-    return {
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0",
-    }
-    
-@app.get("/api/health")
-async def health_check_api():
-    return {
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0",
-    }
-    
