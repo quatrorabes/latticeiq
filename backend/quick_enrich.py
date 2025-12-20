@@ -18,7 +18,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from supabase import Client, create_client
 
-router = APIRouter(prefix="/api/quick-enrich", tags=["quick-enrich"])
+router = APIRouter(prefix="/api/v3/enrichment", tags=["enrichment"])
 
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL") or os.getenv("SUPABASEURL")
@@ -38,16 +38,13 @@ PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 security = HTTPBearer(auto_error=True)
 _auth_dependency: Optional[Callable[..., Any]] = None
 
-
 def set_auth_dependency(dep: Callable[..., Any]) -> None:
     global _auth_dependency
     _auth_dependency = dep
 
-
 class CurrentUser(BaseModel):
     id: str
     email: Optional[str] = None
-
 
 async def _fallback_auth(credentials: HTTPAuthorizationCredentials = Depends(security)) -> CurrentUser:
     try:
@@ -59,10 +56,8 @@ async def _fallback_auth(credentials: HTTPAuthorizationCredentials = Depends(sec
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
-
 def _get_auth():
     return _auth_dependency or _fallback_auth
-
 
 # Models
 class QuickEnrichResult(BaseModel):
@@ -75,7 +70,6 @@ class QuickEnrichResult(BaseModel):
     inferred_location: Optional[str] = None
     talking_points: Optional[List[str]] = None
 
-
 class QuickEnrichResponse(BaseModel):
     contact_id: str
     status: str
@@ -83,11 +77,10 @@ class QuickEnrichResponse(BaseModel):
     raw_text: str
     model: str
 
-
 # Helpers
 def _build_prompt(contact: Dict[str, Any]) -> str:
-    firstname = contact.get("firstname") or ""
-    lastname = contact.get("lastname") or ""
+    firstname = contact.get("first_name") or ""
+    lastname = contact.get("last_name") or ""
     company = contact.get("company") or ""
     email = contact.get("email") or ""
     linkedin_url = contact.get("linkedin_url") or ""
@@ -95,6 +88,7 @@ def _build_prompt(contact: Dict[str, Any]) -> str:
 
     return f"""
 You are a sales intelligence assistant. Research this person using public web sources:
+
 - Name: {firstname} {lastname}
 - Company: {company}
 - Email: {email}
@@ -102,6 +96,7 @@ You are a sales intelligence assistant. Research this person using public web so
 - Title: {title}
 
 Return ONE valid JSON object only (no markdown):
+
 {{
   "summary": "2-3 sentence sales-relevant summary.",
   "opening_line": "One personalized outreach opener.",
@@ -112,9 +107,9 @@ Return ONE valid JSON object only (no markdown):
   "inferred_location": "City/Region or null.",
   "talking_points": ["3-6 short bullets"]
 }}
+
 JSON only, no extra text.
 """.strip()
-
 
 def _call_perplexity(prompt: str) -> str:
     if not PERPLEXITY_API_KEY:
@@ -143,33 +138,34 @@ def _call_perplexity(prompt: str) -> str:
     try:
         with urllib.request.urlopen(req, timeout=45) as resp:
             body = resp.read().decode("utf-8")
-        return json.loads(body)["choices"][0]["message"]["content"]
+            return json.loads(body)["choices"][0]["message"]["content"]
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8") if hasattr(e, "read") else str(e)
         raise HTTPException(status_code=502, detail=f"Perplexity error: {detail}")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Perplexity failed: {e}")
 
-
 def _parse_json(raw: str) -> Dict[str, Any]:
     try:
         return json.loads(raw)
     except Exception:
         pass
+
     start, end = raw.find("{"), raw.rfind("}")
     if start != -1 and end > start:
         try:
             return json.loads(raw[start:end+1])
         except Exception:
             pass
+
     return {"summary": raw.strip()}
 
-
 # Endpoint
-@router.post("/{contact_id}", response_model=QuickEnrichResponse)
-async def quick_enrich_contact(contact_id: UUID, user: CurrentUser = Depends(_get_auth())):
+@router.post("/quick_enrich/{contact_id}", response_model=QuickEnrichResponse)
+async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(_get_auth())):
     # Load contact
-    result = supabase.table("contacts").select("*").eq("id", str(contact_id)).eq("user_id", user.id).execute()
+    result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
+    
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
 
@@ -177,7 +173,7 @@ async def quick_enrich_contact(contact_id: UUID, user: CurrentUser = Depends(_ge
 
     # Mark processing
     try:
-        supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", str(contact_id)).eq("user_id", user.id).execute()
+        supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", contact_id).eq("user_id", user.id).execute()
     except Exception:
         pass
 
@@ -222,10 +218,10 @@ async def quick_enrich_contact(contact_id: UUID, user: CurrentUser = Depends(_ge
         update_data["persona_type"] = enrichment.persona_type
 
     # Save
-    supabase.table("contacts").update(update_data).eq("id", str(contact_id)).eq("user_id", user.id).execute()
+    supabase.table("contacts").update(update_data).eq("id", contact_id).eq("user_id", user.id).execute()
 
     return QuickEnrichResponse(
-        contact_id=str(contact_id),
+        contact_id=contact_id,
         status="completed",
         result=enrichment,
         raw_text=raw_text,

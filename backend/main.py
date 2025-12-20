@@ -41,7 +41,8 @@ except Exception as e:
     quick_enrich_router = None
     set_quick_enrich_auth = None
     QUICK_ENRICH_ERROR = str(e)
-    print(f"⚠️  quick_enrich import failed: {QUICK_ENRICH_ERROR}")
+    print(f"⚠️ quick_enrich import failed: {QUICK_ENRICH_ERROR}")
+    
 
 # ============================================================================
 # APP & CORS
@@ -109,8 +110,8 @@ else:
     print(f"❌ enrichment_v3 NOT available: {ENRICHMENT_ERROR}")
 
 if quick_enrich_router is not None:
-    print("✅ Registering quick_enrich router at /api/quick-enrich")
-    app.include_router(quick_enrich_router, tags=["quick-enrich"])
+    print("✅ Registering quick_enrich router at /api/v3/enrichment")
+    app.include_router(quick_enrich_router)  # Router already has /api/v3/enrichment prefix
 else:
     print(f"❌ quick_enrich NOT available: {QUICK_ENRICH_ERROR}")
 
