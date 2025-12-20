@@ -5,7 +5,7 @@ import { supabase } from './lib/supabaseClient';
 import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Contacts from './pages/Contacts';
+import ContactsPage from './pages/ContactsPage';
 import Dashboard from './pages/Dashboard';
 import Sidebar from './components/Sidebar';
 import Loader from './components/Loader';
@@ -62,7 +62,7 @@ function App() {
         <main className="ml-64 min-h-screen p-8">
           <Routes>
             <Route path="/" element={<Navigate to="/contacts" replace />} />
-            <Route path="/contacts" element={<Contacts />} />
+            <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
           </Routes>
