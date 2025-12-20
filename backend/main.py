@@ -1,5 +1,5 @@
 """
-LatticeIQ FastAPI Application
+LatticeIQ FastAPI Application - FIXED UUID HANDLING
 
 Core API entry point with Supabase auth and contacts CRUD.
 """
@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 from datetime import datetime
 from typing import Optional
-from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -184,7 +183,7 @@ async def root():
     }
 
 # ============================================================================
-# CONTACTS CRUD
+# CONTACTS CRUD - FIXED UUID HANDLING (use str not UUID)
 # ============================================================================
 
 @app.get("/api/contacts")
@@ -196,12 +195,12 @@ async def list_contacts(user: CurrentUser = Depends(get_current_user)):
     return {"contacts": result.data or []}
 
 @app.get("/api/contacts/{contact_id}")
-async def get_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
+async def get_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Get a single contact by ID"""
     result = (
         supabase.table("contacts")
         .select("*")
-        .eq("id", str(contact_id))
+        .eq("id", contact_id)
         .eq("user_id", user.id)
         .execute()
     )
@@ -225,7 +224,7 @@ async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get
     return result.data[0]
 
 @app.put("/api/contacts/{contact_id}")
-async def update_contact(contact_id: UUID, patch: ContactUpdate, user: CurrentUser = Depends(get_current_user)):
+async def update_contact(contact_id: str, patch: ContactUpdate, user: CurrentUser = Depends(get_current_user)):
     """Update a contact"""
     update_data = {k: v for k, v in patch.dict().items() if v is not None}
 
@@ -235,7 +234,7 @@ async def update_contact(contact_id: UUID, patch: ContactUpdate, user: CurrentUs
     result = (
         supabase.table("contacts")
         .update(update_data)
-        .eq("id", str(contact_id))
+        .eq("id", contact_id)
         .eq("user_id", user.id)
         .execute()
     )
@@ -246,7 +245,7 @@ async def update_contact(contact_id: UUID, patch: ContactUpdate, user: CurrentUs
     return result.data[0]
 
 @app.delete("/api/contacts/{contact_id}")
-async def delete_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
+async def delete_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Delete a contact"""
-    supabase.table("contacts").delete().eq("id", str(contact_id)).eq("user_id", user.id).execute()
+    supabase.table("contacts").delete().eq("id", contact_id).eq("user_id", user.id).execute()
     return {"deleted": True}
