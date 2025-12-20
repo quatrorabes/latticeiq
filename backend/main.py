@@ -86,9 +86,12 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         user = user_response.user
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token (no user)")
-        return CurrentUser(id=user.id, email=user.email)
-    except Exception:
+        print(f"🔍 AUTH DEBUG: user.id={user.id}, email={user.email}")
+        return CurrentUser(id=str(user.id), email=user.email)
+    except Exception as e:
+        print(f"❌ AUTH ERROR: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
+        
 
 
 # Inject auth into optional routers
@@ -189,8 +192,11 @@ async def root():
 
 @app.get("/api/contacts")
 async def list_contacts(user: CurrentUser = Depends(get_current_user)):
+    print(f"🔍 DEBUG: user.id = {user.id}")  # ADD THIS LINE
     result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
+    print(f"🔍 DEBUG: found {len(result.data or [])} contacts")  # ADD THIS LINE
     return {"contacts": result.data or []}
+
 
 
 @app.get("/api/contacts/{contact_id}")
