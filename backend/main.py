@@ -23,6 +23,7 @@ from supabase import create_client, Client
 
 ENRICHMENT_AVAILABLE = False
 ENRICHMENT_ERROR: Optional[str] = None
+
 try:
     from enrichment_v3.api_routes import router as enrichment_router, set_auth_dependency as set_enrichment_auth
     ENRICHMENT_AVAILABLE = True
@@ -30,10 +31,11 @@ except Exception as e:
     enrichment_router = None
     set_enrichment_auth = None
     ENRICHMENT_ERROR = str(e)
-    print(f"⚠️  enrichment_v3 import failed: {ENRICHMENT_ERROR}")
+    print(f"⚠️ enrichment_v3 import failed: {ENRICHMENT_ERROR}")
 
 QUICK_ENRICH_AVAILABLE = False
 QUICK_ENRICH_ERROR: Optional[str] = None
+
 try:
     from quick_enrich import router as quick_enrich_router, set_auth_dependency as set_quick_enrich_auth
     QUICK_ENRICH_AVAILABLE = True
@@ -42,7 +44,6 @@ except Exception as e:
     set_quick_enrich_auth = None
     QUICK_ENRICH_ERROR = str(e)
     print(f"⚠️ quick_enrich import failed: {QUICK_ENRICH_ERROR}")
-    
 
 # ============================================================================
 # APP & CORS
@@ -73,13 +74,12 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     raise RuntimeError("SUPABASE_URL and SUPABASE_KEY must be set")
 
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-security = HTTPBearer()
 
+security = HTTPBearer()
 
 class CurrentUser(BaseModel):
     id: str
     email: Optional[str] = None
-
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> CurrentUser:
     try:
@@ -92,37 +92,20 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     except Exception as e:
         print(f"❌ AUTH ERROR: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
-        
-
 
 # Inject auth into optional routers
 if set_enrichment_auth is not None:
     set_enrichment_auth(get_current_user)
-
 if set_quick_enrich_auth is not None:
     set_quick_enrich_auth(get_current_user)
 
-# Register routers
-if enrichment_router is not None:
-    print("✅ Registering enrichment_v3 router at /api/v3")
-    app.include_router(enrichment_router, prefix="/api/v3", tags=["enrichment"])
-else:
-    print(f"❌ enrichment_v3 NOT available: {ENRICHMENT_ERROR}")
-
-if quick_enrich_router is not None:
-    print("✅ Registering quick_enrich router at /api/v3/enrichment")
-    app.include_router(quick_enrich_router)  # Router already has /api/v3/enrichment prefix
-else:
-    print(f"❌ quick_enrich NOT available: {QUICK_ENRICH_ERROR}")
-
-
 # ============================================================================
-# CONTACT MODELS
+# CONTACT MODELS - FIXED FIELD NAMES (snake_case)
 # ============================================================================
 
 class ContactCreate(BaseModel):
-    firstname: str
-    lastname: str
+    first_name: str
+    last_name: str
     email: EmailStr
     phone: Optional[str] = None
     company: Optional[str] = None
@@ -131,11 +114,11 @@ class ContactCreate(BaseModel):
     website: Optional[str] = None
     vertical: Optional[str] = None
     persona_type: Optional[str] = None
-
+    enrichment_status: str = "pending"
 
 class ContactUpdate(BaseModel):
-    firstname: Optional[str] = None
-    lastname: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     company: Optional[str] = None
@@ -144,7 +127,23 @@ class ContactUpdate(BaseModel):
     website: Optional[str] = None
     vertical: Optional[str] = None
     persona_type: Optional[str] = None
+    enrichment_status: Optional[str] = None
 
+# ============================================================================
+# ROUTER REGISTRATION - FIXED
+# ============================================================================
+
+if enrichment_router is not None:
+    print("✅ Registering enrichment_v3 router")
+    app.include_router(enrichment_router)
+else:
+    print(f"❌ enrichment_v3 NOT available: {ENRICHMENT_ERROR}")
+
+if quick_enrich_router is not None:
+    print("✅ Registering quick_enrich router at /api/v3/enrichment")
+    app.include_router(quick_enrich_router)  # Router already has /api/v3/enrichment prefix
+else:
+    print(f"❌ quick_enrich NOT available: {QUICK_ENRICH_ERROR}")
 
 # ============================================================================
 # HEALTH + ROOT
@@ -162,7 +161,6 @@ async def health_check_root():
         "quick_enrich_error": QUICK_ENRICH_ERROR,
     }
 
-
 @app.get("/api/health")
 async def api_health():
     return {
@@ -175,7 +173,6 @@ async def api_health():
         "quick_enrich_error": QUICK_ENRICH_ERROR,
     }
 
-
 @app.get("/")
 async def root():
     return {
@@ -186,22 +183,21 @@ async def root():
         "quick_enrich": "available" if QUICK_ENRICH_AVAILABLE else "unavailable",
     }
 
-
 # ============================================================================
 # CONTACTS CRUD
 # ============================================================================
 
 @app.get("/api/contacts")
 async def list_contacts(user: CurrentUser = Depends(get_current_user)):
-    print(f"🔍 DEBUG: user.id = {user.id}")  # ADD THIS LINE
+    """List all contacts for the authenticated user"""
+    print(f"🔍 DEBUG: user.id = {user.id}")
     result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
-    print(f"🔍 DEBUG: found {len(result.data or [])} contacts")  # ADD THIS LINE
+    print(f"🔍 DEBUG: found {len(result.data or [])} contacts")
     return {"contacts": result.data or []}
-
-
 
 @app.get("/api/contacts/{contact_id}")
 async def get_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
+    """Get a single contact by ID"""
     result = (
         supabase.table("contacts")
         .select("*")
@@ -209,26 +205,30 @@ async def get_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_
         .eq("user_id", user.id)
         .execute()
     )
+
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
-    return result.data[0]
 
+    return result.data[0]
 
 @app.post("/api/contacts")
 async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get_current_user)):
+    """Create a new contact"""
     data = contact.dict()
     data["user_id"] = user.id
-    data.setdefault("enrichment_status", "pending")
-
+    
     result = supabase.table("contacts").insert(data).execute()
+
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to create contact")
-    return result.data[0]
 
+    return result.data[0]
 
 @app.put("/api/contacts/{contact_id}")
 async def update_contact(contact_id: UUID, patch: ContactUpdate, user: CurrentUser = Depends(get_current_user)):
+    """Update a contact"""
     update_data = {k: v for k, v in patch.dict().items() if v is not None}
+
     if not update_data:
         return {"updated": False, "message": "No fields to update"}
 
@@ -239,12 +239,14 @@ async def update_contact(contact_id: UUID, patch: ContactUpdate, user: CurrentUs
         .eq("user_id", user.id)
         .execute()
     )
+
     if not result.data:
         raise HTTPException(status_code=404, detail="Contact not found")
-    return result.data[0]
 
+    return result.data[0]
 
 @app.delete("/api/contacts/{contact_id}")
 async def delete_contact(contact_id: UUID, user: CurrentUser = Depends(get_current_user)):
+    """Delete a contact"""
     supabase.table("contacts").delete().eq("id", str(contact_id)).eq("user_id", user.id).execute()
     return {"deleted": True}
