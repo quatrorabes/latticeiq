@@ -1,151 +1,82 @@
 // frontend/src/components/EnrichButton.tsx
 import { useState } from "react";
-import { Sparkles, Loader2, CheckCircle, XCircle } from "lucide-react";
-import contactsService from "../services/contactsService";
-import type { EnrichmentStatus } from "../services/contactsService";
+import { supabase } from "../lib/supabaseClient";
+
+const API_URL = import.meta.env.VITE_API_URL || "https://latticeiq-backend.onrender.com";
 
 interface EnrichButtonProps {
   contactId: string;
-  currentStatus: string;
-  onEnrichmentComplete?: () => void;
-  size?: "sm" | "md" | "lg";
-  showLabel?: boolean;
+  onComplete?: () => void;
+  variant?: "table" | "modal";
 }
 
-type ButtonState = "idle" | "loading" | "polling" | "success" | "error";
-
-export default function EnrichButton({
-  contactId,
-  currentStatus,
-  onEnrichmentComplete,
-  size = "md",
-  showLabel = true,
-}: EnrichButtonProps) {
-  const [state, setState] = useState<ButtonState>("idle");
-  const [progress, setProgress] = useState<number>(0);
-  const [stage, setStage] = useState<string>("");
-  const [error, setError] = useState<string>("");
-
-  const isEnriched = currentStatus === "completed";
-  const isProcessing =
-    currentStatus === "processing" || state === "loading" || state === "polling";
-
-  const sizeClasses = {
-    sm: "px-2 py-1 text-xs",
-    md: "px-3 py-1.5 text-sm",
-    lg: "px-4 py-2 text-base",
-  };
-
-  const iconSize = {
-    sm: 14,
-    md: 16,
-    lg: 18,
-  };
+export default function EnrichButton({ contactId, onComplete, variant = "table" }: EnrichButtonProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleEnrich = async () => {
-    if (isProcessing || isEnriched) return;
-
-    setState("loading");
-    setError("");
-    setProgress(0);
-    setStage("Starting enrichment...");
+    setLoading(true);
+    setError(null);
 
     try {
-      await contactsService.enrichContact(contactId);
+      // Get current session token
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error("Not authenticated");
+      }
 
-      setState("polling");
-      setStage("Gathering data...");
-
-      await contactsService.pollEnrichmentUntilComplete(
-        contactId,
-        (status: EnrichmentStatus) => {
-          setProgress(status.progress ?? 0);
-          setStage(status.current_stage || "Processing...");
+      // Call quick-enrich endpoint (synchronous, ~5-10 sec)
+      const response = await fetch(`${API_URL}/api/quick-enrich/${contactId}`, {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${session.access_token}`,
+          "Content-Type": "application/json",
         },
-        60,
-        2000
-      );
+      });
 
-      setState("success");
-      setStage("Enrichment complete!");
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Enrichment failed (${response.status})`);
+      }
 
-      onEnrichmentComplete?.();
-
-      setTimeout(() => setState("idle"), 2000);
+      // Success - trigger callback to reload contacts
+      if (onComplete) {
+        onComplete();
+      }
     } catch (err) {
-      setState("error");
+      console.error("Enrich error:", err);
       setError(err instanceof Error ? err.message : "Enrichment failed");
-
-      setTimeout(() => {
-        setState("idle");
-        setError("");
-      }, 3000);
+    } finally {
+      setLoading(false);
     }
   };
 
-  if (isEnriched && state === "idle") {
-    return (
-      <button
-        disabled
-        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-green-500/20 text-green-400 cursor-default ${sizeClasses[size]}`}
-        title="Already enriched"
-      >
-        <CheckCircle size={iconSize[size]} />
-        {showLabel && "Enriched"}
-      </button>
-    );
-  }
-
-  if (state === "error") {
+  // Table row button (compact)
+  if (variant === "table") {
     return (
       <button
         onClick={handleEnrich}
-        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors ${sizeClasses[size]}`}
-        title={error}
+        disabled={loading}
+        className="px-3 py-1 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded transition-colors"
       >
-        <XCircle size={iconSize[size]} />
-        {showLabel && "Retry"}
+        {loading ? "Enriching..." : "Enrich"}
       </button>
     );
   }
 
-  if (state === "success") {
-    return (
-      <button
-        disabled
-        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-green-500/20 text-green-400 cursor-default ${sizeClasses[size]}`}
-      >
-        <CheckCircle size={iconSize[size]} />
-        {showLabel && "Done!"}
-      </button>
-    );
-  }
-
-  if (state === "loading" || state === "polling") {
-    return (
-      <button
-        disabled
-        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-purple-500/20 text-purple-400 cursor-wait ${sizeClasses[size]}`}
-        title={stage}
-      >
-        <Loader2 size={iconSize[size]} className="animate-spin" />
-        {showLabel && (
-          <span className="truncate max-w-[100px]">
-            {progress > 0 ? `${Math.round(progress * 100)}%` : stage}
-          </span>
-        )}
-      </button>
-    );
-  }
-
+  // Modal button (full width)
   return (
-    <button
-      onClick={handleEnrich}
-      className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-purple-600 text-white hover:bg-purple-700 transition-colors ${sizeClasses[size]}`}
-      title="Enrich this contact"
-    >
-      <Sparkles size={iconSize[size]} />
-      {showLabel && "Enrich"}
-    </button>
+    <div className="w-full">
+      <button
+        onClick={handleEnrich}
+        disabled={loading}
+        className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-medium rounded-lg transition-colors"
+      >
+        {loading ? "Enriching..." : "Enrich Contact"}
+      </button>
+      {error && (
+        <p className="mt-2 text-sm text-red-400">{error}</p>
+      )}
+    </div>
   );
 }

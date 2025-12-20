@@ -18,241 +18,206 @@ export default function ContactDetailModal({
 }: ContactDetailModalProps) {
   if (!isOpen || !contact) return null;
 
-  const fullName = `${contact.first_name} ${contact.last_name}`;
-  const enrichmentData = contact.enrichment_data?.synthesized;
+  const fullName = `${contact.firstname || contact.first_name || ""} ${contact.lastname || contact.last_name || ""}`.trim();
+  
+  // Support both V3 (synthesized) and quick_enrich data structures
+  const enrichmentData = contact.enrichment_data?.synthesized || contact.enrichment_data?.quick_enrich;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+    <div className="fixed inset-0 z-50 overflow-y-auto">
+      {/* Backdrop */}
+      <div 
+        className="fixed inset-0 bg-black/70 transition-opacity" 
         onClick={onClose}
       />
-      <div className="relative bg-gray-900 border border-gray-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-700">
-          <div>
-            <h2 className="text-xl font-semibold text-white">{fullName}</h2>
-            {contact.title && contact.company && (
-              <p className="text-gray-400 text-sm mt-1">
-                {contact.title} at {contact.company}
-              </p>
-            )}
+
+      {/* Modal */}
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="relative w-full max-w-2xl bg-gray-900 rounded-xl shadow-2xl border border-gray-700">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-700">
+            <div>
+              <h2 className="text-xl font-semibold text-white">{fullName || "Unknown Contact"}</h2>
+              {(contact.title || contact.company) && (
+                <p className="text-gray-400 text-sm mt-1">
+                  {contact.title}{contact.title && contact.company && " at "}{contact.company}
+                </p>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
           </div>
-          <div className="flex items-center gap-3">
+
+          {/* Content */}
+          <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+            {/* Contact Info Grid */}
+            <div className="grid grid-cols-2 gap-4">
+              <InfoItem icon={<Mail className="w-4 h-4" />} label="Email" value={contact.email} isLink />
+              <InfoItem icon={<Phone className="w-4 h-4" />} label="Phone" value={contact.phone} />
+              <InfoItem icon={<Building2 className="w-4 h-4" />} label="Company" value={contact.company} />
+              <InfoItem icon={<Briefcase className="w-4 h-4" />} label="Title" value={contact.title} />
+              <InfoItem icon={<Linkedin className="w-4 h-4" />} label="LinkedIn" value={contact.linkedin_url} isLink />
+              <InfoItem icon={<Globe className="w-4 h-4" />} label="Website" value={contact.website} isLink />
+            </div>
+
+            {/* Scores */}
+            {(contact.apex_score || contact.enrichment_status === "completed") && (
+              <div className="flex gap-4">
+                {contact.apex_score && (
+                  <ScoreBadge label="APEX" score={contact.apex_score} color="indigo" />
+                )}
+                {contact.mdc_score && (
+                  <ScoreBadge label="MDC" score={contact.mdc_score} color="emerald" />
+                )}
+                {contact.rss_score && (
+                  <ScoreBadge label="RSS" score={contact.rss_score} color="amber" />
+                )}
+              </div>
+            )}
+
+            {/* Enrichment Data */}
+            {enrichmentData ? (
+              <div className="space-y-4">
+                {/* Summary */}
+                {enrichmentData.summary && (
+                  <Section title="Summary" icon={<Target className="w-4 h-4" />}>
+                    <p className="text-gray-300">{enrichmentData.summary}</p>
+                  </Section>
+                )}
+
+                {/* Opening Line */}
+                {enrichmentData.opening_line && (
+                  <Section title="Opening Line" icon={<TrendingUp className="w-4 h-4" />}>
+                    <p className="text-gray-300 italic">"{enrichmentData.opening_line}"</p>
+                  </Section>
+                )}
+
+                {/* Talking Points */}
+                {enrichmentData.talking_points && enrichmentData.talking_points.length > 0 && (
+                  <Section title="Talking Points">
+                    <ul className="list-disc list-inside space-y-1 text-gray-300">
+                      {enrichmentData.talking_points.map((point: string, i: number) => (
+                        <li key={i}>{point}</li>
+                      ))}
+                    </ul>
+                  </Section>
+                )}
+
+                {/* Objections (V3 format) */}
+                {enrichmentData.objections && enrichmentData.objections.length > 0 && (
+                  <Section title="Objection Handlers">
+                    <div className="space-y-3">
+                      {enrichmentData.objections.map((obj: { objection: string; response: string }, i: number) => (
+                        <div key={i} className="bg-gray-800 rounded-lg p-3">
+                          <p className="text-red-400 text-sm">"{obj.objection}"</p>
+                          <p className="text-green-400 text-sm mt-1">→ {obj.response}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+                )}
+
+                {/* Persona & Vertical (quick_enrich) */}
+                {(enrichmentData.persona_type || enrichmentData.vertical) && (
+                  <div className="flex gap-4">
+                    {enrichmentData.persona_type && (
+                      <span className="px-3 py-1 bg-purple-900/50 text-purple-300 rounded-full text-sm">
+                        {enrichmentData.persona_type}
+                      </span>
+                    )}
+                    {enrichmentData.vertical && (
+                      <span className="px-3 py-1 bg-blue-900/50 text-blue-300 rounded-full text-sm">
+                        {enrichmentData.vertical}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="bg-gray-800 rounded-lg p-6 text-center">
+                <p className="text-gray-400 mb-4">
+                  No enrichment data yet. Click Enrich to gather AI-powered insights.
+                </p>
+              </div>
+            )}
+
+            {/* Status Footer */}
+            <div className="text-sm text-gray-500 border-t border-gray-700 pt-4">
+              Status: <span className="text-gray-300">{contact.enrichment_status || "pending"}</span>
+              {contact.enriched_at && (
+                <span> · Enriched {new Date(contact.enriched_at).toLocaleDateString()}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Footer Actions */}
+          <div className="flex gap-3 p-6 border-t border-gray-700">
             <EnrichButton
               contactId={contact.id}
-              currentStatus={contact.enrichment_status}
-              onEnrichmentComplete={onEnrichComplete}
-              size="md"
+              onComplete={onEnrichComplete}
+              variant="modal"
             />
             <button
               onClick={onClose}
-              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              className="flex-1 px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white font-medium rounded-lg transition-colors"
             >
-              <X size={20} className="text-gray-400" />
+              Close
             </button>
           </div>
-        </div>
-
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-180px)]">
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <InfoItem icon={Mail} label="Email" value={contact.email} />
-            <InfoItem icon={Phone} label="Phone" value={contact.phone} />
-            <InfoItem icon={Building2} label="Company" value={contact.company} />
-            <InfoItem icon={Briefcase} label="Title" value={contact.title} />
-            <InfoItem icon={Linkedin} label="LinkedIn" value={contact.linkedin_url} isLink />
-            <InfoItem icon={Globe} label="Website" value={contact.website} isLink />
-            <InfoItem icon={Target} label="Vertical" value={contact.vertical} />
-            <InfoItem icon={TrendingUp} label="Persona" value={contact.persona_type} />
-          </div>
-
-          {(contact.apex_score != null || contact.mdc_score != null || contact.rss_score != null) && (
-            <div className="mb-6">
-              <h3 className="text-sm font-medium text-gray-400 mb-3">Scores</h3>
-              <div className="flex gap-4">
-                {contact.apex_score != null && (
-                  <ScoreBadge label="APEX" score={contact.apex_score} color="purple" />
-                )}
-                {contact.mdc_score != null && (
-                  <ScoreBadge label="MDC" score={contact.mdc_score} color="blue" />
-                )}
-                {contact.rss_score != null && (
-                  <ScoreBadge label="RSS" score={contact.rss_score} color="green" />
-                )}
-              </div>
-            </div>
-          )}
-
-          {(contact.bant_budget_confirmed != null || contact.bant_authority_level || contact.bant_need || contact.bant_timeline) && (
-            <div className="mb-6">
-              <h3 className="text-sm font-medium text-gray-400 mb-3">BANT Qualification</h3>
-              <div className="grid grid-cols-2 gap-3">
-                <BantItem
-                  label="Budget"
-                  value={contact.bant_budget_confirmed ? "Confirmed" : "Not confirmed"}
-                  confirmed={contact.bant_budget_confirmed ?? false}
-                />
-                <BantItem label="Authority" value={contact.bant_authority_level} />
-                <BantItem label="Need" value={contact.bant_need} />
-                <BantItem label="Timeline" value={contact.bant_timeline} />
-              </div>
-            </div>
-          )}
-
-          {enrichmentData && (
-            <div className="space-y-6">
-              {enrichmentData.summary && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-400 mb-2">Summary</h3>
-                  <p className="text-gray-300 text-sm leading-relaxed bg-gray-800/50 rounded-lg p-4">
-                    {enrichmentData.summary}
-                  </p>
-                </div>
-              )}
-
-              {enrichmentData.hooks && enrichmentData.hooks.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-400 mb-2">Opening Hooks</h3>
-                  <ul className="space-y-2">
-                    {enrichmentData.hooks.map((hook, idx) => (
-                      <li key={idx} className="text-gray-300 text-sm bg-gray-800/50 rounded-lg p-3 border-l-2 border-purple-500">
-                        &quot;{hook}&quot;
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {enrichmentData.talking_points && enrichmentData.talking_points.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-400 mb-2">Talking Points</h3>
-                  <ul className="space-y-2">
-                    {enrichmentData.talking_points.map((point, idx) => (
-                      <li key={idx} className="text-gray-300 text-sm flex items-start gap-2">
-                        <span className="text-purple-400 mt-1">•</span>
-                        {point}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {enrichmentData.objections && enrichmentData.objections.length > 0 && (
-                <div>
-                  <h3 className="text-sm font-medium text-gray-400 mb-2">Common Objections</h3>
-                  <div className="space-y-3">
-                    {enrichmentData.objections.map((obj, idx) => (
-                      <div key={idx} className="bg-gray-800/50 rounded-lg p-4">
-                        <p className="text-red-400 text-sm font-medium mb-1">&quot;{obj.objection}&quot;</p>
-                        <p className="text-green-400 text-sm">→ {obj.response}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {!enrichmentData && contact.enrichment_status !== "completed" && (
-            <div className="text-center py-8">
-              <p className="text-gray-500 text-sm mb-4">
-                No enrichment data yet. Click Enrich to gather AI-powered insights.
-              </p>
-            </div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between p-4 border-t border-gray-700 bg-gray-800/50">
-          <p className="text-xs text-gray-500">
-            Status: <span className="capitalize">{contact.enrichment_status}</span>
-            {contact.enriched_at && (
-              <span> · Enriched {new Date(contact.enriched_at).toLocaleDateString()}</span>
-            )}
-          </p>
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
-          >
-            Close
-          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function InfoItem({
-  icon: Icon,
-  label,
-  value,
-  isLink = false,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value?: string | null;
-  isLink?: boolean;
-}) {
+// Helper Components
+function InfoItem({ icon, label, value, isLink }: { icon: React.ReactNode; label: string; value?: string | null; isLink?: boolean }) {
   if (!value) return null;
-
+  
   return (
-    <div className="flex items-center gap-3">
-      <Icon size={16} className="text-gray-500 flex-shrink-0" />
+    <div className="flex items-start gap-2">
+      <span className="text-gray-400 mt-0.5">{icon}</span>
       <div>
         <p className="text-xs text-gray-500">{label}</p>
         {isLink ? (
-          <a
-            href={value.startsWith("http") ? value : `https://${value}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-purple-400 hover:text-purple-300 truncate block max-w-[200px]"
-          >
+          <a href={value.startsWith("http") ? value : `mailto:${value}`} className="text-indigo-400 hover:underline text-sm" target="_blank" rel="noopener noreferrer">
             {value}
           </a>
         ) : (
-          <p className="text-sm text-gray-300 truncate max-w-[200px]">{value}</p>
+          <p className="text-gray-300 text-sm">{value}</p>
         )}
       </div>
     </div>
   );
 }
 
-function ScoreBadge({
-  label,
-  score,
-  color,
-}: {
-  label: string;
-  score: number;
-  color: "purple" | "blue" | "green";
-}) {
+function ScoreBadge({ label, score, color }: { label: string; score: number; color: string }) {
   const colorClasses: Record<string, string> = {
-    purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    blue: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    green: "bg-green-500/20 text-green-400 border-green-500/30",
+    indigo: "bg-indigo-900/50 text-indigo-300",
+    emerald: "bg-emerald-900/50 text-emerald-300",
+    amber: "bg-amber-900/50 text-amber-300",
   };
-
+  
   return (
-    <div className={`px-4 py-2 rounded-lg border text-center ${colorClasses[color]}`}>
+    <div className={`px-3 py-2 rounded-lg ${colorClasses[color] || colorClasses.indigo}`}>
       <p className="text-2xl font-bold">{score}</p>
-      <p className="text-xs opacity-80">{label}</p>
+      <p className="text-xs opacity-75">{label}</p>
     </div>
   );
 }
 
-function BantItem({
-  label,
-  value,
-  confirmed,
-}: {
-  label: string;
-  value?: string | null;
-  confirmed?: boolean;
-}) {
+function Section({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <div className="bg-gray-800/50 rounded-lg p-3">
-      <p className="text-xs text-gray-500 mb-1">{label}</p>
-      <p className={`text-sm ${confirmed ? "text-green-400" : "text-gray-300"}`}>
-        {value || "—"}
-      </p>
+    <div>
+      <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-400 mb-2">
+        {icon}
+        {title}
+      </h3>
+      {children}
     </div>
   );
 }
