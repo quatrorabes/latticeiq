@@ -16,7 +16,7 @@ interface EnrichButtonProps {
 
 export default function EnrichButton({ 
   contactId, 
-  currentStatus,
+  currentStatus: _currentStatus,
   onEnrichmentComplete,
   onComplete, 
   size,
@@ -25,6 +25,9 @@ export default function EnrichButton({
 }: EnrichButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Suppress unused var warning
+  void _currentStatus;
 
   const handleEnrich = async () => {
     setLoading(true);
@@ -49,7 +52,6 @@ export default function EnrichButton({
         throw new Error(errData.detail || `Enrichment failed (${response.status})`);
       }
 
-      // Trigger callbacks
       if (onComplete) onComplete();
       if (onEnrichmentComplete) onEnrichmentComplete();
     } catch (err) {
