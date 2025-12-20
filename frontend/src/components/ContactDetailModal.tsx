@@ -18,10 +18,11 @@ export default function ContactDetailModal({
 }: ContactDetailModalProps) {
   if (!isOpen || !contact) return null;
 
-  const fullName = `${contact.firstname || contact.first_name || ""} ${contact.lastname || contact.last_name || ""}`.trim();
+  const fullName = `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
   
   // Support both V3 (synthesized) and quick_enrich data structures
-  const enrichmentData = contact.enrichment_data?.synthesized || contact.enrichment_data?.quick_enrich;
+  const enrichmentData = contact.enrichment_data?.synthesized || 
+    (contact.enrichment_data as Record<string, unknown>)?.quick_enrich as Record<string, unknown> | undefined;
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -83,24 +84,24 @@ export default function ContactDetailModal({
             {enrichmentData ? (
               <div className="space-y-4">
                 {/* Summary */}
-                {enrichmentData.summary && (
+                {(enrichmentData as Record<string, unknown>).summary && (
                   <Section title="Summary" icon={<Target className="w-4 h-4" />}>
-                    <p className="text-gray-300">{enrichmentData.summary}</p>
+                    <p className="text-gray-300">{(enrichmentData as Record<string, unknown>).summary as string}</p>
                   </Section>
                 )}
 
                 {/* Opening Line */}
-                {enrichmentData.opening_line && (
+                {(enrichmentData as Record<string, unknown>).opening_line && (
                   <Section title="Opening Line" icon={<TrendingUp className="w-4 h-4" />}>
-                    <p className="text-gray-300 italic">"{enrichmentData.opening_line}"</p>
+                    <p className="text-gray-300 italic">"{(enrichmentData as Record<string, unknown>).opening_line as string}"</p>
                   </Section>
                 )}
 
                 {/* Talking Points */}
-                {enrichmentData.talking_points && enrichmentData.talking_points.length > 0 && (
+                {Array.isArray((enrichmentData as Record<string, unknown>).talking_points) && (
                   <Section title="Talking Points">
                     <ul className="list-disc list-inside space-y-1 text-gray-300">
-                      {enrichmentData.talking_points.map((point: string, i: number) => (
+                      {((enrichmentData as Record<string, unknown>).talking_points as string[]).map((point: string, i: number) => (
                         <li key={i}>{point}</li>
                       ))}
                     </ul>
@@ -108,10 +109,10 @@ export default function ContactDetailModal({
                 )}
 
                 {/* Objections (V3 format) */}
-                {enrichmentData.objections && enrichmentData.objections.length > 0 && (
+                {Array.isArray((enrichmentData as Record<string, unknown>).objections) && (
                   <Section title="Objection Handlers">
                     <div className="space-y-3">
-                      {enrichmentData.objections.map((obj: { objection: string; response: string }, i: number) => (
+                      {((enrichmentData as Record<string, unknown>).objections as Array<{ objection: string; response: string }>).map((obj, i: number) => (
                         <div key={i} className="bg-gray-800 rounded-lg p-3">
                           <p className="text-red-400 text-sm">"{obj.objection}"</p>
                           <p className="text-green-400 text-sm mt-1">→ {obj.response}</p>
@@ -121,17 +122,17 @@ export default function ContactDetailModal({
                   </Section>
                 )}
 
-                {/* Persona & Vertical (quick_enrich) */}
-                {(enrichmentData.persona_type || enrichmentData.vertical) && (
+                {/* Persona & Vertical */}
+                {((enrichmentData as Record<string, unknown>).persona_type || (enrichmentData as Record<string, unknown>).vertical) && (
                   <div className="flex gap-4">
-                    {enrichmentData.persona_type && (
+                    {(enrichmentData as Record<string, unknown>).persona_type && (
                       <span className="px-3 py-1 bg-purple-900/50 text-purple-300 rounded-full text-sm">
-                        {enrichmentData.persona_type}
+                        {(enrichmentData as Record<string, unknown>).persona_type as string}
                       </span>
                     )}
-                    {enrichmentData.vertical && (
+                    {(enrichmentData as Record<string, unknown>).vertical && (
                       <span className="px-3 py-1 bg-blue-900/50 text-blue-300 rounded-full text-sm">
-                        {enrichmentData.vertical}
+                        {(enrichmentData as Record<string, unknown>).vertical as string}
                       </span>
                     )}
                   </div>
@@ -174,7 +175,6 @@ export default function ContactDetailModal({
   );
 }
 
-// Helper Components
 function InfoItem({ icon, label, value, isLink }: { icon: React.ReactNode; label: string; value?: string | null; isLink?: boolean }) {
   if (!value) return null;
   
