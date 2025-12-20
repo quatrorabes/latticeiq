@@ -1,4 +1,5 @@
 // frontend/src/components/EnrichButton.tsx
+
 import { useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 
@@ -9,19 +10,19 @@ interface EnrichButtonProps {
   currentStatus?: string;
   onEnrichmentComplete?: () => void;
   onComplete?: () => void;
-  size?: string;
+  size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
   variant?: "table" | "modal";
 }
 
-export default function EnrichButton({ 
-  contactId, 
+export default function EnrichButton({
+  contactId,
   currentStatus: _currentStatus,
   onEnrichmentComplete,
-  onComplete, 
-  size,
+  onComplete,
+  size = 'md',
   showLabel = true,
-  variant = "table" 
+  variant = "table"
 }: EnrichButtonProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,6 +36,7 @@ export default function EnrichButton({
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
+
       if (!session?.access_token) {
         throw new Error("Not authenticated");
       }
@@ -62,30 +64,70 @@ export default function EnrichButton({
     }
   };
 
-  const isSmall = size === "sm";
+  const sizeClass = size === 'sm' ? 'btn-sm' : size === 'lg' ? 'btn-lg' : '';
 
-  if (variant === "table" || isSmall) {
+  // Compact table variant
+  if (variant === "table") {
     return (
-      <button
-        onClick={handleEnrich}
-        disabled={loading}
-        className="px-3 py-1 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white rounded transition-colors"
-      >
-        {loading ? "..." : (showLabel ? "Enrich" : "⚡")}
-      </button>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={handleEnrich}
+          disabled={loading}
+          className={`btn btn-primary ${sizeClass}`}
+          title={loading ? "Enriching..." : "Enrich contact"}
+        >
+          {loading ? (
+            <>
+              <span className="spinner spinner-sm mr-2" />
+              {showLabel ? "..." : ""}
+            </>
+          ) : (
+            <>
+              <span>⚡</span>
+              {showLabel ? "Enrich" : ""}
+            </>
+          )}
+        </button>
+        {error && (
+          <span className="text-xs text-error" title={error}>
+            Error
+          </span>
+        )}
+      </div>
     );
   }
 
+  // Full modal variant
   return (
-    <div className="w-full">
+    <div className="space-y-3">
       <button
         onClick={handleEnrich}
         disabled={loading}
-        className="w-full px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-medium rounded-lg transition-colors"
+        className={`btn btn-primary w-full ${sizeClass}`}
       >
-        {loading ? "Enriching..." : "Enrich Contact"}
+        {loading ? (
+          <>
+            <span className="spinner spinner-sm mr-2" />
+            Enriching contact...
+          </>
+        ) : (
+          <>
+            <span>✨</span>
+            Enrich Contact
+          </>
+        )}
       </button>
-      {error && <p className="mt-2 text-sm text-red-400">{error}</p>}
+      {error && (
+        <div className="p-3 bg-error bg-opacity-10 border border-error border-opacity-30 rounded-base text-error text-sm">
+          {error}
+          <button
+            onClick={() => setError(null)}
+            className="ml-2 text-error hover:text-error-dark text-xs underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </div>
   );
 }
