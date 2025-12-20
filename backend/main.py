@@ -30,6 +30,19 @@ except ImportError as e:
     ENRICHMENT_AVAILABLE = False
 
 # ============================================================================
+# QUICK ENRICH ROUTER (EXPERIMENTAL)
+# ============================================================================
+
+try:
+    from quick_enrich import router as quick_enrich_router
+    QUICK_ENRICH_AVAILABLE = True
+    print("✅ quick_enrich router will be registered at /api/quick-enrich")
+except ImportError as e:
+    print(f"⚠️  WARNING: quick_enrich module not found: {e}")
+    quick_enrich_router = None
+    QUICK_ENRICH_AVAILABLE = False
+
+# ============================================================================
 # APP & CORS
 # ============================================================================
 
@@ -85,6 +98,13 @@ if enrichment_router is not None:
 else:
     print("❌ enrichment_v3 router NOT available")
 
+# Register quick-enrich router
+if quick_enrich_router is not None:
+    print("✅ Registering quick_enrich router at /api/quick-enrich")
+    app.include_router(quick_enrich_router, tags=["quick-enrich"])
+else:
+    print("❌ quick_enrich router NOT available")
+
 # ============================================================================
 # Pydantic Models for Contacts
 # ============================================================================
@@ -125,6 +145,7 @@ async def health_check():
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
         "enrichment_available": ENRICHMENT_AVAILABLE,
+        "quick_enrich_available": QUICK_ENRICH_AVAILABLE,
     }
 
 # ============================================================================
@@ -138,6 +159,7 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "enrichment": "available" if ENRICHMENT_AVAILABLE else "unavailable",
+        "quick_enrich": "available" if QUICK_ENRICH_AVAILABLE else "unavailable",
     }
 
 @app.get("/api/health")
@@ -148,6 +170,7 @@ async def api_health():
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
         "enrichment_available": ENRICHMENT_AVAILABLE,
+        "quick_enrich_available": QUICK_ENRICH_AVAILABLE,
     }
 
 # ============================================================================
