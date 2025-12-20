@@ -1,8 +1,3 @@
-// frontend/src/types/contact.ts
-/**
- * Contact type definitions for LatticeIQ
- */
-
 export interface Contact {
   id: string;
   user_id: string;
@@ -16,60 +11,35 @@ export interface Contact {
   website?: string | null;
   vertical?: string | null;
   persona_type?: string | null;
-  enrichment_status: string;
-  enrichment_data?: EnrichmentData | null;
+  enrichment_status: "pending" | "processing" | "completed" | "failed";
+  enrichment_data?: Record<string, unknown> | null;
   enriched_at?: string | null;
   apex_score?: number | null;
   mdc_score?: number | null;
   rss_score?: number | null;
-  bant_budget_confirmed?: boolean | null;
-  bant_authority_level?: string | null;
-  bant_need?: string | null;
-  bant_timeline?: string | null;
-  created_at: string;
-  updated_at: string;
+  bant_budget?: number | null;
+  bant_authority?: number | null;
+  bant_need?: number | null;
+  bant_timing?: number | null;
+  bant_total_score?: number | null;
+  notes?: string | null;
+  status?: string | null;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface EnrichmentData {
   synthesized?: {
     summary?: string;
-    hooks?: string[];
+    opening_line?: string;
     talking_points?: string[];
-    objections?: Array<{
-      objection: string;
-      response: string;
-    }>;
-    bant?: {
-      budget?: string;
-      authority?: string;
-      need?: string;
-      timeline?: string;
-    };
+    objections?: Array<{ objection: string; response: string }>;
   };
-  raw?: {
-    company_data?: Record<string, unknown>;
-    person_data?: Record<string, unknown>;
-    news?: Array<{
-      title: string;
-      url: string;
-      date?: string;
-    }>;
+  quick_enrich?: {
+    summary?: string;
+    opening_line?: string;
+    persona_type?: string;
+    vertical?: string;
+    talking_points?: string[];
   };
 }
-
-export interface ContactFormData {
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone?: string;
-  company?: string;
-  title?: string;
-  linkedin_url?: string;
-  website?: string;
-  vertical?: string;
-  persona_type?: string;
-}
-
-export interface ContactCreateRequest extends ContactFormData {}
-
-export interface ContactUpdateRequest extends Partial<ContactFormData> {}
