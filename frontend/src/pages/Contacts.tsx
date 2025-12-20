@@ -53,7 +53,7 @@ export default function Contacts() {
     setIsModalOpen(true);
   };
 
-  const handleDeleteContact = async (id: number, e: React.MouseEvent) => {
+  const handleDeleteContact = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this contact?')) return;
 
@@ -170,7 +170,10 @@ export default function Contacts() {
                 </td>
                 <td className="px-6 py-4">
                   <button
-                    onClick={(e) => contact.id && handleDeleteContact(contact.id, e)}
+                    onClick={(e) => {
+                      if (!contact.id) return;
+                      handleDeleteContact(String(contact.id), e);
+                    }}
                     className="text-red-400 hover:text-red-300 transition-colors"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

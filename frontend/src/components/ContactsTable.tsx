@@ -1,12 +1,7 @@
 // frontend/src/components/ContactsTable.tsx
-/**
- * ContactsTable Component
- * Displays contacts in a table with enrich buttons and row click to open modal
- */
-
 import { useState } from "react";
 import { Trash2 } from "lucide-react";
-import { Contact } from "../types/contact";
+import type { Contact } from "../types/contact";
 import EnrichButton from "./EnrichButton";
 import ContactDetailModal from "./ContactDetailModal";
 
@@ -61,9 +56,7 @@ export default function ContactsTable({
   };
 
   const getScoreDisplay = (score: number | null | undefined) => {
-    if (score === null || score === undefined) {
-      return <span className="text-gray-600">—</span>;
-    }
+    if (score === null || score === undefined) return <span className="text-gray-600">—</span>;
 
     let colorClass = "text-gray-400";
     if (score >= 80) colorClass = "text-green-400";
@@ -96,27 +89,13 @@ export default function ContactsTable({
         <table className="w-full">
           <thead>
             <tr className="border-b border-gray-700">
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Name
-              </th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Email
-              </th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Company
-              </th>
-              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Title
-              </th>
-              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                APEX
-              </th>
-              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="text-right py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">
-                Actions
-              </th>
+              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
+              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">Email</th>
+              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">Company</th>
+              <th className="text-left py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">Title</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">APEX</th>
+              <th className="text-center py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">Status</th>
+              <th className="text-right py-3 px-4 text-xs font-medium text-gray-400 uppercase tracking-wider">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-800">
@@ -140,17 +119,10 @@ export default function ContactsTable({
                 <td className="py-3 px-4">
                   <p className="text-sm text-gray-400">{contact.title || "—"}</p>
                 </td>
-                <td className="py-3 px-4 text-center">
-                  {getScoreDisplay(contact.apex_score)}
-                </td>
-                <td className="py-3 px-4 text-center">
-                  {getStatusBadge(contact.enrichment_status)}
-                </td>
+                <td className="py-3 px-4 text-center">{getScoreDisplay(contact.apex_score)}</td>
+                <td className="py-3 px-4 text-center">{getStatusBadge(contact.enrichment_status)}</td>
                 <td className="py-3 px-4">
-                  <div
-                    className="flex items-center justify-end gap-2"
-                    onClick={(e) => e.stopPropagation()}
-                  >
+                  <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                     <EnrichButton
                       contactId={contact.id}
                       currentStatus={contact.enrichment_status}
@@ -173,7 +145,6 @@ export default function ContactsTable({
         </table>
       </div>
 
-      {/* Detail Modal */}
       <ContactDetailModal
         contact={selectedContact}
         isOpen={isModalOpen}

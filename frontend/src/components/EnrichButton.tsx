@@ -1,12 +1,8 @@
 // frontend/src/components/EnrichButton.tsx
-/**
- * EnrichButton Component
- * Triggers V3 enrichment with progress feedback
- */
-
 import { useState } from "react";
 import { Sparkles, Loader2, CheckCircle, XCircle } from "lucide-react";
-import contactsService, { EnrichmentStatus } from "../services/contactsService";
+import contactsService from "../services/contactsService";
+import type { EnrichmentStatus } from "../services/contactsService";
 
 interface EnrichButtonProps {
   contactId: string;
@@ -31,7 +27,8 @@ export default function EnrichButton({
   const [error, setError] = useState<string>("");
 
   const isEnriched = currentStatus === "completed";
-  const isProcessing = currentStatus === "processing" || state === "loading" || state === "polling";
+  const isProcessing =
+    currentStatus === "processing" || state === "loading" || state === "polling";
 
   const sizeClasses = {
     sm: "px-2 py-1 text-xs",
@@ -54,41 +51,31 @@ export default function EnrichButton({
     setStage("Starting enrichment...");
 
     try {
-      // Trigger enrichment
       await contactsService.enrichContact(contactId);
-      
+
       setState("polling");
       setStage("Gathering data...");
 
-      // Poll for completion
       await contactsService.pollEnrichmentUntilComplete(
         contactId,
         (status: EnrichmentStatus) => {
           setProgress(status.progress ?? 0);
           setStage(status.current_stage || "Processing...");
         },
-        60, // max attempts
-        2000 // interval ms
+        60,
+        2000
       );
 
       setState("success");
       setStage("Enrichment complete!");
-      
-      // Notify parent to refresh
-      if (onEnrichmentComplete) {
-        onEnrichmentComplete();
-      }
 
-      // Reset to idle after 2 seconds
-      setTimeout(() => {
-        setState("idle");
-      }, 2000);
+      onEnrichmentComplete?.();
 
+      setTimeout(() => setState("idle"), 2000);
     } catch (err) {
       setState("error");
       setError(err instanceof Error ? err.message : "Enrichment failed");
-      
-      // Reset to idle after 3 seconds
+
       setTimeout(() => {
         setState("idle");
         setError("");
@@ -96,16 +83,11 @@ export default function EnrichButton({
     }
   };
 
-  // Already enriched
   if (isEnriched && state === "idle") {
     return (
       <button
         disabled
-        className={`
-          inline-flex items-center gap-1.5 rounded-md font-medium
-          bg-green-500/20 text-green-400 cursor-default
-          ${sizeClasses[size]}
-        `}
+        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-green-500/20 text-green-400 cursor-default ${sizeClasses[size]}`}
         title="Already enriched"
       >
         <CheckCircle size={iconSize[size]} />
@@ -114,16 +96,11 @@ export default function EnrichButton({
     );
   }
 
-  // Error state
   if (state === "error") {
     return (
       <button
         onClick={handleEnrich}
-        className={`
-          inline-flex items-center gap-1.5 rounded-md font-medium
-          bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors
-          ${sizeClasses[size]}
-        `}
+        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors ${sizeClasses[size]}`}
         title={error}
       >
         <XCircle size={iconSize[size]} />
@@ -132,16 +109,11 @@ export default function EnrichButton({
     );
   }
 
-  // Success state
   if (state === "success") {
     return (
       <button
         disabled
-        className={`
-          inline-flex items-center gap-1.5 rounded-md font-medium
-          bg-green-500/20 text-green-400 cursor-default
-          ${sizeClasses[size]}
-        `}
+        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-green-500/20 text-green-400 cursor-default ${sizeClasses[size]}`}
       >
         <CheckCircle size={iconSize[size]} />
         {showLabel && "Done!"}
@@ -149,16 +121,11 @@ export default function EnrichButton({
     );
   }
 
-  // Loading/Polling state
   if (state === "loading" || state === "polling") {
     return (
       <button
         disabled
-        className={`
-          inline-flex items-center gap-1.5 rounded-md font-medium
-          bg-purple-500/20 text-purple-400 cursor-wait
-          ${sizeClasses[size]}
-        `}
+        className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-purple-500/20 text-purple-400 cursor-wait ${sizeClasses[size]}`}
         title={stage}
       >
         <Loader2 size={iconSize[size]} className="animate-spin" />
@@ -171,16 +138,11 @@ export default function EnrichButton({
     );
   }
 
-  // Idle state (default)
   return (
     <button
       onClick={handleEnrich}
-      className={`
-        inline-flex items-center gap-1.5 rounded-md font-medium
-        bg-purple-600 text-white hover:bg-purple-700 transition-colors
-        ${sizeClasses[size]}
-      `}
-      title="Enrich this contact with AI-powered insights"
+      className={`inline-flex items-center gap-1.5 rounded-md font-medium bg-purple-600 text-white hover:bg-purple-700 transition-colors ${sizeClasses[size]}`}
+      title="Enrich this contact"
     >
       <Sparkles size={iconSize[size]} />
       {showLabel && "Enrich"}
