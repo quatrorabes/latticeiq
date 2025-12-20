@@ -1,1 +1,15 @@
 .vercel
+# macOS
+.DS_Store
+
+# local virtualenvs
+backend/.venv/
+frontend/node_modules/
+
+# generated artifacts
+frontend/dist/
+
+# local notes/docs exports
+docs/*.pdf
+docs/*.docx
+docs/~$*.docx

@@ -47,38 +47,45 @@ export default function ContactsPage() {
     }
   }, []);
 
-  // Trigger quick enrichment (no polling, synchronous-ish)
+  // Trigger enrichment
   const handleEnrich = async (contactId: string) => {
     try {
       setEnrichingId(contactId);
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
-      
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/quick-enrich/${contactId}`, {
+
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/v3/enrichment/enrich`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
+          'Content-Type': 'application/json'
         },
+        body: JSON.stringify({ contact_id: contactId, synthesize: true })
       });
-      
+
       if (!response.ok) {
-        const text = await response.text();
-        throw new Error(text || 'Quick enrichment failed');
+        throw new Error('Enrichment failed');
       }
-      
-      // Optionally inspect result if you want to show a toast:
-      // const result = await response.json();
-      
-      // Reload contacts to pick up enrichment_status and enrichment_data
-      await loadContacts();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Enrichment error');
-    } finally {
-      setEnrichingId(null);
-    }
-  };
-  
+
+      // Poll status
+      let isComplete = false;
+      let attempts = 0;
+      while (!isComplete && attempts < 120) {
+        await new Promise(r => setTimeout(r, 2000));
+        
+        const statusResponse = await fetch(`${import.meta.env.VITE_API_URL}/api/v3/enrichment/${contactId}/status`, {
+          headers: { 'Authorization': `Bearer ${session.access_token}` }
+        });
+
+        if (statusResponse.ok) {
+          const status = await statusResponse.json();
+          if (status.status === 'completed' || status.status === 'failed') {
+            isComplete = true;
+          }
+        }
+        attempts++;
+      }
+
       // Reload contacts
       await loadContacts();
     } catch (err) {
@@ -209,7 +216,7 @@ export default function ContactsPage() {
               {filteredContacts.map((contact) => (
                 <tr key={contact.id} className="border-b border-gray-200 hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">
-                    {contact.first_name} {contact.last_name}
+                    {contact.firstname} {contact.lastname}
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">{contact.email}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{contact.company}</td>
