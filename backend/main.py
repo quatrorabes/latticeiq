@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import List, Dict, Optional
 from uuid import UUID
-from datetime import datetime
 import os
 
 from supabase import create_client, Client
@@ -222,6 +221,8 @@ async def delete_contact(contact_id: UUID, user: CurrentUser = Depends(get_curre
 # ROOT ENDPOINT
 # ============================================================================
 
+from datetime import datetime
+
 @app.get("/")
 async def root():
     return {
@@ -232,9 +233,17 @@ async def root():
     
 @app.get("/health")
 async def health_check_root():
-    """Health check for Render (no /api prefix)"""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
         "version": "1.0.0",
     }
+    
+@app.get("/api/health")
+async def health_check_api():
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+    }
+    
