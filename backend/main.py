@@ -23,6 +23,13 @@ from scoring import (
     calculate_all_scores,
     get_default_config
 )
+from api.routes import profile_config
+from domains.scoring.router import router as scoring_router
+
+
+app = FastAPI()
+
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -157,6 +164,14 @@ if quick_enrich_router is not None:
     app.include_router(quick_enrich_router)  # Router already has /api/v3/enrichment prefix
 else:
     print(f"❌ quick_enrich NOT available: {QUICK_ENRICH_ERROR}")
+    
+# Scoring Router
+if scoring_router is not None:
+    print("✅ Registering scoring router at /api/v3/scoring")
+    app.include_router(scoring_router)
+else:
+    print("❌ scoring router NOT available")
+    
 
 # ============================================================================
 # HEALTH + ROOT

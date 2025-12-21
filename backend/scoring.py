@@ -793,6 +793,110 @@ def get_default_config(framework: str) -> Dict[str, Any]:
     return configs.get(framework, {})
 
 
+# File: apps/backend/api/routes/contactsv2.py (existing file, modify)
+
+@router.get("/api/v2/contacts/{contact_id}/rescore")
+async def rescore_contact(
+    contact_id: uuid.UUID,
+    profile_id: uuid.UUID = None,  # If not provided, use workspace default
+    workspace_id: uuid.UUID = Depends(get_current_workspace),
+    db = Depends(get_db)
+):
+    """Rescore a single contact using profile configuration."""
+    
+    from services.scoring_service import ScoringService
+    
+    # Get contact
+    contact = db.execute("SELECT * FROM contacts WHERE id = %s", (contact_id,)).fetchone()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact not found")
+        
+    # Get profile (use provided or find default for workspace)
+    if not profile_id:
+        profile = db.execute("""
+            SELECT id FROM profiles WHERE workspace_id = %s AND status = 'Active' LIMIT 1
+        """, (workspace_id,)).fetchone()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="No active profile found for workspace")
+        profile_id = profile['id']
+        
+    # Load profile config & calculate score
+    scoring_service = ScoringService(db)
+    profile_config = scoring_service.load_profile_config(workspace_id, profile_id)
+    score_result = scoring_service.calculate_mdcp_score_with_profile(dict(contact), profile_config)
+    
+    # Update contact with new scores
+    db.execute("""
+        UPDATE contacts 
+        SET mdcp_score = %s, lead_tier = %s, updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+    """, (score_result['mdcp_score'], score_result['lead_tier'], contact_id))
+
+    db.commit()
+    
+    return {
+        "success": True,
+        "contact_id": str(contact_id),
+        "new_mdcp_score": score_result['mdcp_score'],
+        "new_lead_tier": score_result['lead_tier'],
+        "score_breakdown": {
+            "firmographic": score_result['firmographic_score'],
+            "demographic": score_result['demographic_score'],
+            "behavioral": score_result['behavioral_score'],
+            "profile_completeness": score_result['profile_score']
+        }
+    }
+
+@router.post("/api/v2/contacts/batch-rescore")
+async def batch_rescore_contacts(
+    profile_id: uuid.UUID = None,
+    workspace_id: uuid.UUID = Depends(get_current_workspace),
+    db = Depends(get_db)
+):
+    """Rescore ALL contacts for a workspace using active profile."""
+    
+    from services.scoring_service import ScoringService
+    
+    if not profile_id:
+        profile = db.execute("""
+            SELECT id FROM profiles WHERE workspace_id = %s AND status = 'Active' LIMIT 1
+        """, (workspace_id,)).fetchone()
+        
+        if not profile:
+            raise HTTPException(status_code=404, detail="No active profile found")
+        profile_id = profile['id']
+        
+    # Get all contacts
+    contacts = db.execute("""
+        SELECT * FROM contacts WHERE workspace_id = %s
+    """, (workspace_id,)).fetchall()
+
+    # Rescore all
+    scoring_service = ScoringService(db)
+    profile_config = scoring_service.load_profile_config(workspace_id, profile_id)
+    
+    updated_count = 0
+    for contact in contacts:
+        score_result = scoring_service.calculate_mdcp_score_with_profile(dict(contact), profile_config)
+        
+        db.execute("""
+            UPDATE contacts 
+            SET mdcp_score = %s, lead_tier = %s, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (score_result['mdcp_score'], score_result['lead_tier'], contact['id']))
+        
+        updated_count += 1
+        
+    db.commit()
+    
+    return {
+        "success": True,
+        "contacts_updated": updated_count,
+        "profile_id": str(profile_id)
+    }
+
+
 # ============================================================================
 # EXPORT CALCULATORS
 # ============================================================================
