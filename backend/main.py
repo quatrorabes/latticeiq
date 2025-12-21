@@ -14,15 +14,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 # ROUTER IMPORTS (with try-except to handle missing modules)
 # ============================================================
 
-# Quick Enrich Router
-quick_enrich_router = None
-try:
-    from quick_enrich.router import router as quick_enrich_router
-    print("✅ quick_enrich router imported successfully")
-except (ImportError, ModuleNotFoundError) as e:
-    print(f"⚠️ quick_enrich router import error: {e}")
-    quick_enrich_router = None
-
 # Scoring Router (from backend/scoring/)
 scoring_router = None
 try:
@@ -91,11 +82,13 @@ except (ImportError, ModuleNotFoundError) as e:
     ENRICHMENT_ERROR = str(e)
     print(f"⚠️ Perplexity enrichment not available: {e}")
 
+# Quick Enrich Service (FUNCTION-BASED)
 QUICK_ENRICH_AVAILABLE = False
 QUICK_ENRICH_ERROR = None
+enrich_contact_quick = None
 
 try:
-    from quick_enrich.service import enrich_contact_quick
+    from enrichment_v3.quick_enrich import enrich_contact_quick
     QUICK_ENRICH_AVAILABLE = True
     print("✅ Quick enrichment service available")
 except (ImportError, ModuleNotFoundError) as e:
@@ -275,13 +268,6 @@ async def delete_contact(contact_id: str, user: CurrentUser = Depends(get_curren
 # ROUTER REGISTRATION
 # ============================================================
 
-# Quick Enrich Router
-if quick_enrich_router is not None:
-    print("✅ Registering quick_enrich router at /api/v3/enrichment")
-    app.include_router(quick_enrich_router)
-else:
-    print("⚠️ quick_enrich router NOT registered")
-
 # Scoring Router
 if scoring_router is not None:
     print("✅ Registering scoring router at /api/v3/scoring")
@@ -300,7 +286,7 @@ async def startup_event():
     print("="*60)
     print(f"✅ FastAPI initialized")
     print(f"✅ Scoring router: {'LOADED' if scoring_router else 'NOT LOADED'}")
-    print(f"✅ Quick enrich router: {'LOADED' if quick_enrich_router else 'NOT LOADED'}")
+    print(f"✅ Quick enrich service: {'AVAILABLE' if QUICK_ENRICH_AVAILABLE else 'NOT AVAILABLE'}")
     print(f"✅ Supabase: {'CONNECTED' if supabase else 'NOT CONNECTED'}")
     print("="*60 + "\n")
 
