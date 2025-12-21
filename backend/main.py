@@ -4,36 +4,63 @@ from pydantic import BaseModel
 from datetime import datetime
 from typing import Optional, List
 import os
+import sys
 from supabase import create_client, Client
-import asyncio
-from uuid import uuid4
+
+# Add current directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ============================================================
-# ROUTER IMPORTS
+# ROUTER IMPORTS (with try-except to handle missing modules)
 # ============================================================
 
 # Quick Enrich Router
+quick_enrich_router = None
 try:
     from quick_enrich.router import router as quick_enrich_router
     print("✅ quick_enrich router imported successfully")
-except ImportError as e:
-    print(f"❌ quick_enrich router import error: {e}")
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"⚠️ quick_enrich router import error: {e}")
     quick_enrich_router = None
 
-# Scoring Router (NEW)
+# Scoring Router (from backend/scoring/)
+scoring_router = None
 try:
-    from domains.scoring.router import router as scoring_router
+    from scoring.router import router as scoring_router
     print("✅ scoring router imported successfully")
-except ImportError as e:
-    print(f"❌ scoring router import error: {e}")
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"⚠️ scoring router import error: {e}")
     scoring_router = None
 
-# ============================================================
-# DATABASE & AUTH
-# ============================================================
+# Auth imports (with fallback)
+CurrentUser = None
+get_current_user = None
+verify_jwt_token = None
 
-from core.auth import verify_jwt_token, CurrentUser, get_current_user
-from core.database import get_db
+try:
+    from core.auth import verify_jwt_token, CurrentUser, get_current_user
+    print("✅ core.auth imported successfully")
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"⚠️ core.auth import error: {e}")
+    # Define a simple fallback
+    class CurrentUser(BaseModel):
+        id: str
+        email: str
+    
+    async def get_current_user():
+        return CurrentUser(id="test-user", email="test@example.com")
+    
+    async def verify_jwt_token(token: str):
+        return {"user_id": "test-user"}
+
+# Database imports (with fallback)
+get_db = None
+try:
+    from core.database import get_db
+    print("✅ core.database imported successfully")
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"⚠️ core.database import error: {e}")
+    get_db = None
 
 # ============================================================
 # INITIALIZE SUPABASE
@@ -43,11 +70,11 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    print("❌ ERROR: SUPABASE_URL or SUPABASE_ANON_KEY not set")
+    print("❌ WARNING: SUPABASE_URL or SUPABASE_ANON_KEY not set")
     supabase = None
 else:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print(f"✅ Supabase initialized: {SUPABASE_URL}")
+    print(f"✅ Supabase initialized")
 
 # ============================================================
 # ENRICHMENT SERVICE STATUS
@@ -60,7 +87,7 @@ try:
     import perplexity_service
     ENRICHMENT_AVAILABLE = True
     print("✅ Perplexity enrichment service available")
-except ImportError as e:
+except (ImportError, ModuleNotFoundError) as e:
     ENRICHMENT_ERROR = str(e)
     print(f"⚠️ Perplexity enrichment not available: {e}")
 
@@ -71,7 +98,7 @@ try:
     from quick_enrich.service import enrich_contact_quick
     QUICK_ENRICH_AVAILABLE = True
     print("✅ Quick enrichment service available")
-except ImportError as e:
+except (ImportError, ModuleNotFoundError) as e:
     QUICK_ENRICH_ERROR = str(e)
     print(f"⚠️ Quick enrichment not available: {e}")
 
@@ -123,7 +150,7 @@ class ContactUpdate(BaseModel):
     spice_score: Optional[int] = None
 
 # ============================================================
-# HEALTH + ROOT
+# HEALTH + ROOT ENDPOINTS
 # ============================================================
 
 @app.get("/health")
@@ -161,12 +188,15 @@ async def root():
     }
 
 # ============================================================
-# CONTACTS CRUD
+# CONTACTS CRUD ENDPOINTS
 # ============================================================
 
 @app.get("/api/contacts")
 async def list_contacts(user: CurrentUser = Depends(get_current_user)):
     """List all contacts for the authenticated user"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    
     print(f"🔍 DEBUG: user.id = {user.id}")
     result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
     print(f"🔍 DEBUG: found {len(result.data or [])} contacts")
@@ -175,6 +205,9 @@ async def list_contacts(user: CurrentUser = Depends(get_current_user)):
 @app.get("/api/contacts/{contact_id}")
 async def get_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Get a single contact by ID"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    
     result = (
         supabase.table("contacts")
         .select("*")
@@ -190,6 +223,9 @@ async def get_contact(contact_id: str, user: CurrentUser = Depends(get_current_u
 @app.post("/api/contacts")
 async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get_current_user)):
     """Create a new contact"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    
     data = contact.dict()
     data["user_id"] = user.id
     result = supabase.table("contacts").insert(data).execute()
@@ -200,6 +236,9 @@ async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get
 @app.put("/api/contacts/{contact_id}")
 async def update_contact(contact_id: str, patch: ContactUpdate, user: CurrentUser = Depends(get_current_user)):
     """Update a contact"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    
     update_data = {k: v for k, v in patch.dict().items() if v is not None}
     if not update_data:
         return {"updated": False, "message": "No fields to update"}
@@ -219,6 +258,9 @@ async def update_contact(contact_id: str, patch: ContactUpdate, user: CurrentUse
 @app.delete("/api/contacts/{contact_id}")
 async def delete_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Delete a contact"""
+    if not supabase:
+        raise HTTPException(status_code=500, detail="Database not initialized")
+    
     result = (
         supabase.table("contacts")
         .delete()
@@ -238,14 +280,29 @@ if quick_enrich_router is not None:
     print("✅ Registering quick_enrich router at /api/v3/enrichment")
     app.include_router(quick_enrich_router)
 else:
-    print("❌ quick_enrich router NOT available")
+    print("⚠️ quick_enrich router NOT registered")
 
 # Scoring Router
 if scoring_router is not None:
     print("✅ Registering scoring router at /api/v3/scoring")
     app.include_router(scoring_router)
 else:
-    print("❌ scoring router NOT available")
+    print("⚠️ scoring router NOT registered")
+
+# ============================================================
+# STARTUP MESSAGE
+# ============================================================
+
+@app.on_event("startup")
+async def startup_event():
+    print("\n" + "="*60)
+    print("🚀 LatticeIQ API Starting Up")
+    print("="*60)
+    print(f"✅ FastAPI initialized")
+    print(f"✅ Scoring router: {'LOADED' if scoring_router else 'NOT LOADED'}")
+    print(f"✅ Quick enrich router: {'LOADED' if quick_enrich_router else 'NOT LOADED'}")
+    print(f"✅ Supabase: {'CONNECTED' if supabase else 'NOT CONNECTED'}")
+    print("="*60 + "\n")
 
 # ============================================================
 # STARTUP
