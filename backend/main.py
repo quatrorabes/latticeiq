@@ -25,6 +25,26 @@ else:
     print("✅ Supabase initialized")
 
 # ============================================================
+# FASTAPI APP (create BEFORE adding middleware)
+# ============================================================
+
+app = FastAPI(
+    title="LatticeIQ Sales Intelligence API",
+    version="1.0.0",
+    description="Sales enrichment and lead scoring platform"
+)
+
+# CORS Middleware (CRITICAL: must be first)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins for now
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],  # Expose all headers
+)
+
+# ============================================================
 # PYDANTIC MODELS
 # ============================================================
 
@@ -61,27 +81,12 @@ class ContactUpdate(BaseModel):
 # ============================================================
 
 async def get_current_user() -> CurrentUser:
-    # Fallback user for testing (replace with real JWT validation)
-    return CurrentUser(id="test-user-123", email="test@example.com")
-
-# ============================================================
-# FASTAPI APP
-# ============================================================
-
-app = FastAPI(
-    title="LatticeIQ Sales Intelligence API",
-    version="1.0.0",
-    description="Sales enrichment and lead scoring platform"
-)
-
-# CORS Middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    """Fallback user for testing (replace with real JWT validation)"""
+    try:
+        return CurrentUser(id="test-user-123", email="test@example.com")
+    except Exception as e:
+        print(f"⚠️ Error in get_current_user: {e}")
+        raise HTTPException(status_code=500, detail="Authentication error")
 
 # ============================================================
 # HEALTH ENDPOINTS
@@ -120,47 +125,59 @@ async def root():
 @app.get("/api/contacts")
 async def list_contacts(user: CurrentUser = Depends(get_current_user)):
     """List all contacts for the authenticated user"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database not initialized")
+    try:
+        if not supabase:
+            return {"contacts": [], "error": "Database not initialized"}
 
-    print(f"🔍 DEBUG: user.id = {user.id}")
-    result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
-    print(f"🔍 DEBUG: found {len(result.data or [])} contacts")
-    return {"contacts": result.data or []}
+        print(f"🔍 DEBUG: user.id = {user.id}")
+        result = supabase.table("contacts").select("*").eq("user_id", user.id).execute()
+        print(f"🔍 DEBUG: found {len(result.data or [])} contacts")
+        return {"contacts": result.data or []}
+    except Exception as e:
+        print(f"❌ ERROR in list_contacts: {e}")
+        return {"contacts": [], "error": str(e)}
 
 @app.get("/api/contacts/{contact_id}")
 async def get_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Get a single contact by ID"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database not initialized")
+    try:
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Database not initialized")
 
-    result = (
-        supabase.table("contacts")
-        .select("*")
-        .eq("id", contact_id)
-        .eq("user_id", user.id)
-        .execute()
-    )
+        result = (
+            supabase.table("contacts")
+            .select("*")
+            .eq("id", contact_id)
+            .eq("user_id", user.id)
+            .execute()
+        )
 
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Contact not found")
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Contact not found")
 
-    return result.data[0]
+        return result.data[0]
+    except Exception as e:
+        print(f"❌ ERROR in get_contact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/contacts")
 async def create_contact(contact: ContactCreate, user: CurrentUser = Depends(get_current_user)):
     """Create a new contact"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database not initialized")
+    try:
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Database not initialized")
 
-    data = contact.dict()
-    data["user_id"] = user.id
+        data = contact.dict()
+        data["user_id"] = user.id
 
-    result = supabase.table("contacts").insert(data).execute()
-    if not result.data:
-        raise HTTPException(status_code=500, detail="Failed to create contact")
+        result = supabase.table("contacts").insert(data).execute()
+        if not result.data:
+            raise HTTPException(status_code=500, detail="Failed to create contact")
 
-    return result.data[0]
+        return result.data[0]
+    except Exception as e:
+        print(f"❌ ERROR in create_contact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/contacts/{contact_id}")
 async def update_contact(
@@ -169,52 +186,58 @@ async def update_contact(
     user: CurrentUser = Depends(get_current_user),
 ):
     """Update a contact"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database not initialized")
+    try:
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Database not initialized")
 
-    update_data = {k: v for k, v in patch.dict().items() if v is not None}
-    if not update_data:
-        return {"updated": False, "message": "No fields to update"}
+        update_data = {k: v for k, v in patch.dict().items() if v is not None}
+        if not update_data:
+            return {"updated": False, "message": "No fields to update"}
 
-    result = (
-        supabase.table("contacts")
-        .update(update_data)
-        .eq("id", contact_id)
-        .eq("user_id", user.id)
-        .execute()
-    )
+        result = (
+            supabase.table("contacts")
+            .update(update_data)
+            .eq("id", contact_id)
+            .eq("user_id", user.id)
+            .execute()
+        )
 
-    if not result.data:
-        raise HTTPException(status_code=404, detail="Contact not found")
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Contact not found")
 
-    return result.data[0]
+        return result.data[0]
+    except Exception as e:
+        print(f"❌ ERROR in update_contact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/contacts/{contact_id}")
 async def delete_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Delete a contact"""
-    if not supabase:
-        raise HTTPException(status_code=500, detail="Database not initialized")
+    try:
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Database not initialized")
 
-    result = (
-        supabase.table("contacts")
-        .delete()
-        .eq("id", contact_id)
-        .eq("user_id", user.id)
-        .execute()
-    )
+        result = (
+            supabase.table("contacts")
+            .delete()
+            .eq("id", contact_id)
+            .eq("user_id", user.id)
+            .execute()
+        )
 
-    return {"deleted": True, "contact_id": contact_id}
+        return {"deleted": True, "contact_id": contact_id}
+    except Exception as e:
+        print(f"❌ ERROR in delete_contact: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ============================================================
 # SCORING ROUTER (if it exists)
 # ============================================================
 
-scoring_router = None
 try:
     from scoring.router import router as scoring_router
     print("✅ Scoring router imported successfully")
-    if scoring_router:
-        app.include_router(scoring_router)
+    app.include_router(scoring_router)
 except (ImportError, ModuleNotFoundError) as e:
     print(f"⚠️ Scoring router not available: {e}")
 
@@ -228,8 +251,8 @@ async def startup_event():
     print("🚀 LatticeIQ API Starting Up")
     print("=" * 60)
     print(f"✅ FastAPI initialized")
+    print(f"✅ CORS enabled for all origins")
     print(f"✅ Supabase: {'CONNECTED' if supabase else 'NOT CONNECTED'}")
-    print(f"✅ Scoring router: {'LOADED' if scoring_router else 'NOT LOADED'}")
     print("=" * 60 + "\n")
 
 # ============================================================
