@@ -9,6 +9,8 @@ import ContactsPage from './pages/ContactsPage';
 import Dashboard from './pages/Dashboard';
 import Sidebar from './components/Sidebar';
 import Loader from './components/Loader';
+import { ScoringConfigPage } from './components/scoringconfig/ScoringConfigPage';
+
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -64,6 +66,7 @@ function App() {
             <Route path="/" element={<Navigate to="/contacts" replace />} />
             <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/scoring-config" element={<ScoringConfigPage />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
           </Routes>
         </main>
