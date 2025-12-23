@@ -14,9 +14,9 @@ pydantic[email]==2.10.5
 python-multipart==0.0.6
 aiofiles==23.2.1
 
-# HTTP Client
-httpx==0.28.1
-httpcore==1.0.7
+# HTTP Client (pinned for Supabase compatibility)
+httpx==0.25.2
+httpcore==1.0.4
 
 # Supabase SDK
 supabase==2.4.0
