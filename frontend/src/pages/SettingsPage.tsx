@@ -1,7 +1,7 @@
 // frontend/src/pages/SettingsPage.tsx
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import { User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 
 export default function SettingsPage() {
   const [user, setUser] = useState<User | null>(null);
@@ -33,7 +33,6 @@ export default function SettingsPage() {
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-white">Settings</h1>
 
-      {/* Account Info */}
       <div className="bg-gray-800 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Account</h2>
         <div className="space-y-4">
@@ -48,7 +47,6 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* Actions */}
       <div className="bg-gray-800 rounded-lg p-6">
         <h2 className="text-lg font-semibold text-white mb-4">Actions</h2>
         <button
