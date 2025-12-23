@@ -35,9 +35,13 @@ class CSVContact(BaseModel):
 	
 	@validator('phone')
 	def validate_phone(cls, v):
+		"""Relaxed phone validation - accept any format with at least 3 digits"""
 		if v:
+			# Remove all non-digit characters except + - ( )
 			v = re.sub(r'[^\d+\-()]', '', v)
-			if len(v) < 10:
+			# Extract just digits to check length
+			digits_only = re.sub(r'[^\d]', '', v)
+			if len(digits_only) < 3:
 				raise ValueError('Phone too short')
 		return v or None
 	
