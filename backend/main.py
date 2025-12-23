@@ -15,7 +15,11 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 from functools import lru_cache
-from routers import crm_router, scoring_router
+# ✅ CORRECT (imports from actual packages)
+from crm.router import router as crm_router
+from enrichment_v3.api_routes import router as enrichment_router
+from scoring.router import router as scoring_router
+
 
 # FastAPI & Web
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter
@@ -39,6 +43,12 @@ from pythonjsonlogger import jsonlogger
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Include routers
+app.include_router(crm_router, prefix="/api/v3/crm", tags=["CRM"])
+app.include_router(enrichment_router, prefix="/api/v3/enrichment", tags=["Enrichment"])
+app.include_router(scoring_router, prefix="/api/v3/scoring", tags=["Scoring"])
+
 
 # ============================================================================
 # CONFIGURATION & SETTINGS
@@ -313,6 +323,13 @@ async def validation_exception_handler(request, exc):
     )
 
 # ============================================================================
+# INCLUDE ROUTERS
+# ============================================================================
+app.include_router(crm_router, prefix="/api/v3/crm", tags=["CRM"])
+app.include_router(enrichment_router, prefix="/api/v3/enrichment", tags=["Enrichment"])
+app.include_router(scoring_router, prefix="/api/v3/scoring", tags=["Scoring"])
+
+# ============================================================================
 # HEALTH ENDPOINTS
 # ============================================================================
 
@@ -552,6 +569,8 @@ try:
     logger.info("✅ Scoring router registered")
 except (ImportError, ModuleNotFoundError) as e:
     logger.warning(f"⚠️ Scoring router not available: {str(e)}")
+    
+    
 
 # ============================================================================
 # STARTUP & SHUTDOWN EVENTS
@@ -581,3 +600,4 @@ async def shutdown_event():
 # ============================================================================
 # END OF MAIN.PY
 # ============================================================================
+    
