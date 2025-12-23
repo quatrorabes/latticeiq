@@ -15,6 +15,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Optional
 from functools import lru_cache
+from routers import crm_router, scoring_router
 
 # FastAPI & Web
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter
@@ -314,6 +315,7 @@ async def validation_exception_handler(request, exc):
 # ============================================================================
 # HEALTH ENDPOINTS
 # ============================================================================
+
 
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
