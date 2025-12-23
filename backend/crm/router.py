@@ -4,7 +4,6 @@
 # FILE: backend/crm/router.py
 # ============================================================================
 """CRM import endpoints - v3 API"""
-
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
 from fastapi.responses import JSONResponse
 from uuid import UUID, uuid4
@@ -12,13 +11,17 @@ from typing import Optional
 from datetime import datetime
 import os
 
+# Local module imports (within crm/)
 from .models import ImportJob, ImportLog, DNCEntry
 from .csv_parser import CSVParser
 from .hubspot_client import HubSpotClient
 from .salesforce_client import SalesforceClient
 from .pipedrive_client import PipedriveClient
-from ..lib.supabase_client import supabase
-from ..lib.dependencies import get_current_user
+
+# Backend-level imports (absolute from src/backend/)
+from lib.supabase_client import supabase
+from lib.dependencies import get_current_user  # ✅ FIXED - removed ..
+
 
 router = APIRouter(prefix="/api/v3/import", tags=["CRM Import"])
 
