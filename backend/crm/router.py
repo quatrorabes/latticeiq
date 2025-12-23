@@ -33,7 +33,8 @@ def get_current_user() -> str:
     return "00000000-0000-0000-0000-000000000000"
 
 
-router = APIRouter(prefix="/api/v3/import", tags=["CRM Import"])
+# FIXED: Changed from '/api/v3/import' to '/import' (main.py adds '/api/v3/crm')
+router = APIRouter(prefix="/import", tags=["CRM Import"])
 
 
 # ============================================================================
