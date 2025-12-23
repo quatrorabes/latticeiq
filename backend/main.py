@@ -20,7 +20,7 @@ from functools import lru_cache
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from fastapi.middleware.gzip import GZIPMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
@@ -148,7 +148,7 @@ class ContactCreate(BaseModel):
     """Contact creation payload"""
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    email: str = Field(..., regex=r"^[\w\.-]+@[\w\.-]+\.\w+$")
+    email: str = Field(..., pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
     title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
@@ -159,7 +159,7 @@ class ContactUpdate(BaseModel):
     """Contact update payload"""
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
-    email: Optional[str] = Field(None, regex=r"^[\w\.-]+@[\w\.-]+\.\w+$")
+    email: Optional[str] = Field(None, pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
     title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
@@ -270,7 +270,7 @@ app.add_middleware(
 )
 
 # Gzip compression
-app.add_middleware(GZIPMiddleware, minimum_size=1000)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # ============================================================================
 # EXCEPTION HANDLERS
