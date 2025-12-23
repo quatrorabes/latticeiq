@@ -51,4 +51,48 @@ export const apiClient = {
     if (!response.ok) throw new Error(`API error: ${response.status}`);
     return response.json();
   },
+  
+  // Add to apiClient object (after delete method):
+  
+  async importCSV(file: File, vertical: string = 'Custom') {
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('vertical', vertical);
+    
+    const response = await fetch(`${API_URL}/api/v3/crm/import/csv`, {
+      method: 'POST',
+      headers: {
+        'Authorization': token ? `Bearer ${token}` : '',
+      },
+      body: formData,
+    });
+    
+    if (!response.ok) throw new Error(`Import failed: ${response.status}`);
+    return response.json();
+  },
+  
+  async getImportStatus(jobId: string) {
+    return this.get(`/api/v3/crm/import/status/${jobId}`);
+  },
+  
+  async getContacts() {
+    return this.get('/api/v3/contacts');
+  },
+  
+  async createContact(data: any) {
+    return this.post('/api/v3/contacts', data);
+  },
+  
+  async updateContact(id: string, data: any) {
+    return this.post(`/api/v3/contacts/${id}`, data);
+  },
+  
+  async getScores(contactId: string) {
+    return this.get(`/api/v3/scoring/calculate/${contactId}`);
+  },
+  
 };
+
