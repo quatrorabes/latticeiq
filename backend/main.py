@@ -48,35 +48,40 @@ from jose import JWTError, jwt
 # Logging
 from pythonjsonlogger import jsonlogger
 
-# ========================================
-# NOW IMPORT LOCAL MODULES (after path fix)
-# ========================================
-# NOTE: lib.supabase_client removed - doesn't exist and wasn't used
+# crm router
+from app.crm.router import router as crm_router
+app.include_router(crm_router) 
 
 # Import routers with error handling
+# NOTE: Routers moved to app/ subdirectory after Dec 23 restructure
 try:
-    from crm.router import router as crm_router
+    from app.crm.router import router as crm_router
     CRM_AVAILABLE = True
+    logging.info("✅ CRM router imported")
 except Exception as e:
     logging.error(f"❌ CRM router import failed: {e}")
     crm_router = None
     CRM_AVAILABLE = False
-
+    
 try:
-    from enrichment_v3.api_routes import router as enrichment_router
+    from app.enrichment_v3 import router as enrichment_router  # Use package import
     ENRICHMENT_AVAILABLE = True
+    logging.info("✅ Enrichment router imported")
 except Exception as e:
     logging.error(f"❌ Enrichment router import failed: {e}")
     enrichment_router = None
     ENRICHMENT_AVAILABLE = False
-
+    
 try:
-    from scoring.router import router as scoring_router
+    from app.scoring.router import router as scoring_router
     SCORING_AVAILABLE = True
+    logging.info("✅ Scoring router imported")
 except Exception as e:
     logging.error(f"❌ Scoring router import failed: {e}")
     scoring_router = None
     SCORING_AVAILABLE = False
+    
+    
 
 # ============================================================================
 # CONFIGURATION & SETTINGS
@@ -378,10 +383,8 @@ else:
 # ============================================================================
 # HEALTH ENDPOINTS (response_model removed for Pydantic 2.10.5 compatibility)
 # ============================================================================
-
-@app.get("/health")
-async def health_check():
-    """Root health check endpoint"""
+    
+def _health_payload() -> dict:
     return {
         "status": "ok",
         "version": "3.0.0",
@@ -390,38 +393,33 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "crm_available": CRM_AVAILABLE,
         "enrichment_available": ENRICHMENT_AVAILABLE,
-        "scoring_available": SCORING_AVAILABLE
+        "scoring_available": SCORING_AVAILABLE,
     }
+    
+
+@app.get("/health")
+async def health_check():
+    """Root health check endpoint"""
+    return _health_payload()
 
 
 @app.get("/api/health")
 async def api_health():
     """API health check endpoint"""
-    return {
-        "status": "ok",
-        "version": "3.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "supabase": "connected" if supabase else "disconnected",
-        "environment": settings.ENVIRONMENT,
-        "crm_available": CRM_AVAILABLE,
-        "enrichment_available": ENRICHMENT_AVAILABLE,
-        "scoring_available": SCORING_AVAILABLE
-    }
+    return _health_payload()
+
+
+# Back-compat alias (older clients / docs used /apihealth)
+@app.get("/apihealth")
+async def apihealth_alias():
+    """Back-compat: alias for /api/health"""
+    return _health_payload()
 
 
 @app.get("/api/v3/health")
 async def api_v3_health():
     """API v3 health check endpoint"""
-    return {
-        "status": "ok",
-        "version": "3.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "supabase": "connected" if supabase else "disconnected",
-        "environment": settings.ENVIRONMENT,
-        "crm_available": CRM_AVAILABLE,
-        "enrichment_available": ENRICHMENT_AVAILABLE,
-        "scoring_available": SCORING_AVAILABLE
-    }
+    return _health_payload()
 
 
 @app.get("/")
@@ -435,10 +433,9 @@ async def root():
         "modules": {
             "crm": CRM_AVAILABLE,
             "enrichment": ENRICHMENT_AVAILABLE,
-            "scoring": SCORING_AVAILABLE
-        }
+            "scoring": SCORING_AVAILABLE,
+        },
     }
-
 
 # ============================================================================
 # CONTACTS CRUD ENDPOINTS (v3)
@@ -662,3 +659,4 @@ async def shutdown_event():
 # ============================================================================
 # END OF MAIN.PY
 # ============================================================================
+    
