@@ -12,13 +12,13 @@ from typing import Optional
 from datetime import datetime
 import os
 
-from backend.crm.models import ImportJob, ImportLog, DNCEntry
-from backend.crm.csv_parser import CSVParser
-from backend.crm.hubspot_client import HubSpotClient
-from backend.crm.salesforce_client import SalesforceClient
-from backend.crm.pipedrive_client import PipedriveClient
-from backend.lib.supabase_client import supabase
-from backend.lib.dependencies import get_current_user
+from .models import ImportJob, ImportLog, DNCEntry
+from .csv_parser import CSVParser
+from .hubspot_client import HubSpotClient
+from .salesforce_client import SalesforceClient
+from .pipedrive_client import PipedriveClient
+from ..lib.supabase_client import supabase
+from ..lib.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/v3/import", tags=["CRM Import"])
 
