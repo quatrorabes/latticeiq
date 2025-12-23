@@ -43,7 +43,7 @@ export default function Dashboard() {
       }
 
       // Fetch all contacts for this user
-      const response = await apiClient.get('/api/v3/contacts?limit=1000');
+      import { apiClient } from '../services/apiClient';
       const contacts = response.data.contacts || [];
 
       // Calculate stats
