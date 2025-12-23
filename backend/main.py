@@ -31,7 +31,7 @@ from functools import lru_cache
 # FastAPI & Web
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+# from fastapi.middleware.trustedhost import TrustedHostMiddleware  # DISABLED: Blocks Render health checks
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -304,11 +304,11 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Trusted hosts
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=settings.ALLOWED_HOSTS
-)
+# DISABLED: TrustedHostMiddleware blocks Render's internal health check IPs (10.225.x.x)
+# app.add_middleware(
+#     TrustedHostMiddleware,
+#     allowed_hosts=settings.ALLOWED_HOSTS
+# )
 
 # Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
