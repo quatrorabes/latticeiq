@@ -52,35 +52,36 @@ from pythonjsonlogger import jsonlogger
 from app.crm.router import router as crm_router
 app.include_router(crm_router) 
 
-# ========================================
-# NOW IMPORT LOCAL MODULES (after path fix)
-# ========================================
-# NOTE: lib.supabase_client removed - doesn't exist and wasn't used
-
 # Import routers with error handling
+# NOTE: Routers moved to app/ subdirectory after Dec 23 restructure
 try:
     from app.crm.router import router as crm_router
     CRM_AVAILABLE = True
+    logging.info("✅ CRM router imported")
 except Exception as e:
     logging.error(f"❌ CRM router import failed: {e}")
     crm_router = None
     CRM_AVAILABLE = False
-
+    
 try:
-    from app.enrichment_v3.api.routes import router as enrichment_router
+    from app.enrichment_v3 import router as enrichment_router  # Use package import
     ENRICHMENT_AVAILABLE = True
+    logging.info("✅ Enrichment router imported")
 except Exception as e:
     logging.error(f"❌ Enrichment router import failed: {e}")
     enrichment_router = None
     ENRICHMENT_AVAILABLE = False
-
+    
 try:
-    from app.scoring import router as scoring_router
+    from app.scoring.router import router as scoring_router
     SCORING_AVAILABLE = True
+    logging.info("✅ Scoring router imported")
 except Exception as e:
     logging.error(f"❌ Scoring router import failed: {e}")
     scoring_router = None
     SCORING_AVAILABLE = False
+    
+    
 
 # ============================================================================
 # CONFIGURATION & SETTINGS
