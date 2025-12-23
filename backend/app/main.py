@@ -358,23 +358,17 @@ async def validation_exception_handler(request, exc):
 # ============================================================================
 
 # Register routers (with availability checks)
-if crm_router and CRM_AVAILABLE:
-    app.include_router(crm_router, prefix="/api/v3/crm", tags=["CRM"])
-    logger.info("✅ CRM router registered")
-else:
-    logger.warning("⚠️ CRM router not available")
+if CRM_AVAILABLE:
+    app.include_router(crm_router)
+    
+if ENRICHMENT_AVAILABLE:
+    app.include_router(enrichment_router)
+    
+if SCORING_AVAILABLE:
+    app.include_router(scoring_router)
+    
+app.include_router(contacts_router)
 
-if enrichment_router and ENRICHMENT_AVAILABLE:
-    app.include_router(enrichment_router, prefix="/api/v3/enrichment", tags=["Enrichment"])
-    logger.info("✅ Enrichment router registered")
-else:
-    logger.warning("⚠️ Enrichment router not available")
-
-if scoring_router and SCORING_AVAILABLE:
-    app.include_router(scoring_router, prefix="/api/v3/scoring", tags=["Scoring"])
-    logger.info("✅ Scoring router registered")
-else:
-    logger.warning("⚠️ Scoring router not available")
 
 # ============================================================================
 # HEALTH ENDPOINTS (response_model removed for Pydantic 2.10.5 compatibility)
