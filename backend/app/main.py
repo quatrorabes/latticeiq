@@ -48,10 +48,6 @@ from jose import JWTError, jwt
 # Logging
 from pythonjsonlogger import jsonlogger
 
-# crm router
-from app.crm.router import router as crm_router
-app.include_router(crm_router) 
-
 # Import routers with error handling
 # NOTE: Routers moved to app/ subdirectory after Dec 23 restructure
 try:
