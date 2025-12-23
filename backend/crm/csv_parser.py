@@ -12,6 +12,8 @@ from io import StringIO, BytesIO
 from typing import List, Tuple, Dict, Any
 from uuid import UUID
 from pydantic import BaseModel, EmailStr, validator
+from typing import Optional
+
 
 
 class CSVContact(BaseModel):
