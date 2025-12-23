@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from functools import lru_cache
 # ✅ CORRECT (imports from actual packages)
-from backend.crm.router import router as crm_router
+from crm.router import router as crm_router
 from enrichment_v3.api_routes import router as enrichment_router
 from scoring.router import router as scoring_router
 
@@ -556,7 +556,7 @@ app.include_router(contacts_router)
 
 # Register CRM import router (v3)
 try:
-    from backend.crm.router import router as crm_router
+    from crm.router import router as crm_router
     app.include_router(crm_router)
     logger.info("✅ CRM router registered")
 except (ImportError, ModuleNotFoundError) as e:
