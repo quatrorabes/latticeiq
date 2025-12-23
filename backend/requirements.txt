@@ -1,18 +1,30 @@
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# Core FastAPI
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Authentication & Security
 python-jose==3.3.0
-cryptography==41.0.7
-pydantic==2.5.0
-pydantic[email]==2.5.0
+cryptography==44.0.0
+
+# Data Validation (upgraded for Python 3.13 wheel support)
+pydantic==2.10.5
+pydantic[email]==2.10.5
+
+# File Handling
 python-multipart==0.0.6
 aiofiles==23.2.1
+
+# HTTP Client (pinned for Supabase compatibility)
 httpx==0.25.2
 httpcore==1.0.4
+
+# Supabase SDK
 supabase==2.4.0
 gotrue==2.4.1
 storage3==0.7.3
+
+# Environment & Utilities
 python-dotenv==1.0.0
 gunicorn==21.2.0
 python-json-logger==2.0.7
 requests==2.31.0
-

@@ -31,7 +31,7 @@ from functools import lru_cache
 # FastAPI & Web
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
+# from fastapi.middleware.trustedhost import TrustedHostMiddleware  # DISABLED: Blocks Render health checks
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
@@ -51,7 +51,7 @@ from pythonjsonlogger import jsonlogger
 # ========================================
 # NOW IMPORT LOCAL MODULES (after path fix)
 # ========================================
-from lib.supabase_client import supabase as supabase_lib
+# NOTE: lib.supabase_client removed - doesn't exist and wasn't used
 
 # Import routers with error handling
 try:
@@ -195,7 +195,7 @@ class ContactCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
-    title: Optional[str] = Field(None, max_length=100)
+    job_title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
@@ -207,7 +207,7 @@ class ContactUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
     email: Optional[str] = Field(None, pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
-    title: Optional[str] = Field(None, max_length=100)
+    job_title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
@@ -216,18 +216,6 @@ class ContactUpdate(BaseModel):
     mdcp_score: Optional[int] = Field(None, ge=0, le=100)
     bant_score: Optional[int] = Field(None, ge=0, le=100)
     spice_score: Optional[int] = Field(None, ge=0, le=100)
-
-
-class HealthResponse(BaseModel):
-    """Health check response"""
-    status: str
-    version: str
-    timestamp: str
-    supabase: str
-    environment: str
-    crm_available: bool
-    enrichment_available: bool
-    scoring_available: bool
 
 
 # ============================================================================
@@ -316,11 +304,11 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Trusted hosts
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=settings.ALLOWED_HOSTS
-)
+# DISABLED: TrustedHostMiddleware blocks Render's internal health check IPs (10.225.x.x)
+# app.add_middleware(
+#     TrustedHostMiddleware,
+#     allowed_hosts=settings.ALLOWED_HOSTS
+# )
 
 # Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -388,52 +376,52 @@ else:
     logger.warning("⚠️ Scoring router not available")
 
 # ============================================================================
-# HEALTH ENDPOINTS
+# HEALTH ENDPOINTS (response_model removed for Pydantic 2.10.5 compatibility)
 # ============================================================================
 
-@app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
+@app.get("/health")
+async def health_check():
     """Root health check endpoint"""
-    return HealthResponse(
-        status="ok",
-        version="3.0.0",
-        timestamp=datetime.utcnow().isoformat(),
-        supabase="connected" if supabase else "disconnected",
-        environment=settings.ENVIRONMENT,
-        crm_available=CRM_AVAILABLE,
-        enrichment_available=ENRICHMENT_AVAILABLE,
-        scoring_available=SCORING_AVAILABLE
-    )
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "supabase": "connected" if supabase else "disconnected",
+        "environment": settings.ENVIRONMENT,
+        "crm_available": CRM_AVAILABLE,
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+        "scoring_available": SCORING_AVAILABLE
+    }
 
 
-@app.get("/api/health", response_model=HealthResponse)
-async def api_health() -> HealthResponse:
+@app.get("/api/health")
+async def api_health():
     """API health check endpoint"""
-    return HealthResponse(
-        status="ok",
-        version="3.0.0",
-        timestamp=datetime.utcnow().isoformat(),
-        supabase="connected" if supabase else "disconnected",
-        environment=settings.ENVIRONMENT,
-        crm_available=CRM_AVAILABLE,
-        enrichment_available=ENRICHMENT_AVAILABLE,
-        scoring_available=SCORING_AVAILABLE
-    )
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "supabase": "connected" if supabase else "disconnected",
+        "environment": settings.ENVIRONMENT,
+        "crm_available": CRM_AVAILABLE,
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+        "scoring_available": SCORING_AVAILABLE
+    }
 
 
-@app.get("/api/v3/health", response_model=HealthResponse)
-async def api_v3_health() -> HealthResponse:
+@app.get("/api/v3/health")
+async def api_v3_health():
     """API v3 health check endpoint"""
-    return HealthResponse(
-        status="ok",
-        version="3.0.0",
-        timestamp=datetime.utcnow().isoformat(),
-        supabase="connected" if supabase else "disconnected",
-        environment=settings.ENVIRONMENT,
-        crm_available=CRM_AVAILABLE,
-        enrichment_available=ENRICHMENT_AVAILABLE,
-        scoring_available=SCORING_AVAILABLE
-    )
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "supabase": "connected" if supabase else "disconnected",
+        "environment": settings.ENVIRONMENT,
+        "crm_available": CRM_AVAILABLE,
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+        "scoring_available": SCORING_AVAILABLE
+    }
 
 
 @app.get("/")
@@ -454,13 +442,15 @@ async def root():
 
 # ============================================================================
 # CONTACTS CRUD ENDPOINTS (v3)
+# CRITICAL: Use 'def' not 'async def' - Supabase SDK is synchronous!
+# FastAPI will run these in a thread pool automatically
 # ============================================================================
 
 contacts_router = APIRouter(prefix="/api/v3/contacts", tags=["Contacts"])
 
 
 @contacts_router.get("", response_model=dict)
-async def list_contacts(
+def list_contacts(
     limit: int = 100,
     offset: int = 0,
     user: CurrentUser = Depends(get_current_user)
@@ -471,6 +461,7 @@ async def list_contacts(
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
 
+        # Supabase is SYNCHRONOUS
         result = (
             supabase.table("contacts")
             .select("*", count="exact")
@@ -502,7 +493,7 @@ async def list_contacts(
 
 
 @contacts_router.get("/{contact_id}", response_model=dict)
-async def get_contact(
+def get_contact(
     contact_id: str,
     user: CurrentUser = Depends(get_current_user)
 ):
@@ -533,7 +524,7 @@ async def get_contact(
 
 
 @contacts_router.post("", response_model=dict, status_code=201)
-async def create_contact(
+def create_contact(
     contact: ContactCreate,
     user: CurrentUser = Depends(get_current_user)
 ):
@@ -563,7 +554,7 @@ async def create_contact(
 
 
 @contacts_router.put("/{contact_id}", response_model=dict)
-async def update_contact(
+def update_contact(
     contact_id: str,
     patch: ContactUpdate,
     user: CurrentUser = Depends(get_current_user)
@@ -601,7 +592,7 @@ async def update_contact(
 
 
 @contacts_router.delete("/{contact_id}", status_code=204)
-async def delete_contact(
+def delete_contact(
     contact_id: str,
     user: CurrentUser = Depends(get_current_user)
 ):
