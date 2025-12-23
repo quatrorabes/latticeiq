@@ -16,7 +16,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from functools import lru_cache
 # ✅ CORRECT (imports from actual packages)
-from crm.router import router as crm_router
+from backend.crm.router import router as crm_router
 from enrichment_v3.api_routes import router as enrichment_router
 from scoring.router import router as scoring_router
 
