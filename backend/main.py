@@ -442,6 +442,7 @@ async def root():
 
 # ============================================================================
 # CONTACTS CRUD ENDPOINTS (v3)
+# NOTE: Supabase Python SDK is SYNCHRONOUS - removed async/await
 # ============================================================================
 
 contacts_router = APIRouter(prefix="/api/v3/contacts", tags=["Contacts"])
@@ -459,6 +460,7 @@ async def list_contacts(
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
 
+        # Supabase is SYNCHRONOUS - no await needed
         result = (
             supabase.table("contacts")
             .select("*", count="exact")
