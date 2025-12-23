@@ -51,7 +51,7 @@ from pythonjsonlogger import jsonlogger
 # ========================================
 # NOW IMPORT LOCAL MODULES (after path fix)
 # ========================================
-from lib.supabase_client import supabase as supabase_lib
+# NOTE: lib.supabase_client removed - doesn't exist and wasn't used
 
 # Import routers with error handling
 try:
