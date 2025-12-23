@@ -1,204 +1,151 @@
 // frontend/src/pages/EnrichmentPage.tsx
-import { useEffect, useState } from 'react';
-import { apiClient } from '../services/apiClient';
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
-interface EnrichmentStats {
-  pending: number;
-  processing: number;
-  completed: number;
-  failed: number;
-}
+const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-interface EnrichmentContact {
+interface Contact {
   id: string;
-  firstname: string;
-  lastname: string;
+  first_name: string;
+  last_name: string;
   email: string;
-  company: string;
-  enrichmentstatus: string;
-  enrichedat?: string;
-  enrichmentdata?: Record<string, any>;
+  company?: string;
+  enrichment_status: string;
 }
 
 export default function EnrichmentPage() {
-  const [stats, setStats] = useState<EnrichmentStats>({
-    pending: 0,
-    processing: 0,
-    completed: 0,
-    failed: 0,
-  });
-  const [contacts, setContacts] = useState<EnrichmentContact[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'completed' | 'failed'>('all');
-  const [enriching, setEnriching] = useState(false);
+  const [enriching, setEnriching] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchEnrichmentData();
-    const interval = setInterval(fetchEnrichmentData, 5000); // Refresh every 5 seconds
-    return () => clearInterval(interval);
+    fetchContacts();
   }, []);
 
-  const fetchEnrichmentData = async () => {
+  const fetchContacts = async () => {
     try {
-      const response = await apiClient.get('/api/v3/contacts?limit=1000');
-      const allContacts = response.data.contacts || [];
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('id, first_name, last_name, email, company, enrichment_status')
+        .order('created_at', { ascending: false });
 
-      // Calculate stats
-      const newStats = {
-        pending: allContacts.filter((c: any) => c.enrichmentstatus === 'pending').length,
-        processing: allContacts.filter((c: any) => c.enrichmentstatus === 'processing').length,
-        completed: allContacts.filter((c: any) => c.enrichmentstatus === 'completed').length,
-        failed: allContacts.filter((c: any) => c.enrichmentstatus === 'failed').length,
-      };
-      setStats(newStats);
-
-      // Filter contacts
-      let filtered = allContacts;
-      if (filter !== 'all') {
-        filtered = allContacts.filter((c: any) => c.enrichmentstatus === filter);
-      }
-
-      // Sort by enrichedat desc
-      filtered.sort((a: any, b: any) => {
-        const aDate = new Date(a.enrichedat || 0).getTime();
-        const bDate = new Date(b.enrichedat || 0).getTime();
-        return bDate - aDate;
-      });
-
-      setContacts(filtered);
+      if (error) throw error;
+      setContacts(data || []);
     } catch (err) {
-      console.error('Error fetching enrichment data:', err);
+      console.error('Failed to fetch contacts:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleEnrichAll = async () => {
+  const enrichContact = async (contactId: string) => {
     try {
-      setEnriching(true);
-      const pendingIds = contacts.filter((c) => c.enrichmentstatus === 'pending').map((c) => c.id);
+      setEnriching(contactId);
       
-      for (const id of pendingIds) {
-        await apiClient.post(`/api/v3/enrichment/enrich/${id}`);
-        await new Promise((resolve) => setTimeout(resolve, 1000)); // Throttle requests
-      }
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      setTimeout(() => {
-        fetchEnrichmentData();
-        setEnriching(false);
-      }, 2000);
+      const response = await fetch(`${API_URL}/api/v3/enrich/${contactId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) throw new Error('Enrichment failed');
+      
+      await fetchContacts();
     } catch (err) {
-      console.error('Error enriching:', err);
-      setEnriching(false);
+      console.error('Enrichment error:', err);
+    } finally {
+      setEnriching(null);
     }
   };
 
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'completed':
-        return <span className="bg-green-900/30 text-green-300 px-3 py-1 rounded text-sm">✓ Completed</span>;
-      case 'processing':
-        return <span className="bg-yellow-900/30 text-yellow-300 px-3 py-1 rounded text-sm animate-pulse">⟳ Processing</span>;
-      case 'failed':
-        return <span className="bg-red-900/30 text-red-300 px-3 py-1 rounded text-sm">✗ Failed</span>;
-      default:
-        return <span className="bg-gray-700 text-gray-300 px-3 py-1 rounded text-sm">⏳ Pending</span>;
+  const enrichAll = async () => {
+    const pending = contacts.filter(c => c.enrichment_status !== 'enriched');
+    for (const contact of pending) {
+      await enrichContact(contact.id);
     }
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
       </div>
     );
   }
 
+  const pendingCount = contacts.filter(c => c.enrichment_status !== 'enriched').length;
+  const enrichedCount = contacts.filter(c => c.enrichment_status === 'enriched').length;
+
   return (
-    <div className="min-h-screen bg-gray-950 p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-white">Enrichment Pipeline</h1>
-          <p className="text-gray-400 mt-2">Monitor contact enrichment progress</p>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-white">Enrichment</h1>
+        <button
+          onClick={enrichAll}
+          disabled={pendingCount === 0}
+          className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 text-white px-4 py-2 rounded-lg transition-colors"
+        >
+          Enrich All ({pendingCount})
+        </button>
+      </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Pending</p>
-            <p className="text-3xl font-bold text-yellow-400">{stats.pending}</p>
-          </div>
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Processing</p>
-            <p className="text-3xl font-bold text-blue-400 animate-pulse">{stats.processing}</p>
-          </div>
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Completed</p>
-            <p className="text-3xl font-bold text-green-400">{stats.completed}</p>
-          </div>
-          <div className="bg-gray-900 rounded-lg p-4 border border-gray-700">
-            <p className="text-gray-400 text-sm">Failed</p>
-            <p className="text-3xl font-bold text-red-400">{stats.failed}</p>
-          </div>
+      {/* Stats */}
+      <div className="grid grid-cols-2 gap-4">
+        <div className="bg-gray-800 rounded-lg p-4">
+          <p className="text-gray-400">Pending</p>
+          <p className="text-2xl font-bold text-yellow-400">{pendingCount}</p>
         </div>
+        <div className="bg-gray-800 rounded-lg p-4">
+          <p className="text-gray-400">Enriched</p>
+          <p className="text-2xl font-bold text-green-400">{enrichedCount}</p>
+        </div>
+      </div>
 
-        {/* Filter & Actions */}
-        <div className="mb-6 flex gap-4">
-          <div className="flex gap-2">
-            {(['all', 'pending', 'completed', 'failed'] as const).map((status) => (
-              <button
-                key={status}
-                onClick={() => setFilter(status)}
-                className={`px-4 py-2 rounded transition capitalize ${
-                  filter === status
-                    ? 'bg-cyan-600 text-white'
-                    : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
-                }`}
-              >
-                {status}
-              </button>
+      {/* Contacts List */}
+      <div className="bg-gray-800 rounded-lg overflow-hidden">
+        <table className="w-full">
+          <thead className="bg-gray-900">
+            <tr>
+              <th className="text-left px-4 py-3 text-gray-400">Name</th>
+              <th className="text-left px-4 py-3 text-gray-400">Company</th>
+              <th className="text-center px-4 py-3 text-gray-400">Status</th>
+              <th className="text-center px-4 py-3 text-gray-400">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-700">
+            {contacts.map((contact) => (
+              <tr key={contact.id}>
+                <td className="px-4 py-3 text-white">
+                  {contact.first_name} {contact.last_name}
+                </td>
+                <td className="px-4 py-3 text-gray-300">{contact.company || '-'}</td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`px-2 py-1 rounded-full text-xs ${
+                    contact.enrichment_status === 'enriched'
+                      ? 'bg-green-900/50 text-green-400'
+                      : 'bg-yellow-900/50 text-yellow-400'
+                  }`}>
+                    {contact.enrichment_status || 'pending'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <button
+                    onClick={() => enrichContact(contact.id)}
+                    disabled={enriching === contact.id || contact.enrichment_status === 'enriched'}
+                    className="text-cyan-400 hover:text-cyan-300 disabled:text-gray-500"
+                  >
+                    {enriching === contact.id ? 'Enriching...' : 'Enrich'}
+                  </button>
+                </td>
+              </tr>
             ))}
-          </div>
-          <button
-            onClick={handleEnrichAll}
-            disabled={enriching || stats.pending === 0}
-            className="ml-auto bg-orange-600 hover:bg-orange-700 disabled:opacity-50 text-white px-6 py-2 rounded transition font-medium"
-          >
-            {enriching ? 'Enriching...' : `Enrich All (${stats.pending})`}
-          </button>
-        </div>
-
-        {/* Contacts List */}
-        <div className="space-y-2">
-          {contacts.map((contact) => (
-            <div
-              key={contact.id}
-              className="bg-gray-900 rounded-lg p-4 border border-gray-700 flex items-center justify-between hover:border-gray-600 transition"
-            >
-              <div className="flex-1">
-                <p className="text-white font-medium">
-                  {contact.firstname} {contact.lastname}
-                </p>
-                <p className="text-gray-400 text-sm">{contact.company}</p>
-                <p className="text-gray-500 text-xs">{contact.email}</p>
-              </div>
-              <div className="flex items-center gap-4">
-                {contact.enrichedat && (
-                  <p className="text-gray-500 text-sm">
-                    {new Date(contact.enrichedat).toLocaleDateString()}
-                  </p>
-                )}
-                {getStatusBadge(contact.enrichmentstatus)}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {contacts.length === 0 && (
-          <div className="text-center py-12 text-gray-400">
-            No contacts with {filter !== 'all' ? filter + ' ' : ''}status.
-          </div>
-        )}
+          </tbody>
+        </table>
       </div>
     </div>
   );
