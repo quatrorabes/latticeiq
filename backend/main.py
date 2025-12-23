@@ -442,14 +442,15 @@ async def root():
 
 # ============================================================================
 # CONTACTS CRUD ENDPOINTS (v3)
-# NOTE: Supabase Python SDK is SYNCHRONOUS - removed async/await
+# CRITICAL: Use 'def' not 'async def' - Supabase SDK is synchronous!
+# FastAPI will run these in a thread pool automatically
 # ============================================================================
 
 contacts_router = APIRouter(prefix="/api/v3/contacts", tags=["Contacts"])
 
 
 @contacts_router.get("", response_model=dict)
-async def list_contacts(
+def list_contacts(
     limit: int = 100,
     offset: int = 0,
     user: CurrentUser = Depends(get_current_user)
@@ -460,7 +461,7 @@ async def list_contacts(
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
 
-        # Supabase is SYNCHRONOUS - no await needed
+        # Supabase is SYNCHRONOUS
         result = (
             supabase.table("contacts")
             .select("*", count="exact")
@@ -492,7 +493,7 @@ async def list_contacts(
 
 
 @contacts_router.get("/{contact_id}", response_model=dict)
-async def get_contact(
+def get_contact(
     contact_id: str,
     user: CurrentUser = Depends(get_current_user)
 ):
@@ -523,7 +524,7 @@ async def get_contact(
 
 
 @contacts_router.post("", response_model=dict, status_code=201)
-async def create_contact(
+def create_contact(
     contact: ContactCreate,
     user: CurrentUser = Depends(get_current_user)
 ):
@@ -553,7 +554,7 @@ async def create_contact(
 
 
 @contacts_router.put("/{contact_id}", response_model=dict)
-async def update_contact(
+def update_contact(
     contact_id: str,
     patch: ContactUpdate,
     user: CurrentUser = Depends(get_current_user)
@@ -591,7 +592,7 @@ async def update_contact(
 
 
 @contacts_router.delete("/{contact_id}", status_code=204)
-async def delete_contact(
+def delete_contact(
     contact_id: str,
     user: CurrentUser = Depends(get_current_user)
 ):
