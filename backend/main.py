@@ -218,18 +218,6 @@ class ContactUpdate(BaseModel):
     spice_score: Optional[int] = Field(None, ge=0, le=100)
 
 
-class HealthResponse(BaseModel):
-    """Health check response"""
-    status: str
-    version: str
-    timestamp: str
-    supabase: str
-    environment: str
-    crm_available: bool
-    enrichment_available: bool
-    scoring_available: bool
-
-
 # ============================================================================
 # AUTHENTICATION
 # ============================================================================
@@ -388,52 +376,52 @@ else:
     logger.warning("⚠️ Scoring router not available")
 
 # ============================================================================
-# HEALTH ENDPOINTS
+# HEALTH ENDPOINTS (response_model removed for Pydantic 2.10.5 compatibility)
 # ============================================================================
 
-@app.get("/health", response_model=HealthResponse)
-async def health_check() -> HealthResponse:
+@app.get("/health")
+async def health_check():
     """Root health check endpoint"""
-    return HealthResponse(
-        status="ok",
-        version="3.0.0",
-        timestamp=datetime.utcnow().isoformat(),
-        supabase="connected" if supabase else "disconnected",
-        environment=settings.ENVIRONMENT,
-        crm_available=CRM_AVAILABLE,
-        enrichment_available=ENRICHMENT_AVAILABLE,
-        scoring_available=SCORING_AVAILABLE
-    )
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "supabase": "connected" if supabase else "disconnected",
+        "environment": settings.ENVIRONMENT,
+        "crm_available": CRM_AVAILABLE,
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+        "scoring_available": SCORING_AVAILABLE
+    }
 
 
-@app.get("/api/health", response_model=HealthResponse)
-async def api_health() -> HealthResponse:
+@app.get("/api/health")
+async def api_health():
     """API health check endpoint"""
-    return HealthResponse(
-        status="ok",
-        version="3.0.0",
-        timestamp=datetime.utcnow().isoformat(),
-        supabase="connected" if supabase else "disconnected",
-        environment=settings.ENVIRONMENT,
-        crm_available=CRM_AVAILABLE,
-        enrichment_available=ENRICHMENT_AVAILABLE,
-        scoring_available=SCORING_AVAILABLE
-    )
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "supabase": "connected" if supabase else "disconnected",
+        "environment": settings.ENVIRONMENT,
+        "crm_available": CRM_AVAILABLE,
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+        "scoring_available": SCORING_AVAILABLE
+    }
 
 
-@app.get("/api/v3/health", response_model=HealthResponse)
-async def api_v3_health() -> HealthResponse:
+@app.get("/api/v3/health")
+async def api_v3_health():
     """API v3 health check endpoint"""
-    return HealthResponse(
-        status="ok",
-        version="3.0.0",
-        timestamp=datetime.utcnow().isoformat(),
-        supabase="connected" if supabase else "disconnected",
-        environment=settings.ENVIRONMENT,
-        crm_available=CRM_AVAILABLE,
-        enrichment_available=ENRICHMENT_AVAILABLE,
-        scoring_available=SCORING_AVAILABLE
-    )
+    return {
+        "status": "ok",
+        "version": "3.0.0",
+        "timestamp": datetime.utcnow().isoformat(),
+        "supabase": "connected" if supabase else "disconnected",
+        "environment": settings.ENVIRONMENT,
+        "crm_available": CRM_AVAILABLE,
+        "enrichment_available": ENRICHMENT_AVAILABLE,
+        "scoring_available": SCORING_AVAILABLE
+    }
 
 
 @app.get("/")
