@@ -1,0 +1,4 @@
+email,first_name,last_name,company,title,phone,linkedin_url
+jane.smith@techco.com,Jane,Smith,TechCo,CTO,555-5678,https://linkedin.com/in/janesmith
+bob.jones@startup.io,Bob,Jones,StartupIO,Founder,555-9999,https://linkedin.com/in/bobjones
+alice.wilson@bigcorp.com,Alice,Wilson,BigCorp,VP Sales,555-4444,https://linkedin.com/in/alicewilson

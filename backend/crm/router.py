@@ -23,7 +23,8 @@ from lib.supabase_client import supabase
 from lib.dependencies import get_current_user  # ✅ FIXED - removed ..
 
 
-router = APIRouter(prefix="/api/v3/import", tags=["CRM Import"])
+router = APIRouter(prefix="/import", tags=["CRM Import"])
+
 
 
 # ============================================================================
