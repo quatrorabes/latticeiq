@@ -1,175 +1,341 @@
 // frontend/src/pages/ContactsPage.tsx
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import ContactDetailModal from '../components/ContactDetailModal';
 import AddContactModal from '../components/AddContactModal';
 
 interface Contact {
   id: string;
-  user_id: string;
   first_name: string;
   last_name: string;
   email: string;
-  phone?: string;
-  company?: string;
-  title?: string;
-  linkedin_url?: string;
-  enrichment_status: string;
-  enrichment_data?: Record<string, unknown>;
-  mdcp_score?: number;
-  bant_score?: number;
-  spice_score?: number;
-  apex_score?: number;
+  company: string | null;
+  title: string | null;
+  phone: string | null;
+  linkedin_url: string | null;
+  enrichment_status: string | null;
+  mdcp_score: number | null;
+  bant_score: number | null;
+  spice_score: number | null;
   created_at: string;
-  updated_at: string;
 }
+
+type ImportSource = 'csv' | 'hubspot' | 'salesforce' | 'pipedrive';
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState<string | null>(null);
+  const [selectedSource, setSelectedSource] = useState<ImportSource>('csv');
+
+  const apiUrl = import.meta.env.VITE_API_URL;
+
+  const fetchContacts = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!error && data) {
+      setContacts(data as Contact[]);
+    }
+    setLoading(false);
+  };
 
   useEffect(() => {
     fetchContacts();
   }, []);
 
-  const fetchContacts = async () => {
-    try {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('contacts')
-        .select('*')
-        .order('created_at', { ascending: false });
+  const withUser = async () => {
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) {
+      throw new Error('Not authenticated');
+    }
+    return data.user;
+  };
 
-      if (error) throw error;
-      setContacts(data || []);
+  const handleCsvFileChange = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!apiUrl) {
+      setImportError('Missing VITE_API_URL env var');
+      return;
+    }
+
+    setImporting(true);
+    setImportError(null);
+    setImportSuccess(null);
+
+    try {
+      const user = await withUser();
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('user_id', user.id);
+
+      const resp = await fetch(`${apiUrl}/import/contacts/csv`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(`CSV import failed: ${resp.status} ${text}`);
+      }
+
+      const json = await resp.json().catch(() => null);
+      const count = json?.imported_count ?? json?.count ?? '';
+      setImportSuccess(
+        count ? `Imported ${count} contacts from CSV.` : 'CSV import completed.'
+      );
+      await fetchContacts();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch contacts');
+      setImportError(
+        err instanceof Error ? err.message : 'Failed to import CSV contacts'
+      );
     } finally {
-      setLoading(false);
+      setImporting(false);
+      e.target.value = '';
     }
   };
 
-  const filteredContacts = contacts.filter(contact => {
-    const searchLower = searchTerm.toLowerCase();
-    return (
-      contact.first_name?.toLowerCase().includes(searchLower) ||
-      contact.last_name?.toLowerCase().includes(searchLower) ||
-      contact.email?.toLowerCase().includes(searchLower) ||
-      contact.company?.toLowerCase().includes(searchLower)
-    );
-  });
+  const triggerSourceImport = async (source: ImportSource) => {
+    if (!apiUrl) {
+      setImportError('Missing VITE_API_URL env var');
+      return;
+    }
 
-  const getScoreBadge = (score: number | undefined) => {
-    if (!score) return <span className="text-gray-500">-</span>;
-    const color = score >= 80 ? 'text-green-400' : score >= 60 ? 'text-yellow-400' : 'text-red-400';
-    return <span className={color}>{score}</span>;
+    // CSV uses file input instead
+    if (source === 'csv') return;
+
+    setImporting(true);
+    setImportError(null);
+    setImportSuccess(null);
+
+    try {
+      const user = await withUser();
+
+      let endpoint = '';
+      switch (source) {
+        case 'hubspot':
+          endpoint = '/import/contacts/hubspot';
+          break;
+        case 'salesforce':
+          endpoint = '/import/contacts/salesforce';
+          break;
+        case 'pipedrive':
+          endpoint = '/import/contacts/pipedrive';
+          break;
+      }
+
+      const resp = await fetch(`${apiUrl}${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: user.id,
+          // placeholder for API keys / tokens stored server-side or in env
+        }),
+      });
+
+      if (!resp.ok) {
+        const text = await resp.text();
+        throw new Error(
+          `${source} import failed: ${resp.status} ${text}`
+        );
+      }
+
+      const json = await resp.json().catch(() => null);
+      const count = json?.imported_count ?? json?.count ?? '';
+      const label =
+        source === 'hubspot'
+          ? 'HubSpot'
+          : source === 'salesforce'
+          ? 'Salesforce'
+          : 'Pipedrive';
+
+      setImportSuccess(
+        count
+          ? `Imported ${count} contacts from ${label}.`
+          : `${label} import completed.`
+      );
+      await fetchContacts();
+    } catch (err) {
+      setImportError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to import contacts from selected source'
+      );
+    } finally {
+      setImporting(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-500"></div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="bg-red-900/20 border border-red-500 rounded-lg p-4">
-        <p className="text-red-400">{error}</p>
-      </div>
-    );
-  }
+  const onImportClick = () => {
+    if (selectedSource === 'csv') {
+      const input = document.getElementById(
+        'csv-file-input'
+      ) as HTMLInputElement | null;
+      input?.click();
+    } else {
+      void triggerSourceImport(selectedSource);
+    }
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-white">Contacts</h1>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="bg-cyan-600 hover:bg-cyan-700 text-white px-4 py-2 rounded-lg transition-colors"
-        >
-          + Add Contact
-        </button>
-      </div>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Contacts</h1>
+          <p className="text-gray-400 text-sm">
+            Import from CSV, HubSpot, Salesforce, or Pipedrive, then score with MDCP/BANT/SPICE.
+          </p>
+        </div>
 
-      {/* Search */}
-      <div className="relative">
-        <input
-          type="text"
-          placeholder="Search contacts..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder-gray-400 focus:outline-none focus:border-cyan-500"
-        />
-      </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <select
+              className="form-control !w-auto !py-2 !px-3 text-sm"
+              value={selectedSource}
+              onChange={(e) =>
+                setSelectedSource(e.target.value as ImportSource)
+              }
+              disabled={importing}
+            >
+              <option value="csv">CSV</option>
+              <option value="hubspot">HubSpot</option>
+              <option value="salesforce">Salesforce</option>
+              <option value="pipedrive">Pipedrive</option>
+            </select>
+            <button
+              onClick={onImportClick}
+              disabled={importing}
+              className="btn btn-outline text-sm"
+            >
+              {importing ? 'Importing…' : 'Import Contacts'}
+            </button>
+            {/* hidden CSV input */}
+            <input
+              id="csv-file-input"
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleCsvFileChange}
+            />
+          </div>
 
-      {/* Contacts Table */}
-      {filteredContacts.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-400">No contacts yet</p>
           <button
             onClick={() => setShowAddModal(true)}
-            className="mt-4 text-cyan-400 hover:text-cyan-300"
+            className="btn btn-primary text-sm"
           >
-            + Add Your First Contact
+            + Add Contact
           </button>
         </div>
-      ) : (
-        <div className="bg-gray-800 rounded-lg overflow-hidden">
-          <table className="w-full">
-            <thead className="bg-gray-900">
-              <tr>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Name</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Company</th>
-                <th className="text-left px-4 py-3 text-gray-400 font-medium">Email</th>
-                <th className="text-center px-4 py-3 text-gray-400 font-medium">MDCP</th>
-                <th className="text-center px-4 py-3 text-gray-400 font-medium">BANT</th>
-                <th className="text-center px-4 py-3 text-gray-400 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-700">
-              {filteredContacts.map((contact) => (
-                <tr
-                  key={contact.id}
-                  onClick={() => setSelectedContact(contact)}
-                  className="hover:bg-gray-700 cursor-pointer transition-colors"
-                >
-                  <td className="px-4 py-3 text-white">
-                    {contact.first_name} {contact.last_name}
-                  </td>
-                  <td className="px-4 py-3 text-gray-300">{contact.company || '-'}</td>
-                  <td className="px-4 py-3 text-gray-300">{contact.email}</td>
-                  <td className="px-4 py-3 text-center">{getScoreBadge(contact.mdcp_score)}</td>
-                  <td className="px-4 py-3 text-center">{getScoreBadge(contact.bant_score)}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs ${
-                      contact.enrichment_status === 'enriched' 
-                        ? 'bg-green-900/50 text-green-400' 
-                        : 'bg-gray-700 text-gray-400'
-                    }`}>
-                      {contact.enrichment_status || 'pending'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      </div>
+
+      {/* Import alerts */}
+      {importError && (
+        <div className="bg-red-900/30 border border-red-500 text-red-200 text-sm rounded-lg px-4 py-3">
+          {importError}
+        </div>
+      )}
+      {importSuccess && (
+        <div className="bg-emerald-900/30 border border-emerald-500 text-emerald-200 text-sm rounded-lg px-4 py-3">
+          {importSuccess}
         </div>
       )}
 
-      {/* Modals */}
-      {selectedContact && (
-        <ContactDetailModal
-          contact={selectedContact}
-          onClose={() => setSelectedContact(null)}
-          onUpdate={fetchContacts}
-        />
+      {/* Table / empty state */}
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="spinner spinner-lg" />
+        </div>
+      ) : contacts.length === 0 ? (
+        <div className="card">
+          <div className="card-body text-center">
+            <h2 className="text-xl font-semibold mb-2">
+              No contacts yet
+            </h2>
+            <p className="text-gray-400 mb-4">
+              Import from your CRM or upload a CSV to get started.
+            </p>
+            <div className="flex justify-center gap-3 flex-wrap">
+              <button
+                className="btn btn-outline text-sm"
+                onClick={() => {
+                  setSelectedSource('csv');
+                  const input = document.getElementById(
+                    'csv-file-input'
+                  ) as HTMLInputElement | null;
+                  input?.click();
+                }}
+              >
+                Upload CSV
+              </button>
+              <button
+                className="btn btn-outline text-sm"
+                onClick={() => void triggerSourceImport('hubspot')}
+              >
+                Import from HubSpot
+              </button>
+              <button
+                className="btn btn-outline text-sm"
+                onClick={() => void triggerSourceImport('salesforce')}
+              >
+                Import from Salesforce
+              </button>
+              <button
+                className="btn btn-outline text-sm"
+                onClick={() => void triggerSourceImport('pipedrive')}
+              >
+                Import from Pipedrive
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="card">
+          <div className="card-body">
+            <table>
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Company</th>
+                  <th>Title</th>
+                  <th>Email</th>
+                  <th>MDCP</th>
+                  <th>BANT</th>
+                  <th>SPICE</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {contacts.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      {c.first_name} {c.last_name}
+                    </td>
+                    <td>{c.company}</td>
+                    <td>{c.title}</td>
+                    <td>{c.email}</td>
+                    <td>{c.mdcp_score ?? '-'}</td>
+                    <td>{c.bant_score ?? '-'}</td>
+                    <td>{c.spice_score ?? '-'}</td>
+                    <td>{c.enrichment_status ?? 'pending'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {showAddModal && (
