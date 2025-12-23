@@ -1,0 +1,930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apex Sales Intelligence - Contact Detail</title>
+    <style>
+        :root {
+            --primary: #2180A1;
+            --primary-hover: #1a6680;
+            --success: #20B85F;
+            --warning: #FF9C43;
+            --danger: #FF5454;
+            --bg: #F8F9FA;
+            --surface: #FFFFFF;
+            --border: #E1E8ED;
+            --text-primary: #1F2937;
+            --text-secondary: #6B7280;
+            --card-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            --card-shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: var(--bg);
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* HEADER */
+        .header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 20px 0;
+            margin-bottom: 30px;
+        }
+
+        .header-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .contact-hero {
+            flex: 1;
+        }
+
+        .contact-name {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .contact-meta {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            color: var(--text-secondary);
+            flex-wrap: wrap;
+        }
+
+        .meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .badges {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-tier-high {
+            background: rgba(32, 180, 95, 0.1);
+            color: var(--success);
+        }
+
+        .badge-tier-medium {
+            background: rgba(255, 156, 67, 0.1);
+            color: var(--warning);
+        }
+
+        .badge-tier-low {
+            background: rgba(255, 84, 84, 0.1);
+            color: var(--danger);
+        }
+
+        .badge-persona {
+            background: rgba(33, 128, 161, 0.1);
+            color: var(--primary);
+        }
+
+        /* TABS */
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 2px solid var(--border);
+            margin-bottom: 30px;
+        }
+
+        .tab {
+            padding: 12px 20px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            position: relative;
+            transition: color 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--text-primary);
+        }
+
+        .tab.active {
+            color: var(--primary);
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: var(--primary);
+        }
+
+        /* TAB CONTENT */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* CARDS */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: var(--card-shadow);
+            transition: box-shadow 0.2s;
+        }
+
+        .card:hover {
+            box-shadow: var(--card-shadow-hover);
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .card-title-icon {
+            width: 24px;
+            height: 24px;
+            background: rgba(33, 128, 161, 0.1);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .card-section {
+            margin-bottom: 12px;
+        }
+
+        .card-section-label {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .card-section-value {
+            font-size: 14px;
+            color: var(--text-primary);
+            line-height: 1.6;
+        }
+
+        /* PERSONALITY PROFILE */
+        .personality-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .personality-box {
+            background: var(--bg);
+            padding: 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+        }
+
+        .personality-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .personality-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .personality-confidence {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        /* DO's & DON'Ts */
+        .do-dont-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .do-dont-section {
+            padding: 16px;
+            border-radius: 6px;
+        }
+
+        .do-section {
+            background: rgba(32, 180, 95, 0.05);
+            border: 1px solid rgba(32, 180, 95, 0.2);
+        }
+
+        .dont-section {
+            background: rgba(255, 84, 84, 0.05);
+            border: 1px solid rgba(255, 84, 84, 0.2);
+        }
+
+        .do-dont-title {
+            font-size: 14px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .do-section .do-dont-title {
+            color: var(--success);
+        }
+
+        .dont-section .do-dont-title {
+            color: var(--danger);
+        }
+
+        .do-dont-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .do-dont-item {
+            font-size: 13px;
+            color: var(--text-primary);
+            display: flex;
+            gap: 8px;
+            line-height: 1.5;
+        }
+
+        .do-dont-item::before {
+            content: '✓';
+            color: var(--success);
+            font-weight: 700;
+            flex-shrink: 0;
+        }
+
+        .dont-section .do-dont-item::before {
+            content: '✗';
+            color: var(--danger);
+        }
+
+        /* RICH CONTENT */
+        .rich-text {
+            font-size: 14px;
+            line-height: 1.8;
+            color: var(--text-primary);
+        }
+
+        .rich-text h3 {
+            font-size: 16px;
+            font-weight: 700;
+            margin-top: 16px;
+            margin-bottom: 8px;
+            color: var(--text-primary);
+        }
+
+        .rich-text h4 {
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 12px;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+        }
+
+        .rich-text ul, .rich-text ol {
+            margin-left: 20px;
+            margin-bottom: 12px;
+        }
+
+        .rich-text li {
+            margin-bottom: 6px;
+        }
+
+        .rich-text strong {
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .rich-text em {
+            font-style: italic;
+            color: var(--text-secondary);
+        }
+
+        /* SCORE DISPLAY */
+        .scores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .score-box {
+            background: var(--bg);
+            padding: 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .score-label {
+            font-size: 11px;
+            font-weight: 700;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+
+        .score-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--primary);
+            margin-bottom: 4px;
+        }
+
+        .score-tier {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        /* RAW DATA TAB */
+        .raw-data {
+            background: var(--bg);
+            padding: 16px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            overflow: auto;
+            max-height: 600px;
+        }
+
+        .raw-data pre {
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: var(--text-primary);
+        }
+
+        /* EMPTY STATE */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .empty-state-text {
+            font-size: 16px;
+        }
+
+        /* RESPONSIVE */
+        @media (max-width: 768px) {
+            .personality-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .do-dont-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header-content {
+                flex-direction: column;
+            }
+
+            .contact-name {
+                font-size: 22px;
+            }
+
+            .tabs {
+                overflow-x: auto;
+            }
+
+            .scores-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* LOADING */
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid var(--border);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* HELPER TEXT */
+        .helper-text {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <div class="header-content">
+                <div class="contact-hero">
+                    <div class="contact-name" id="contactName">Loading...</div>
+                    <div class="contact-meta">
+                        <span class="meta-item">
+                            <strong id="contactTitle">—</strong>
+                        </span>
+                        <span class="meta-item">
+                            <strong id="contactCompany">—</strong>
+                        </span>
+                        <span class="meta-item" id="enrichmentTime" style="display: none;">
+                            Enriched <span id="enrichedAtTime">—</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="badges">
+                    <span class="badge badge-persona" id="personaBadge">—</span>
+                    <span class="badge" id="matchBadge">—</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="tabs">
+            <button class="tab active" data-tab="intelligence">Sales Intelligence</button>
+            <button class="tab" data-tab="outreach">Outreach</button>
+            <button class="tab" data-tab="raw">Raw Data</button>
+        </div>
+
+        <!-- SALES INTELLIGENCE TAB -->
+        <div class="tab-content active" id="intelligence">
+            <!-- SCORES -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">📊</span>
+                    Qualification Scores
+                </div>
+                <div class="scores-grid" id="scoresGrid">
+                    <div class="score-box">
+                        <div class="score-label">APEX Score</div>
+                        <div class="score-value" id="apexScore">—</div>
+                        <div class="score-tier" id="apexTier">—</div>
+                    </div>
+                    <div class="score-box">
+                        <div class="score-label">BANT Score</div>
+                        <div class="score-value" id="bantScore">—</div>
+                        <div class="score-tier" id="bantTier">—</div>
+                    </div>
+                    <div class="score-box">
+                        <div class="score-label">SPICE Score</div>
+                        <div class="score-value" id="spiceScore">—</div>
+                        <div class="score-tier" id="spiceTier">—</div>
+                    </div>
+                    <div class="score-box">
+                        <div class="score-label">Unified Score</div>
+                        <div class="score-value" id="unifiedScore">—</div>
+                        <div class="score-tier" id="unifiedTier">—</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PERSONALITY PROFILE -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">🧠</span>
+                    Personality Profile & Communication Style
+                </div>
+                <div class="personality-grid">
+                    <div class="personality-box">
+                        <div class="personality-label">MBTI Type</div>
+                        <div class="personality-value" id="mbtiType">—</div>
+                        <div class="personality-confidence">
+                            Confidence: <span id="mbtiConfidence">—</span>
+                        </div>
+                    </div>
+                    <div class="personality-box">
+                        <div class="personality-label">DISC Profile</div>
+                        <div class="personality-value" id="discPrimary">—</div>
+                        <div class="personality-confidence">
+                            Secondary: <span id="discSecondary">—</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="do-dont-grid">
+                    <div class="do-dont-section do-section">
+                        <div class="do-dont-title">✓ DO's</div>
+                        <ul class="do-dont-list" id="communicationDos">
+                            <li class="do-dont-item">Loading...</li>
+                        </ul>
+                    </div>
+                    <div class="do-dont-section dont-section">
+                        <div class="do-dont-title">✗ DON'Ts</div>
+                        <ul class="do-dont-list" id="communicationDonts">
+                            <li class="do-dont-item">Loading...</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- EXECUTIVE SUMMARY -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">📌</span>
+                    Executive Summary & Priority Insights
+                </div>
+                <div class="rich-text" id="executiveSummary">
+                    <div class="loading"></div> Loading executive summary...
+                </div>
+            </div>
+
+            <!-- WHY ME -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">🎯</span>
+                    Why Me? - Best Opening Approach
+                </div>
+                <div class="card-section">
+                    <div class="card-section-label">Opening Hook</div>
+                    <div class="card-section-value" id="whyMeHook">
+                        <em>Loading...</em>
+                    </div>
+                </div>
+                <div class="card-section">
+                    <div class="card-section-label">Why Now (Timing)</div>
+                    <div class="card-section-value" id="whyMeNow">
+                        <em>Loading...</em>
+                    </div>
+                </div>
+                <div class="card-section">
+                    <div class="card-section-label">Connection Angles</div>
+                    <ul style="margin-left: 20px; margin-top: 8px;" id="connectionAngles">
+                        <li><em>Loading...</em></li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- PAIN POINTS -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">⚠️</span>
+                    Role Pain Points & Challenges
+                </div>
+                <div class="rich-text" id="painPoints">
+                    <div class="loading"></div> Loading pain points...
+                </div>
+            </div>
+
+            <!-- BACKGROUND & EXPERIENCE -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">💼</span>
+                    Background & Career Experience
+                </div>
+                <div class="rich-text" id="backgroundExperience">
+                    <div class="loading"></div> Loading career history...
+                </div>
+            </div>
+
+            <!-- COMPANY ANALYSIS -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">🏢</span>
+                    Company Analysis & Market Position
+                </div>
+                <div class="rich-text" id="companyAnalysis">
+                    <div class="loading"></div> Loading company analysis...
+                </div>
+            </div>
+
+            <!-- BUYING SIGNALS -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">🛒</span>
+                    Buying Signals & Deal Triggers
+                </div>
+                <div class="rich-text" id="buyingSignals">
+                    <div class="loading"></div> Loading buying signals...
+                </div>
+            </div>
+
+            <!-- ENGAGEMENT STRATEGY -->
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">📞</span>
+                    Engagement Strategy & Next Steps
+                </div>
+                <div class="rich-text" id="engagementStrategy">
+                    <div class="loading"></div> Loading engagement strategy...
+                </div>
+            </div>
+        </div>
+
+        <!-- OUTREACH TAB -->
+        <div class="tab-content" id="outreach">
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">📧</span>
+                    Cold Email Template
+                </div>
+                <div class="card-section">
+                    <div class="card-section-label">Subject Line</div>
+                    <div class="card-section-value" id="emailSubject">
+                        <em>Generated from enrichment data...</em>
+                    </div>
+                </div>
+                <div class="card-section">
+                    <div class="card-section-label">Email Body</div>
+                    <div style="background: var(--bg); padding: 12px; border-radius: 4px; margin-top: 8px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; font-family: 'Monaco', monospace;" id="emailBody">
+                        <em>Loading...</em>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">💬</span>
+                    LinkedIn Connection Message
+                </div>
+                <div style="background: var(--bg); padding: 12px; border-radius: 4px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; font-family: 'Monaco', monospace;" id="linkedinMessage">
+                    <em>Loading...</em>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">📋</span>
+                    Cold Call Script
+                </div>
+                <div style="background: var(--bg); padding: 12px; border-radius: 4px; white-space: pre-wrap; font-size: 13px; line-height: 1.6; font-family: 'Monaco', monospace;" id="coldCallScript">
+                    <em>Loading...</em>
+                </div>
+            </div>
+        </div>
+
+        <!-- RAW DATA TAB -->
+        <div class="tab-content" id="raw">
+            <div class="card">
+                <div class="card-title">
+                    <span class="card-title-icon">🔍</span>
+                    Raw Enrichment Data (JSON)
+                </div>
+                <div class="raw-data">
+                    <pre id="rawDataPre">Loading...</pre>
+                </div>
+                <div class="helper-text">
+                    This is the complete enrichment payload returned by the backend API.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DEMO DATA (Replace with API calls in production)
+        const DEMO_CONTACT = {
+            id: "f6e4e0f2-0597-47a2-b4f5-869fa94b6a12",
+            name: "Sarah Chen",
+            title: "VP of Sales",
+            company: "Acme Corp",
+            email: "sarah@acme.com",
+            linkedin_url: "https://linkedin.com/in/sarahchen",
+            apex_score: 85,
+            mdcp_score: 90,
+            rss_score: 80,
+            unified_qualification_score: 87,
+            bant_score: 78,
+            spice_score: 80,
+            persona_type: "CHAMPION",
+            persona_confidence: 0.95,
+            match_tier: "HIGH",
+            enrichment_status: "completed",
+            enriched_at: "2025-12-17T01:25:00Z",
+            enrichment_data: {
+                version: "3.0",
+                sections: {
+                    executive_summary: "Sarah Chen is VP of Sales at Acme Corp, a SaaS company specializing in cloud infrastructure. With 12 years of sales leadership experience, she drives go-to-market strategy, team development, and revenue generation. Recently promoted to VP after successfully scaling the sales organization from 5 to 25 reps, Sarah brings strategic thinking and hands-on execution.",
+                    personality_profile: "MBTI: ENTJ (Confidence: High) - Strategic thinker, natural leader, values efficiency and results. DISC: D - Primary (Dominance: high-energy, competitive, results-focused), C - Secondary (Conscientiousness: detail-oriented, organized, systematic). Communication Style: Direct, data-driven, appreciates brevity and clear ROI narratives. Motivated by challenge and achievement.",
+                    background_and_experience: "Sarah started in sales at TechStart Inc. (2012-2016), progressed to Sales Manager at CloudDev Solutions (2016-2019), then Senior Director at DataFlow Corp (2019-2023). Joined Acme Corp as Director of Sales in 2023, promoted to VP in 2025. Expertise: SaaS sales cycles, enterprise deals ($500K-$5M), team scaling, quota attainment (consistently 110%+).",
+                    company_analysis: "Acme Corp is a late-stage SaaS company ($50M ARR, Series B funded) providing cloud infrastructure solutions. Known for strong product-market fit in mid-market segment. Recent 40% YoY growth driven by sales expansion. Market position: Strong #2 player in infrastructure cloud, competing with major platforms.",
+                    role_pain_points: "Sales hiring and retention challenges. Scaling playbooks to diverse verticals. Longer sales cycles (6-12 months) in new verticals. Competition from larger players on brand recognition. Internal alignment between product and go-to-market. Territory coverage gaps in EMEA region.",
+                    buying_signals: "Recent Series B funding ($25M) signals growth and investment in sales expansion. VP promotion indicates leadership confidence and investment in revenue operations. Hiring for 5+ new sales reps suggests territory expansion and increased quota. Expansion into EMEA is new market push.",
+                    competitive_landscape: "Competitors: AWS, Microsoft Azure, Google Cloud (indirect). Direct: Linode, DigitalOcean, Vultr. Acme differentiates on ease-of-use, superior support, mid-market focus, and developer-friendly pricing. Sarah likely evaluating tooling for faster deal closure and better sales enablement.",
+                    engagement_strategy: "High likelihood of receptiveness to tools that: (1) Reduce sales cycle time, (2) Improve deal sizing and ACV, (3) Enable faster ramp for new reps, (4) Provide competitive intelligence. Sarah respects ROI conversations backed by data. Best approach: peer comparison (other VP Sales success stories), brief discovery on current sales ops gaps, case study from similar verticals.",
+                    organizational_dynamics: "Sarah reports to Chief Revenue Officer. Likely has influence over sales ops, enablement, and tech stack decisions. Regular budget planning cycles in Q4. Peer network of VP Sales at similar companies (SaaS, $40-100M ARR, Series B-C stage). Collaborative but data-driven decision-maker.",
+                    engagement_roadmap: "Day 1-3: Research Acme's current sales process, wins/losses, sales tech stack. Day 4-7: Brief intro call positioning peer comparison and value prop. Week 2: Discovery call with sales ops lead (likely her direct report). Week 3: Executive workshop or proof-of-concept proposal. Week 4-6: Business case development and stakeholder alignment."
+                },
+                metadata: {
+                    personality: {
+                        mbti_type: "ENTJ",
+                        mbti_confidence: "High",
+                        disc_primary: "D",
+                        disc_secondary: "C",
+                        communication_dos: [
+                            "Be direct and efficient - respect her time",
+                            "Lead with data, metrics, and clear ROI",
+                            "Show competitive differentiation and market positioning",
+                            "Highlight team scalability and sales rep productivity gains"
+                        ],
+                        communication_donts: [
+                            "Avoid lengthy explanations or theoretical frameworks",
+                            "Don't ask for multiple meetings before value prop is clear",
+                            "Don't speak in vague benefits - be specific with numbers",
+                            "Avoid suggesting incremental improvements - focus on transformation"
+                        ]
+                    },
+                    why_me: {
+                        opening_hook: "Hi Sarah, I noticed Acme just closed a Series B and is expanding the sales team. We've helped similar SaaS VP Sales reduce their sales cycles by 25-30% and improve team ramp-time to quota by 40%. Given your growth stage, thought it might be worth a brief conversation.",
+                        why_now: "Series B funding + VP promotion + planned hiring indicates you're in growth mode and likely optimizing sales operations. Most companies at this stage need better sales enablement and deal velocity tools.",
+                        connection_angles: [
+                            "Both attended SaaStr Annual 2024",
+                            "Shared connection: Jane Doe (Sales Director at mutual customer)",
+                            "Acme expanding to EMEA - we have strong presence there",
+                            "Your recent promotion to VP signals openness to new tools and methodologies"
+                        ]
+                    },
+                    pain_points: [
+                        "Scaling sales team from 15 to 25+ reps while maintaining quality",
+                        "Reducing 8-12 month sales cycles in new verticals",
+                        "Competitive pressure from larger cloud providers",
+                        "Territory coverage and deal size optimization",
+                        "Sales rep productivity and quota attainment tracking"
+                    ]
+                },
+                raw_profile: "# APEX v3.0 ENRICHMENT PROFILE\n\n## Sarah Chen - VP of Sales at Acme Corp\n\nFull enrichment document content would appear here with all sections in detail..."
+            }
+        };
+
+        // TAB SWITCHING
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+                
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.tab).classList.add('active');
+            });
+        });
+
+        // POPULATE PAGE
+        function populatePage(contact) {
+            // HEADER
+            document.getElementById('contactName').textContent = contact.name;
+            document.getElementById('contactTitle').textContent = contact.title;
+            document.getElementById('contactCompany').textContent = contact.company;
+            
+            if (contact.enriched_at) {
+                const date = new Date(contact.enriched_at);
+                document.getElementById('enrichedAtTime').textContent = date.toLocaleDateString();
+                document.getElementById('enrichmentTime').style.display = 'flex';
+            }
+
+            // BADGES
+            document.getElementById('personaBadge').textContent = `${contact.persona_type} (${Math.round(contact.persona_confidence * 100)}% confident)`;
+            
+            const tierClass = {
+                'HIGH': 'badge-tier-high',
+                'MEDIUM': 'badge-tier-medium',
+                'LOW': 'badge-tier-low'
+            }[contact.match_tier] || 'badge-tier-high';
+            document.getElementById('matchBadge').textContent = `${contact.match_tier} Match Tier`;
+            document.getElementById('matchBadge').className = `badge ${tierClass}`;
+
+            // SCORES
+            document.getElementById('apexScore').textContent = contact.apex_score;
+            document.getElementById('bantScore').textContent = contact.bant_score || '—';
+            document.getElementById('spiceScore').textContent = contact.spice_score || '—';
+            document.getElementById('unifiedScore').textContent = contact.unified_qualification_score;
+
+            // PERSONALITY
+            const personality = contact.enrichment_data?.metadata?.personality || {};
+            document.getElementById('mbtiType').textContent = personality.mbti_type || '—';
+            document.getElementById('mbtiConfidence').textContent = personality.mbti_confidence || '—';
+            document.getElementById('discPrimary').textContent = personality.disc_primary || '—';
+            document.getElementById('discSecondary').textContent = personality.disc_secondary || '—';
+
+            // DO's & DON'Ts
+            const dosList = personality.communication_dos || [];
+            const dontsList = personality.communication_donts || [];
+            
+            document.getElementById('communicationDos').innerHTML = dosList.map(d => 
+                `<li class="do-dont-item">${d}</li>`
+            ).join('');
+            
+            document.getElementById('communicationDonts').innerHTML = dontsList.map(d => 
+                `<li class="do-dont-item">${d}</li>`
+            ).join('');
+
+            // SECTIONS
+            const sections = contact.enrichment_data?.sections || {};
+            document.getElementById('executiveSummary').textContent = sections.executive_summary || 'No data available.';
+            document.getElementById('backgroundExperience').textContent = sections.background_and_experience || 'No data available.';
+            document.getElementById('companyAnalysis').textContent = sections.company_analysis || 'No data available.';
+            document.getElementById('painPoints').textContent = sections.role_pain_points || 'No data available.';
+            document.getElementById('buyingSignals').textContent = sections.buying_signals || 'No data available.';
+            document.getElementById('engagementStrategy').textContent = sections.engagement_strategy || 'No data available.';
+
+            // WHY ME
+            const whyMe = contact.enrichment_data?.metadata?.why_me || {};
+            document.getElementById('whyMeHook').textContent = whyMe.opening_hook || 'No hook available.';
+            document.getElementById('whyMeNow').textContent = whyMe.why_now || 'No timing analysis available.';
+            
+            const angles = whyMe.connection_angles || [];
+            document.getElementById('connectionAngles').innerHTML = angles.map(a => 
+                `<li>${a}</li>`
+            ).join('');
+
+            // OUTREACH
+            document.getElementById('emailSubject').textContent = `Quick thought on ${contact.company}'s expansion`;
+            document.getElementById('emailBody').textContent = `Hi ${contact.name.split(' ')[0]},
+
+I noticed ${contact.company} recently closed Series B funding. Congrats! We work with VP Sales at similar SaaS companies to reduce sales cycles by 25-30% and improve new rep ramp-time.
+
+Given your current growth phase and team scaling, thought it might be worth a quick conversation.
+
+Open Tuesday or Wednesday for a brief call?
+
+Best,
+[Your Name]`;
+
+            document.getElementById('linkedinMessage').textContent = `Hi ${contact.name.split(' ')[0]},
+
+Saw your promotion to VP of Sales at ${contact.company} - impressive! We've been helping SaaS leaders scale sales operations and reduce time-to-quota.
+
+Thought you might find our peer insights valuable.
+
+Open to connecting?`;
+
+            document.getElementById('coldCallScript').textContent = `Hi ${contact.name.split(' ')[0]}, this is [Your Name] from [Company]. I know you're busy, so I'll be brief.
+
+I work with VP Sales at companies like ${contact.company} to help them close deals faster and scale their teams more efficiently. Specifically, we've helped similar companies reduce their ${contact.title} sales cycles by 25-30%.
+
+I'm not sure if this is relevant, but I found your profile and thought it was worth reaching out.
+
+Do you have 15 minutes next week for a quick call to explore?`;
+
+            // RAW DATA
+            document.getElementById('rawDataPre').textContent = JSON.stringify(contact, null, 2);
+        }
+
+        // INITIALIZE
+        document.addEventListener('DOMContentLoaded', () => {
+            populatePage(DEMO_CONTACT);
+        });
+    </script>
+</body>
+</html>
