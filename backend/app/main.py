@@ -367,7 +367,7 @@ if ENRICHMENT_AVAILABLE:
 if SCORING_AVAILABLE:
     app.include_router(scoring_router)
     
-app.include_router(contacts_router)
+##app.include_router(contacts_router)
 
 
 # ============================================================================
