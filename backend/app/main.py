@@ -1,10 +1,10 @@
 # backend/app/main.py - CORRECTED FOR USER SIGN-UP FLOW
 # This version properly validates JWT tokens from Supabase Auth
 # Users sign up → get UUID → enter CRM key → syncs immediately
+# NO jwt module needed - uses Supabase's built-in auth validation
 
 from __future__ import annotations
 
-import jwt
 import os
 import sys
 import uuid
