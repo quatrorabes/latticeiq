@@ -37,9 +37,9 @@ class RequiredFields(BaseModel):
     should_have: List[str] = ["email", "phone", "linkedin_url"]
     
 class CRMIntegrationCreate(BaseModel):
-    crm_type: str  # 'hubspot', 'salesforce', 'pipedrive'
+    crm_type: str
     api_key: str
-    api_url: Optional[str] = None  # For Salesforce
+    api_url: Optional[str] = None
     import_filters: Optional[ImportFilter] = None
     required_fields: Optional[RequiredFields] = None
     auto_sync_enabled: bool = False
