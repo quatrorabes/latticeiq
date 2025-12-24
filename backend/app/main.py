@@ -1,10 +1,11 @@
 # ============================================================================
-# FILE: backend/main.py - LatticeIQ Sales Intelligence API
+# FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
 # ============================================================================
 """
 Enterprise-grade FastAPI application for LatticeIQ
 Handles authentication, CRM imports, contact management, and scoring
 """
+
 import os
 import sys
 from pathlib import Path
@@ -48,36 +49,41 @@ from jose import JWTError, jwt
 # Logging
 from pythonjsonlogger import jsonlogger
 
-# Import routers with error handling
-# NOTE: Routers moved to app/ subdirectory after Dec 23 restructure
+
+# ============================================================================
+# ROUTER IMPORTS (with error handling)
+# ============================================================================
+
+# CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
 try:
-    from app.crm.router import router as crm_router
-    CRM_AVAILABLE = True
-    logging.info("✅ CRM router imported")
-except Exception as e:
-    logging.error(f"❌ CRM router import failed: {e}")
+    from crm.router import router as crm_router
+    CRM_ROUTER_AVAILABLE = True
+    print("✅ CRM router imported")
+except ImportError as e:
     crm_router = None
-    CRM_AVAILABLE = False
-    
+    CRM_ROUTER_AVAILABLE = False
+    print(f"❌ CRM router import failed: {e}")
+
+# Enrichment Router (Perplexity/GPT-4)
 try:
-    from app.enrichment_v3 import router as enrichment_router  # Use package import
+    from enrichment_v3 import router as enrichment_router
     ENRICHMENT_AVAILABLE = True
-    logging.info("✅ Enrichment router imported")
-except Exception as e:
-    logging.error(f"❌ Enrichment router import failed: {e}")
+    print("✅ Enrichment router imported")
+except ImportError as e:
     enrichment_router = None
     ENRICHMENT_AVAILABLE = False
-    
+    print(f"❌ Enrichment router import failed: {e}")
+
+# Scoring Router (MDCP/BANT/SPICE)
 try:
-    from app.scoring.router import router as scoring_router
+    from scoring.router import router as scoring_router
     SCORING_AVAILABLE = True
-    logging.info("✅ Scoring router imported")
-except Exception as e:
-    logging.error(f"❌ Scoring router import failed: {e}")
+    print("✅ Scoring router imported")
+except ImportError as e:
     scoring_router = None
     SCORING_AVAILABLE = False
-    
-    
+    print(f"❌ Scoring router import failed: {e}")
+
 
 # ============================================================================
 # CONFIGURATION & SETTINGS
@@ -131,7 +137,6 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     formatter = jsonlogger.JsonFormatter(
         "%(timestamp)s %(level)s %(name)s %(message)s %(request_id)s"
     )
-
     handler.setFormatter(formatter)
 
     # Clear existing handlers
@@ -143,6 +148,7 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
 
 settings = get_settings()
 logger = setup_logging(settings.LOG_LEVEL)
+
 
 # ============================================================================
 # DATABASE INITIALIZATION
@@ -290,6 +296,7 @@ app = FastAPI(
     redoc_url="/api/redoc"
 )
 
+
 # ============================================================================
 # MIDDLEWARE STACK
 # ============================================================================
@@ -305,14 +312,9 @@ app.add_middleware(
     max_age=3600,
 )
 
-# DISABLED: TrustedHostMiddleware blocks Render's internal health check IPs (10.225.x.x)
-# app.add_middleware(
-#     TrustedHostMiddleware,
-#     allowed_hosts=settings.ALLOWED_HOSTS
-# )
-
 # Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 
 # ============================================================================
 # EXCEPTION HANDLERS
@@ -354,30 +356,9 @@ async def validation_exception_handler(request, exc):
 
 
 # ============================================================================
-# INCLUDE ROUTERS
+# HEALTH ENDPOINTS
 # ============================================================================
 
-# Register routers (with availability checks)
-if CRM_AVAILABLE:
-    app.include_router(crm_router)
-    
-if ENRICHMENT_AVAILABLE:
-    app.include_router(enrichment_router)
-    
-if SCORING_AVAILABLE:
-    app.include_router(scoring_router)
-    
-##app.include_router(contacts_router)
-# Add this in router registration section (around line 365)
-if CRM_ROUTER_AVAILABLE and crm_router:
-    app.include_router(crm_router, prefix="/api/v3/crm")
-    print("✅ CRM router registered at /api/v3/crm")
-    
-
-# ============================================================================
-# HEALTH ENDPOINTS (response_model removed for Pydantic 2.10.5 compatibility)
-# ============================================================================
-    
 def _health_payload() -> dict:
     return {
         "status": "ok",
@@ -385,11 +366,11 @@ def _health_payload() -> dict:
         "timestamp": datetime.utcnow().isoformat(),
         "supabase": "connected" if supabase else "disconnected",
         "environment": settings.ENVIRONMENT,
-        "crm_available": CRM_AVAILABLE,
+        "crm_available": CRM_ROUTER_AVAILABLE,
         "enrichment_available": ENRICHMENT_AVAILABLE,
         "scoring_available": SCORING_AVAILABLE,
     }
-    
+
 
 @app.get("/health")
 async def health_check():
@@ -403,7 +384,6 @@ async def api_health():
     return _health_payload()
 
 
-# Back-compat alias (older clients / docs used /apihealth)
 @app.get("/apihealth")
 async def apihealth_alias():
     """Back-compat: alias for /api/health"""
@@ -425,16 +405,16 @@ async def root():
         "docs": "/api/docs",
         "environment": settings.ENVIRONMENT,
         "modules": {
-            "crm": CRM_AVAILABLE,
+            "crm": CRM_ROUTER_AVAILABLE,
             "enrichment": ENRICHMENT_AVAILABLE,
             "scoring": SCORING_AVAILABLE,
         },
     }
 
+
 # ============================================================================
 # CONTACTS CRUD ENDPOINTS (v3)
 # CRITICAL: Use 'def' not 'async def' - Supabase SDK is synchronous!
-# FastAPI will run these in a thread pool automatically
 # ============================================================================
 
 contacts_router = APIRouter(prefix="/api/v3/contacts", tags=["Contacts"])
@@ -452,7 +432,6 @@ def list_contacts(
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
 
-        # Supabase is SYNCHRONOUS
         result = (
             supabase.table("contacts")
             .select("*", count="exact")
@@ -617,8 +596,24 @@ def delete_contact(
 # ROUTER REGISTRATION
 # ============================================================================
 
-# Register contacts router
+# Contacts router (inline)
 app.include_router(contacts_router)
+
+# CRM router (HubSpot, Salesforce, Pipedrive, CSV imports)
+if CRM_ROUTER_AVAILABLE and crm_router is not None:
+    app.include_router(crm_router, prefix="/api/v3/crm")
+    print("✅ CRM router registered at /api/v3/crm")
+
+# Enrichment router (Perplexity/GPT-4)
+if ENRICHMENT_AVAILABLE and enrichment_router is not None:
+    app.include_router(enrichment_router, prefix="/api/v3/enrichment")
+    print("✅ Enrichment router registered at /api/v3/enrichment")
+
+# Scoring router (MDCP/BANT/SPICE)
+if SCORING_AVAILABLE and scoring_router is not None:
+    app.include_router(scoring_router, prefix="/api/v3/scoring")
+    print("✅ Scoring router registered at /api/v3/scoring")
+
 
 # ============================================================================
 # STARTUP & SHUTDOWN EVENTS
@@ -634,13 +629,12 @@ async def startup_event():
     logger.info(f"Version: 3.0.0")
     logger.info(f"FastAPI: Initialized")
     logger.info(f"Supabase: {'Connected' if supabase else 'Disconnected'}")
-    logger.info(f"CRM Module: {'✅ Available' if CRM_AVAILABLE else '❌ Not Available'}")
+    logger.info(f"CRM Module: {'✅ Available' if CRM_ROUTER_AVAILABLE else '❌ Not Available'}")
     logger.info(f"Enrichment Module: {'✅ Available' if ENRICHMENT_AVAILABLE else '❌ Not Available'}")
     logger.info(f"Scoring Module: {'✅ Available' if SCORING_AVAILABLE else '❌ Not Available'}")
 
     # Validate database schema
     await validate_database_schema()
-
     logger.info("=" * 70)
 
 
@@ -653,4 +647,3 @@ async def shutdown_event():
 # ============================================================================
 # END OF MAIN.PY
 # ============================================================================
-    
