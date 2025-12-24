@@ -1,26 +1,16 @@
-# ============================================================================
-# FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
-# ============================================================================
-"""
-Enterprise-grade FastAPI application for LatticeIQ
-Handles authentication, CRM imports, contact management, and scoring
-"""
+#!/usr/bin/env python3
 
 import os
 import sys
 from pathlib import Path
 
-# ========================================
-# CRITICAL: FIX PYTHON PATH FIRST
-# Must be at the very top before any local imports
-# ========================================
+# Add backend directory to path for imports
 backend_dir = Path(__file__).parent.resolve()
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-# Also add legacy support (if needed)
+# Also add legacy support if needed
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-# ========================================
 
 import uuid
 import logging
@@ -29,7 +19,6 @@ from datetime import datetime, timedelta
 from typing import Optional
 from functools import lru_cache
 
-# FastAPI & Web
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 # from fastapi.middleware.trustedhost import TrustedHostMiddleware  # DISABLED: Blocks Render health checks
@@ -37,34 +26,17 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 
-# Data validation
 from pydantic import BaseModel, Field, ValidationError
 
-# Database
 from supabase import create_client, Client
 
-# Authentication
 from jose import JWTError, jwt
 
-# Logging
 from pythonjsonlogger import jsonlogger
-
-
 
 # ============================================================================
 # ROUTER IMPORTS (with error handling)
 # ============================================================================
-
-# CRM Settings Router
-try:
-    from crm.settings_router import router as settings_router
-    SETTINGS_ROUTER_AVAILABLE = True
-    print("✅ CRM Settings router imported")
-except ImportError as e:
-    settings_router = None
-    SETTINGS_ROUTER_AVAILABLE = False
-    print(f"❌ CRM Settings router import failed: {e}")
-    
 
 # CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
 try:
@@ -75,6 +47,16 @@ except ImportError as e:
     crm_router = None
     CRM_ROUTER_AVAILABLE = False
     print(f"❌ CRM router import failed: {e}")
+
+# CRM Settings Router (credential management, filters, sync)
+try:
+    from crm.settings_router import router as settings_router
+    SETTINGS_ROUTER_AVAILABLE = True
+    print("✅ CRM Settings router imported")
+except ImportError as e:
+    settings_router = None
+    SETTINGS_ROUTER_AVAILABLE = False
+    print(f"❌ CRM Settings router import failed: {e}")
 
 # Enrichment Router (Perplexity/GPT-4)
 try:
@@ -96,22 +78,11 @@ except ImportError as e:
     SCORING_AVAILABLE = False
     print(f"❌ Scoring router import failed: {e}")
 
-# CRM Settings Router (credential management, filters, sync)
-try:
-    from crm.settings_router import router as settings_router
-    SETTINGS_ROUTER_AVAILABLE = True
-    print("✅ CRM Settings router imported")
-except ImportError as e:
-    settings_router = None
-    SETTINGS_ROUTER_AVAILABLE = False
-    print(f"❌ CRM Settings router import failed: {e}")
-    
-
 # ============================================================================
-# CONFIGURATION & SETTINGS
+# SETTINGS
 # ============================================================================
 
-class Settings(BaseModel):
+class SettingsBaseModel(BaseModel):
     """Application configuration"""
     SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
     SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
@@ -138,42 +109,31 @@ class Settings(BaseModel):
             ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
         )
 
-
-@lru_cache
-def get_settings() -> Settings:
+@lru_cache()
+def get_settings() -> SettingsBaseModel:
     """Get cached settings"""
-    return Settings.from_env()
-
-
-# ============================================================================
-# LOGGING SETUP
-# ============================================================================
+    return SettingsBaseModel.from_env()
 
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
     """Configure structured JSON logging"""
     logger = logging.getLogger("latticeiq")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
-    # Console handler with JSON formatter
     handler = logging.StreamHandler()
     formatter = jsonlogger.JsonFormatter(
-        "%(timestamp)s %(level)s %(name)s %(message)s %(request_id)s"
+        timestamp=True, prefix=False
     )
     handler.setFormatter(formatter)
 
-    # Clear existing handlers
     logger.handlers.clear()
     logger.addHandler(handler)
-
     return logger
-
 
 settings = get_settings()
 logger = setup_logging(settings.LOG_LEVEL)
 
-
 # ============================================================================
-# DATABASE INITIALIZATION
+# DATABASE
 # ============================================================================
 
 def initialize_supabase() -> Optional[Client]:
@@ -184,15 +144,13 @@ def initialize_supabase() -> Optional[Client]:
 
     try:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
-        logger.info("✅ Supabase initialized successfully")
+        logger.info("Supabase initialized successfully")
         return client
     except Exception as e:
-        logger.error(f"❌ Supabase initialization failed: {str(e)}", extra={"error": str(e)})
+        logger.error(f"Supabase initialization failed: {str(e)}", extra={"error": str(e)})
         return None
 
-
-supabase = initialize_supabase()
-
+supabase: Optional[Client] = initialize_supabase()
 
 async def validate_database_schema():
     """Verify required tables exist at startup"""
@@ -206,36 +164,33 @@ async def validate_database_schema():
             supabase.table(table).select("count", count="exact").execute()
             logger.info(f"✅ Table validated: {table}")
         except Exception as e:
-            logger.error(f"❌ Table validation failed for {table}: {str(e)}")
-
+            logger.error(f"Table validation failed for {table}: {str(e)}")
 
 # ============================================================================
-# PYDANTIC MODELS
+# MODELS
 # ============================================================================
 
-class CurrentUser(BaseModel):
+class CurrentUserBaseModel(BaseModel):
     """Authenticated user context"""
     id: str = Field(..., description="User UUID")
     email: str = Field(..., description="User email address")
 
-
-class ContactCreate(BaseModel):
+class ContactCreateBaseModel(BaseModel):
     """Contact creation payload"""
     first_name: str = Field(..., min_length=1, max_length=100)
     last_name: str = Field(..., min_length=1, max_length=100)
-    email: str = Field(..., pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
+    email: str = Field(..., pattern=r".+@.+\..+")
     job_title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
 
-
-class ContactUpdate(BaseModel):
+class ContactUpdateBaseModel(BaseModel):
     """Contact update payload"""
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
-    email: Optional[str] = Field(None, pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
+    email: Optional[str] = Field(None, pattern=r".+@.+\..+")
     job_title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
@@ -246,21 +201,15 @@ class ContactUpdate(BaseModel):
     bant_score: Optional[int] = Field(None, ge=0, le=100)
     spice_score: Optional[int] = Field(None, ge=0, le=100)
 
-
 # ============================================================================
 # AUTHENTICATION
 # ============================================================================
 
 async def get_current_user(
     authorization: str = Header(None),
-    settings: Settings = Depends(get_settings)
-) -> CurrentUser:
-    """
-    Validate JWT Bearer token and extract user claims
-
-    Raises:
-        HTTPException: 401 if token missing, invalid, or expired
-    """
+    settings: SettingsBaseModel = Depends(get_settings)
+) -> CurrentUserBaseModel:
+    """Validate JWT Bearer token and extract user claims"""
     if not authorization:
         logger.warning("Authentication failed: missing authorization header")
         raise HTTPException(
@@ -274,20 +223,18 @@ async def get_current_user(
         if scheme.lower() != "bearer":
             raise ValueError("Invalid scheme")
 
-        # Decode JWT token
         payload = jwt.decode(
             token,
             settings.JWT_SECRET,
-            algorithms=[settings.JWT_ALGORITHM]
+            algorithms=[settings.JWT_ALGORITHM],
         )
-
         user_id: str = payload.get("sub")
         email: str = payload.get("email")
 
         if not user_id or not email:
             raise ValueError("Missing required claims")
 
-        return CurrentUser(id=user_id, email=email)
+        return CurrentUserBaseModel(id=user_id, email=email)
 
     except JWTError as e:
         logger.warning(f"JWT validation failed: {str(e)}")
@@ -304,9 +251,8 @@ async def get_current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-
 # ============================================================================
-# FASTAPI APPLICATION
+# APP SETUP
 # ============================================================================
 
 app = FastAPI(
@@ -315,15 +261,10 @@ app = FastAPI(
     description="Enterprise sales enrichment and lead scoring platform",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
 )
 
-
-# ============================================================================
-# MIDDLEWARE STACK
-# ============================================================================
-
-# CORS (first middleware - most permissive)
+# Add middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Configure per environment
@@ -334,9 +275,7 @@ app.add_middleware(
     max_age=3600,
 )
 
-# Gzip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-
 
 # ============================================================================
 # EXCEPTION HANDLERS
@@ -348,78 +287,67 @@ async def http_exception_handler(request, exc):
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
     logger.error(
         f"HTTP {exc.status_code}: {exc.detail}",
-        extra={"request_id": request_id, "path": request.url.path}
+        extra={"request_id": request_id, "path": request.url.path},
     )
     return JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.detail,
             "request_id": request_id,
-            "timestamp": datetime.utcnow().isoformat()
-        }
+            "timestamp": datetime.utcnow().isoformat(),
+        },
     )
-
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request, exc):
     """Handle validation errors"""
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    logger.warning(
-        "Validation error",
-        extra={"request_id": request_id, "errors": exc.errors()}
-    )
+    logger.warning("Validation error", extra={"request_id": request_id, "errors": exc.errors()})
     return JSONResponse(
         status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={
-            "detail": exc.errors(),
-            "request_id": request_id
-        }
+        content={"detail": exc.errors(), "request_id": request_id},
     )
 
-
 # ============================================================================
-# HEALTH ENDPOINTS
+# HEALTH CHECK ENDPOINTS
 # ============================================================================
 
-def _health_payload() -> dict:
+def health_payload() -> dict:
+    """Build health check payload"""
     return {
         "status": "ok",
         "version": "3.0.0",
         "timestamp": datetime.utcnow().isoformat(),
         "supabase": "connected" if supabase else "disconnected",
         "environment": settings.ENVIRONMENT,
-        "crm_available": CRM_ROUTER_AVAILABLE,
-        "enrichment_available": ENRICHMENT_AVAILABLE,
-        "scoring_available": SCORING_AVAILABLE,
+        "crm": CRM_ROUTER_AVAILABLE,
+        "enrichment": ENRICHMENT_AVAILABLE,
+        "scoring": SCORING_AVAILABLE,
+        "settings": SETTINGS_ROUTER_AVAILABLE,
     }
 
-
 @app.get("/health")
-async def health_check():
+async def health() -> dict:
     """Root health check endpoint"""
-    return _health_payload()
-
+    return health_payload()
 
 @app.get("/api/health")
-async def api_health():
+async def api_health() -> dict:
     """API health check endpoint"""
-    return _health_payload()
+    return health_payload()
 
-
-@app.get("/apihealth")
-async def apihealth_alias():
-    """Back-compat: alias for /api/health"""
-    return _health_payload()
-
+@app.get("/api/health")
+async def api_health_alias() -> dict:
+    """Back-compat alias for /api/health"""
+    return health_payload()
 
 @app.get("/api/v3/health")
-async def api_v3_health():
+async def api_v3_health() -> dict:
     """API v3 health check endpoint"""
-    return _health_payload()
-
+    return health_payload()
 
 @app.get("/")
-async def root():
+async def root() -> dict:
     """API root endpoint"""
     return {
         "message": "LatticeIQ Sales Intelligence API",
@@ -430,27 +358,21 @@ async def root():
             "crm": CRM_ROUTER_AVAILABLE,
             "enrichment": ENRICHMENT_AVAILABLE,
             "scoring": SCORING_AVAILABLE,
+            "settings": SETTINGS_ROUTER_AVAILABLE,
         },
     }
 
-# Settings router (CRM credential & filter management)
-if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    app.include_router(settings_router)  # Already has /api/v3/settings/crm prefix
-    print("✅ Settings router registered at /api/v3/settings/crm")
-    
 # ============================================================================
-# CONTACTS CRUD ENDPOINTS (v3)
-# CRITICAL: Use 'def' not 'async def' - Supabase SDK is synchronous!
+# INLINE CONTACTS ROUTER
 # ============================================================================
 
 contacts_router = APIRouter(prefix="/api/v3/contacts", tags=["Contacts"])
 
-
 @contacts_router.get("", response_model=dict)
-def list_contacts(
+async def list_contacts(
     limit: int = 100,
     offset: int = 0,
-    user: CurrentUser = Depends(get_current_user)
+    user: CurrentUserBaseModel = Depends(get_current_user),
 ):
     """List all contacts for the authenticated user"""
     request_id = str(uuid.uuid4())
@@ -469,7 +391,7 @@ def list_contacts(
 
         logger.info(
             f"Retrieved {len(result.data or [])} contacts",
-            extra={"user_id": user.id, "request_id": request_id}
+            extra={"user_id": user.id, "request_id": request_id},
         )
 
         return {
@@ -477,21 +399,19 @@ def list_contacts(
             "count": result.count,
             "total": result.count,
             "limit": limit,
-            "offset": offset
+            "offset": offset,
         }
-
     except Exception as e:
         logger.error(
             f"Error listing contacts: {str(e)}",
-            extra={"user_id": user.id, "request_id": request_id}
+            extra={"user_id": user.id, "request_id": request_id},
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve contacts")
 
-
 @contacts_router.get("/{contact_id}", response_model=dict)
-def get_contact(
+async def get_contact(
     contact_id: str,
-    user: CurrentUser = Depends(get_current_user)
+    user: CurrentUserBaseModel = Depends(get_current_user),
 ):
     """Get a single contact by ID"""
     try:
@@ -511,18 +431,16 @@ def get_contact(
             raise HTTPException(status_code=404, detail="Contact not found")
 
         return result.data
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error retrieving contact {contact_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to retrieve contact")
 
-
 @contacts_router.post("", response_model=dict, status_code=201)
-def create_contact(
-    contact: ContactCreate,
-    user: CurrentUser = Depends(get_current_user)
+async def create_contact(
+    contact: ContactCreateBaseModel,
+    user: CurrentUserBaseModel = Depends(get_current_user),
 ):
     """Create a new contact"""
     try:
@@ -541,19 +459,17 @@ def create_contact(
 
         logger.info(f"Contact created: {data['id']}", extra={"user_id": user.id})
         return result.data[0]
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating contact: {str(e)}", extra={"user_id": user.id})
         raise HTTPException(status_code=500, detail="Failed to create contact")
 
-
 @contacts_router.put("/{contact_id}", response_model=dict)
-def update_contact(
+async def update_contact(
     contact_id: str,
-    patch: ContactUpdate,
-    user: CurrentUser = Depends(get_current_user)
+    patch: ContactUpdateBaseModel,
+    user: CurrentUserBaseModel = Depends(get_current_user),
 ):
     """Update a contact"""
     try:
@@ -561,6 +477,7 @@ def update_contact(
             raise HTTPException(status_code=503, detail="Database unavailable")
 
         update_data = {k: v for k, v in patch.dict().items() if v is not None}
+
         if not update_data:
             return {"updated": False, "message": "No fields to update"}
 
@@ -579,18 +496,16 @@ def update_contact(
 
         logger.info(f"Contact updated: {contact_id}", extra={"user_id": user.id})
         return result.data[0]
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating contact {contact_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update contact")
 
-
 @contacts_router.delete("/{contact_id}", status_code=204)
-def delete_contact(
+async def delete_contact(
     contact_id: str,
-    user: CurrentUser = Depends(get_current_user)
+    user: CurrentUserBaseModel = Depends(get_current_user),
 ):
     """Delete a contact"""
     try:
@@ -610,79 +525,57 @@ def delete_contact(
 
         logger.info(f"Contact deleted: {contact_id}", extra={"user_id": user.id})
         return None
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting contact {contact_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete contact")
 
+app.include_router(contacts_router)
 
 # ============================================================================
 # ROUTER REGISTRATION
 # ============================================================================
 
-# Contacts router (inline)
-app.include_router(contacts_router)
-
-# CRM router (HubSpot, Salesforce, Pipedrive, CSV imports)
 if CRM_ROUTER_AVAILABLE and crm_router is not None:
     app.include_router(crm_router, prefix="/api/v3/crm")
     print("✅ CRM router registered at /api/v3/crm")
 
-# Enrichment router (Perplexity/GPT-4)
+if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
+    app.include_router(settings_router, prefix="/api/v3/settings/crm")
+    print("✅ Settings router registered at /api/v3/settings/crm")
+
 if ENRICHMENT_AVAILABLE and enrichment_router is not None:
     app.include_router(enrichment_router, prefix="/api/v3/enrichment")
     print("✅ Enrichment router registered at /api/v3/enrichment")
 
-# Scoring router (MDCP/BANT/SPICE)
 if SCORING_AVAILABLE and scoring_router is not None:
     app.include_router(scoring_router, prefix="/api/v3/scoring")
     print("✅ Scoring router registered at /api/v3/scoring")
-    
-# Settings router (CRM credential & filter management)
-if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    app.include_router(settings_router)  # Already has /api/v3/settings/crm prefix
-    print("✅ Settings router registered at /api/v3/settings/crm")
-    
-# CRM Settings router
-if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    app.include_router(settings_router)
-    print("✅ CRM Settings router registered")
-    
-    
-
 
 # ============================================================================
-# STARTUP & SHUTDOWN EVENTS
+# STARTUP / SHUTDOWN
 # ============================================================================
 
 @app.on_event("startup")
 async def startup_event():
     """Application startup hook"""
     logger.info("=" * 70)
-    logger.info("🚀 LatticeIQ API Starting Up")
+    logger.info("LatticeIQ API Starting Up")
     logger.info("=" * 70)
     logger.info(f"Environment: {settings.ENVIRONMENT}")
-    logger.info(f"Version: 3.0.0")
-    logger.info(f"FastAPI: Initialized")
+    logger.info("Version: 3.0.0")
+    logger.info("FastAPI Initialized")
     logger.info(f"Supabase: {'Connected' if supabase else 'Disconnected'}")
-    logger.info(f"CRM Module: {'✅ Available' if CRM_ROUTER_AVAILABLE else '❌ Not Available'}")
-    logger.info(f"Enrichment Module: {'✅ Available' if ENRICHMENT_AVAILABLE else '❌ Not Available'}")
-    logger.info(f"Scoring Module: {'✅ Available' if SCORING_AVAILABLE else '❌ Not Available'}")
+    logger.info(f"CRM Module: {'Available' if CRM_ROUTER_AVAILABLE else 'Not Available'}")
+    logger.info(f"Enrichment Module: {'Available' if ENRICHMENT_AVAILABLE else 'Not Available'}")
+    logger.info(f"Scoring Module: {'Available' if SCORING_AVAILABLE else 'Not Available'}")
+    logger.info(f"Settings Module: {'Available' if SETTINGS_ROUTER_AVAILABLE else 'Not Available'}")
 
-    # Validate database schema
     await validate_database_schema()
     logger.info("=" * 70)
-
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Application shutdown hook"""
-    logger.info("🛑 LatticeIQ API Shutting Down")
-
-
-# ============================================================================
-# END OF MAIN.PY
-# ============================================================================
-    
+    logger.info("LatticeIQ API Shutting Down")

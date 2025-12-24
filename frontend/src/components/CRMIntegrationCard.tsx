@@ -11,6 +11,10 @@ interface CRMIntegration {
   required_fields: Record<string, any>;
   auto_sync_enabled: boolean;
   sync_frequency_hours: number;
+  api_key?: string;
+  api_url?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface CRM {
@@ -35,21 +39,11 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
   supabase
 }) => {
   const [showForm, setShowForm] = useState(false);
-  const [apiKey, setApiKey] = useState(integration?.api_key ? '•••••••••••' : '');
-  const [apiUrl, setApiUrl] = useState(integration?.api_url || '');
+  const [apiKey, setApiKey] = useState('');
+  const [apiUrl, setApiUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
-  const [excludeLeadStatus, setExcludeLeadStatus] = useState(
-    integration?.import_filters?.exclude_lead_status || []
-  );
-  const [excludeLifecycleStage, setExcludeLifecycleStage] = useState(
-    integration?.import_filters?.exclude_lifecycle_stage || []
-  );
-  const [excludeDNC, setExcludeDNC] = useState(
-    integration?.import_filters?.exclude_dnc ?? true
-  );
   const [autoSync, setAutoSync] = useState(integration?.auto_sync_enabled || false);
   const [syncFrequency, setSyncFrequency] = useState(integration?.sync_frequency_hours || 24);
 
@@ -68,7 +62,7 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
 
   const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!apiKey || apiKey === '•••••••••••') {
+    if (!apiKey) {
       setMessage({ type: 'error', text: 'Please enter a valid API key' });
       return;
     }
@@ -77,9 +71,9 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
       setLoading(true);
       const session = await supabase.auth.getSession();
       const token = session?.data?.session?.access_token;
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const apiUrlBase = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-      const response = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
+      const response = await fetch(`${apiUrlBase}/api/v3/settings/crm/integrations`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -88,11 +82,11 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
         body: JSON.stringify({
           crm_type: crm.id,
           api_key: apiKey,
-          api_url: apiUrl || null,
+          api_url: apiUrl || undefined,
           import_filters: {
-            exclude_lead_status: excludeLeadStatus,
-            exclude_lifecycle_stage: excludeLifecycleStage,
-            exclude_dnc: excludeDNC,
+            exclude_lead_status: [],
+            exclude_lifecycle_stage: [],
+            exclude_dnc: true,
             exclude_unsubscribed: true,
             min_score_threshold: 0
           },
@@ -105,9 +99,15 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
         })
       });
 
-      if (!response.ok) throw new Error('Failed to save credentials');
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.detail || 'Failed to save credentials');
+      }
+      
       setMessage({ type: 'success', text: 'Credentials saved successfully' });
       setShowForm(false);
+      setApiKey('');
+      setApiUrl('');
       onUpdate();
     } catch (err) {
       setMessage({
@@ -120,7 +120,7 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
   };
 
   const handleTestConnection = async () => {
-    if (!apiKey || apiKey === '•••••••••••') {
+    if (!apiKey) {
       setMessage({ type: 'error', text: 'Please enter a valid API key' });
       return;
     }
@@ -129,10 +129,10 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
       setTesting(true);
       const session = await supabase.auth.getSession();
       const token = session?.data?.session?.access_token;
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const apiUrlBase = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
       const response = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${crm.id}/test`,
+        `${apiUrlBase}/api/v3/settings/crm/integrations/${crm.id}/test`,
         {
           method: 'POST',
           headers: {
@@ -142,7 +142,7 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
           body: JSON.stringify({
             crm_type: crm.id,
             api_key: apiKey,
-            api_url: apiUrl || null
+            api_url: apiUrl || undefined
           })
         }
       );
@@ -155,7 +155,7 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
       const result = await response.json();
       setMessage({
         type: 'success',
-        text: `✓ Connection successful! Found ${result.contact_count} contacts`
+        text: `✓ Connection successful! Found ${result.contact_count || 0} contacts`
       });
       onUpdate();
     } catch (err) {
@@ -168,37 +168,6 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
     }
   };
 
-  const handleActivate = async () => {
-    try {
-      setLoading(true);
-      const session = await supabase.auth.getSession();
-      const token = session?.data?.session?.access_token;
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-
-      const response = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${crm.id}/activate`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      if (!response.ok) throw new Error('Failed to activate');
-      setMessage({ type: 'success', text: 'Integration activated!' });
-      onUpdate();
-    } catch (err) {
-      setMessage({
-        type: 'error',
-        text: err instanceof Error ? err.message : 'Activation failed'
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleDelete = async () => {
     if (!window.confirm(`Are you sure you want to disconnect ${crm.name}?`)) return;
 
@@ -206,10 +175,10 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
       setLoading(true);
       const session = await supabase.auth.getSession();
       const token = session?.data?.session?.access_token;
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const apiUrlBase = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
       const response = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${crm.id}`,
+        `${apiUrlBase}/api/v3/settings/crm/integrations/${crm.id}`,
         {
           method: 'DELETE',
           headers: {
@@ -241,7 +210,6 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
 
   return (
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-lg p-6 hover:border-slate-600/50 transition">
-      {/* Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="text-3xl">{crm.icon}</div>
@@ -255,7 +223,6 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
         </div>
       </div>
 
-      {/* Info */}
       {integration && (
         <div className="mb-4 p-3 bg-slate-700/30 rounded text-xs text-slate-300 space-y-1">
           {integration.last_test_at && (
@@ -270,7 +237,6 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
         </div>
       )}
 
-      {/* Message */}
       {message && (
         <div
           className={`mb-4 p-3 rounded text-sm ${
@@ -283,83 +249,57 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
         </div>
       )}
 
-      {/* Form */}
       {showForm && (
         <form onSubmit={handleSaveCredentials} className="mb-4 p-4 bg-slate-700/30 rounded space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-2">API Key / Token</label>
+            <label className="block text-xs font-medium text-slate-300 mb-2">API Key / Token *</label>
             <input
               type="password"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
               placeholder={`Enter your ${crm.name} API key`}
+              required
             />
           </div>
 
           {crm.id === 'salesforce' && (
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-2">Instance URL</label>
+              <label className="block text-xs font-medium text-slate-300 mb-2">API URL</label>
               <input
                 type="text"
                 value={apiUrl}
                 onChange={(e) => setApiUrl(e.target.value)}
                 className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
-                placeholder="https://yourinstance.salesforce.com"
+                placeholder="https://your-instance.salesforce.com"
               />
             </div>
           )}
 
-          {/* Advanced Filters */}
-          <div>
-            <button
-              type="button"
-              onClick={() => setShowFilters(!showFilters)}
-              className="text-xs font-medium text-cyan-400 hover:text-cyan-300"
-            >
-              {showFilters ? '▼' : '▶'} Advanced Filters
-            </button>
+          <label className="flex items-center gap-2 text-xs text-slate-300">
+            <input
+              type="checkbox"
+              checked={autoSync}
+              onChange={(e) => setAutoSync(e.target.checked)}
+              className="w-4 h-4 rounded"
+            />
+            Enable auto-sync
+          </label>
 
-            {showFilters && (
-              <div className="mt-3 space-y-3 p-3 bg-slate-600/20 rounded">
-                <label className="flex items-center gap-2 text-xs text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={excludeDNC}
-                    onChange={(e) => setExcludeDNC(e.target.checked)}
-                    className="w-4 h-4 rounded"
-                  />
-                  Exclude DNC records
-                </label>
+          {autoSync && (
+            <div>
+              <label className="text-xs text-slate-400">Sync frequency (hours):</label>
+              <input
+                type="number"
+                min="1"
+                max="168"
+                value={syncFrequency}
+                onChange={(e) => setSyncFrequency(parseInt(e.target.value))}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white mt-1"
+              />
+            </div>
+          )}
 
-                <label className="flex items-center gap-2 text-xs text-slate-300 mt-2">
-                  <input
-                    type="checkbox"
-                    checked={autoSync}
-                    onChange={(e) => setAutoSync(e.target.checked)}
-                    className="w-4 h-4 rounded"
-                  />
-                  Enable auto-sync
-                </label>
-
-                {autoSync && (
-                  <div className="mt-2">
-                    <label className="text-xs text-slate-400">Sync frequency (hours):</label>
-                    <input
-                      type="number"
-                      min="1"
-                      max="168"
-                      value={syncFrequency}
-                      onChange={(e) => setSyncFrequency(parseInt(e.target.value))}
-                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white mt-1"
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Buttons */}
           <div className="flex gap-2 pt-2">
             <button
               type="submit"
@@ -380,7 +320,6 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
         </form>
       )}
 
-      {/* Action Buttons */}
       <div className="flex gap-2 pt-4 border-t border-slate-600">
         {!integration ? (
           <button
@@ -397,25 +336,6 @@ const CRMIntegrationCard: React.FC<CRMIntegrationCardProps> = ({
             >
               {showForm ? 'Cancel' : 'Edit'}
             </button>
-            {!integration.is_active && integration.test_status === 'success' && (
-              <button
-                onClick={handleActivate}
-                disabled={loading}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-sm font-semibold py-2 px-3 rounded transition"
-              >
-                Activate
-              </button>
-            )}
-            {integration.is_active && (
-              <button
-                onClick={() => {
-                  /* deactivate logic */
-                }}
-                className="flex-1 bg-yellow-600 hover:bg-yellow-700 text-white text-sm font-semibold py-2 px-3 rounded transition"
-              >
-                Deactivate
-              </button>
-            )}
             <button
               onClick={handleDelete}
               disabled={loading}
