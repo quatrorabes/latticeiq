@@ -1,33 +1,22 @@
-# ============================================================================
-# FILE: backend/app/crm/settings_router.py
-# ============================================================================
 """
-CRM Settings Router (Supabase-backed, UUID-native)
-Uses service_role key for writes to bypass RLS validation.
+CRM Settings Router - Manages CRM integration credentials and settings
 """
-
-import os
-from datetime import datetime
-from typing import Optional, Dict, List, Any
-
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from pydantic import BaseModel, Field
-
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel
+from typing import Optional, List
 from supabase import create_client, Client
+import os
+import httpx
 
-# Local CRM clients
-try:
-    from .hubspot_client import HubSpotClient
-except ImportError:
-    HubSpotClient = None
+router = APIRouter()
 
-router = APIRouter(prefix="/api/v3/settings/crm", tags=["CRM Settings"])
+# ─────────────────────────────────────────────────────────────────────────────
+# Supabase clients
+# ─────────────────────────────────────────────────────────────────────────────
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
-SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-
-# Two clients: anon for reads, service for writes
 supabase_anon: Optional[Client] = None
 supabase_service: Optional[Client] = None
 
@@ -37,150 +26,182 @@ if SUPABASE_URL and SUPABASE_ANON_KEY:
 if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
     supabase_service = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
-# ============================================================================
-# Auth (Supabase token validation)
-# ============================================================================
 
-class CurrentUser(BaseModel):
-    id: str
-    email: str = ""
+# ─────────────────────────────────────────────────────────────────────────────
+# Pydantic Models
+# ─────────────────────────────────────────────────────────────────────────────
+class CRMIntegrationIn(BaseModel):
+    crm_type: str  # hubspot, salesforce, pipedrive
+    api_key: str
+    base_url: Optional[str] = None
+    is_active: bool = True
 
-async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
-    if not supabase_anon:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-
-    try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise ValueError("Invalid scheme")
-
-        user_resp = supabase_anon.auth.get_user(token)
-        user_obj = getattr(user_resp, "user", None) or (user_resp.get("user") if isinstance(user_resp, dict) else None)
-        if not user_obj:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-        user_id = getattr(user_obj, "id", None) or user_obj.get("id")
-        email = getattr(user_obj, "email", None) or user_obj.get("email") or ""
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token (missing user id)")
-
-        return CurrentUser(id=str(user_id), email=str(email))
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
-# ============================================================================
-# Models
-# ============================================================================
-
-class ImportFilter(BaseModel):
-    exclude_lead_status: List[str] = []
-    exclude_lifecycle_stage: List[str] = []
-    exclude_dnc: bool = True
-    exclude_unsubscribed: bool = True
-    min_score_threshold: int = 0
-
-class RequiredFields(BaseModel):
-    must_have: List[str] = ["first_name", "company"]
-    should_have: List[str] = ["email", "phone", "linkedin_url"]
-
-class CRMIntegrationUpsert(BaseModel):
-    crm_type: str = Field(..., description="hubspot|salesforce|pipedrive")
-    api_key: str = Field(..., min_length=3)
-    api_url: Optional[str] = None
-    import_filters: Optional[ImportFilter] = None
-    required_fields: Optional[RequiredFields] = None
-    auto_sync_enabled: bool = False
-    sync_frequency_hours: int = 24
 
 class CRMIntegrationOut(BaseModel):
     id: str
-    user_id: str
     crm_type: str
-    api_url: Optional[str] = None
+    base_url: Optional[str] = None
     is_active: bool
-    test_status: str
-    last_test_at: Optional[str] = None
-    last_sync_at: Optional[str] = None
-    import_filters: Dict[str, Any]
-    required_fields: Dict[str, Any]
-    auto_sync_enabled: bool
-    sync_frequency_hours: int
-    created_at: Optional[str] = None
+    created_at: str
     updated_at: Optional[str] = None
+
 
 class TestConnectionRequest(BaseModel):
     api_key: str
-    api_url: Optional[str] = None
+    base_url: Optional[str] = None
+
 
 class TestConnectionResponse(BaseModel):
     success: bool
     message: str
-    contact_count: Optional[int] = None
-    sample_fields: Optional[Dict[str, Any]] = None
+    details: Optional[dict] = None
 
-# ============================================================================
-# Helpers
-# ============================================================================
 
-def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+# ─────────────────────────────────────────────────────────────────────────────
+# Helper: Extract user from request
+# ─────────────────────────────────────────────────────────────────────────────
+def get_user_from_request(request: Request) -> Optional[dict]:
+    """Extract user from request state (set by auth middleware)"""
+    return getattr(request.state, "user", None)
 
-def _safe_dict(model_obj) -> Dict[str, Any]:
-    if model_obj is None:
-        return {}
-    return model_obj.model_dump() if hasattr(model_obj, "model_dump") else model_obj.dict()
 
-def _ensure_supabase():
-    if not supabase_anon or not supabase_service:
-        raise HTTPException(status_code=503, detail="Database not configured")
+# ─────────────────────────────────────────────────────────────────────────────
+# Test Connection Endpoints
+# ─────────────────────────────────────────────────────────────────────────────
+@router.post("/integrations/hubspot/test", response_model=TestConnectionResponse, tags=["Settings"])
+async def test_hubspot_connection(body: TestConnectionRequest):
+    """Test HubSpot API connection with provided credentials"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.hubapi.com/crm/v3/objects/contacts",
+                headers={"Authorization": f"Bearer {body.api_key}"},
+                params={"limit": 1}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                total = data.get("total", 0)
+                return TestConnectionResponse(
+                    success=True,
+                    message=f"Connected successfully. Found {total} contacts.",
+                    details={"total_contacts": total}
+                )
+            else:
+                return TestConnectionResponse(
+                    success=False,
+                    message=f"Connection failed: {response.status_code}",
+                    details={"error": response.text}
+                )
+    except Exception as e:
+        return TestConnectionResponse(
+            success=False,
+            message=f"Connection error: {str(e)}"
+        )
 
-def _get_existing_integration(user_id: str, crm_type: str) -> Optional[Dict[str, Any]]:
-    res = (
-        supabase_anon.table("crm_integrations")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("crm_type", crm_type)
-        .limit(1)
-        .execute()
-    )
-    return res.data[0] if res.data else None
 
-def _to_out(row: Dict[str, Any]) -> CRMIntegrationOut:
-    return CRMIntegrationOut(**row)
+@router.post("/integrations/salesforce/test", response_model=TestConnectionResponse, tags=["Settings"])
+async def test_salesforce_connection(body: TestConnectionRequest):
+    """Test Salesforce API connection with provided credentials"""
+    if not body.base_url:
+        return TestConnectionResponse(
+            success=False,
+            message="Salesforce requires a base_url (your instance URL)"
+        )
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{body.base_url}/services/data/v57.0/sobjects/Contact",
+                headers={"Authorization": f"Bearer {body.api_key}"}
+            )
+            if response.status_code == 200:
+                return TestConnectionResponse(
+                    success=True,
+                    message="Connected to Salesforce successfully."
+                )
+            else:
+                return TestConnectionResponse(
+                    success=False,
+                    message=f"Connection failed: {response.status_code}",
+                    details={"error": response.text}
+                )
+    except Exception as e:
+        return TestConnectionResponse(
+            success=False,
+            message=f"Connection error: {str(e)}"
+        )
 
-# ============================================================================
-# Endpoints
-# ============================================================================
 
-@router.get("/integrations", response_model=List[CRMIntegrationOut])
-async def list_integrations(user: CurrentUser = Depends(get_current_user)):
-    _ensure_supabase()
-    res = supabase_anon.table("crm_integrations").select("*").eq("user_id", user.id).order("created_at", desc=True).execute()
-    return [CRMIntegrationOut(**r) for r in (res.data or [])]
+@router.post("/integrations/pipedrive/test", response_model=TestConnectionResponse, tags=["Settings"])
+async def test_pipedrive_connection(body: TestConnectionRequest):
+    """Test Pipedrive API connection with provided credentials"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                "https://api.pipedrive.com/v1/persons",
+                params={"api_token": body.api_key, "limit": 1}
+            )
+            if response.status_code == 200:
+                data = response.json()
+                if data.get("success"):
+                    return TestConnectionResponse(
+                        success=True,
+                        message="Connected to Pipedrive successfully."
+                    )
+            return TestConnectionResponse(
+                success=False,
+                message=f"Connection failed: {response.status_code}",
+                details={"error": response.text}
+            )
+    except Exception as e:
+        return TestConnectionResponse(
+            success=False,
+            message=f"Connection error: {str(e)}"
+        )
 
-@router.get("/integrations/{crm_type}", response_model=CRMIntegrationOut)
-async def get_integration(crm_type: str, user: CurrentUser = Depends(get_current_user)):
-    _ensure_supabase()
-    existing = _get_existing_integration(user.id, crm_type)
-    if not existing:
-        raise HTTPException(status_code=404, detail=f"CRM integration not found: {crm_type}")
-    return _to_out(existing)
 
-@router.post("/integrations", response_model=IntegrationOut, tags=["Settings"])
-async def upsert_integration(body: IntegrationIn, request: Request):
+# ─────────────────────────────────────────────────────────────────────────────
+# CRUD Endpoints for CRM Integrations
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/integrations", response_model=List[CRMIntegrationOut], tags=["Settings"])
+async def list_integrations(request: Request):
+    """List all CRM integrations for the current user"""
     user = get_user_from_request(request)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
-        
+
+    if not supabase_anon:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+
+    res = (
+        supabase_anon.table("crm_integrations")
+        .select("id, crm_type, base_url, is_active, created_at, updated_at")
+        .eq("user_id", user["id"])
+        .execute()
+    )
+
+    return [
+        CRMIntegrationOut(
+            id=row["id"],
+            crm_type=row["crm_type"],
+            base_url=row.get("base_url"),
+            is_active=row["is_active"],
+            created_at=row["created_at"],
+            updated_at=row.get("updated_at"),
+        )
+        for row in res.data
+    ]
+
+
+@router.post("/integrations", response_model=CRMIntegrationOut, tags=["Settings"])
+async def upsert_integration(body: CRMIntegrationIn, request: Request):
+    """Create or update a CRM integration"""
+    user = get_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
     if not supabase_anon or not supabase_service:
         raise HTTPException(status_code=500, detail="Supabase not configured")
-        
+
     row = {
         "user_id": user["id"],
         "crm_type": body.crm_type,
@@ -188,19 +209,19 @@ async def upsert_integration(body: IntegrationIn, request: Request):
         "base_url": body.base_url,
         "is_active": body.is_active,
     }
-    
+
     # Use native Postgres upsert with on_conflict
     res = (
         supabase_service.table("crm_integrations")
         .upsert(row, on_conflict="user_id,crm_type")
         .execute()
     )
-    
+
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to save integration")
-        
+
     saved = res.data[0]
-    return IntegrationOut(
+    return CRMIntegrationOut(
         id=saved["id"],
         crm_type=saved["crm_type"],
         base_url=saved.get("base_url"),
@@ -208,49 +229,24 @@ async def upsert_integration(body: IntegrationIn, request: Request):
         created_at=saved["created_at"],
         updated_at=saved.get("updated_at"),
     )
-    
 
-@router.post("/integrations/{crm_type}/test", response_model=TestConnectionResponse)
-async def test_integration(crm_type: str, payload: TestConnectionRequest, user: CurrentUser = Depends(get_current_user)):
-    _ensure_supabase()
 
-    crm_type = crm_type.lower().strip()
-    if crm_type not in ("hubspot", "salesforce", "pipedrive"):
-        raise HTTPException(status_code=400, detail=f"Unsupported CRM type: {crm_type}")
+@router.delete("/integrations/{crm_type}", tags=["Settings"])
+async def delete_integration(crm_type: str, request: Request):
+    """Delete a CRM integration"""
+    user = get_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
 
-    # Run test (HubSpot implemented; others can be added later)
-    if crm_type == "hubspot" and HubSpotClient:
-        try:
-            client = HubSpotClient(api_key=payload.api_key)
-            ok = client.test_connection()
-            result = {
-                "success": bool(ok),
-                "message": "HubSpot connection successful" if ok else "HubSpot connection failed",
-                "contact_count": None,
-                "sample_fields": None,
-            }
-        except Exception as e:
-            result = {
-                "success": False,
-                "message": f"HubSpot test error: {str(e)}",
-                "contact_count": None,
-                "sample_fields": None,
-            }
-    else:
-        result = {
-            "success": False,
-            "message": f"{crm_type} test not implemented yet",
-            "contact_count": None,
-            "sample_fields": None,
-        }
+    if not supabase_service:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
 
-    # Persist test status using service role
-    existing = _get_existing_integration(user.id, crm_type)
-    if existing:
-        supabase_service.table("crm_integrations").update({
-            "test_status": "success" if result["success"] else "failed",
-            "last_test_at": _now_iso(),
-            "updated_at": _now_iso(),
-        }).eq("id", existing["id"]).execute()
+    res = (
+        supabase_service.table("crm_integrations")
+        .delete()
+        .eq("user_id", user["id"])
+        .eq("crm_type", crm_type)
+        .execute()
+    )
 
-    return TestConnectionResponse(**result)
+    return {"success": True, "deleted": crm_type}
