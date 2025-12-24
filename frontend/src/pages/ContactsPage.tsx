@@ -101,17 +101,15 @@ export default function ContactsPage() {
 
   const triggerSourceImport = async (source: ImportSource) => {
     if (source === 'csv') return;
-
+    
     setImporting(true);
     setImportError(null);
     setImportSuccess(null);
-
+    
     try {
       const token = await getAuthToken();
-
-      // FIXED: Use correct API v3 CRM endpoints
       const endpoint = `/api/v3/crm/import/${source}`;
-
+      
       const resp = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
         headers: {
@@ -120,46 +118,28 @@ export default function ContactsPage() {
         },
         body: JSON.stringify({}),
       });
-
+      
       if (!resp.ok) {
-        const text = await resp.text();
-        throw new Error(`${source} import failed: ${resp.status} ${text}`);
+        const json = await resp.json().catch(() => null);
+        
+        // Check if it's a missing API key error
+        if (resp.status === 422 && json?.detail?.[0]?.loc?.includes('api_key')) {
+          throw new Error(`Please configure your ${source} API key in Settings first.`);
+        }
+        
+        throw new Error(`${source} import failed: ${resp.status} ${JSON.stringify(json?.detail || json)}`);
       }
-
+  
       const json = await resp.json().catch(() => null);
       const count = json?.imported_count ?? json?.count ?? '';
-      const label =
-        source === 'hubspot'
-          ? 'HubSpot'
-          : source === 'salesforce'
-          ? 'Salesforce'
-          : 'Pipedrive';
-
-      setImportSuccess(
-        count
-          ? `Imported ${count} contacts from ${label}.`
-          : `${label} import completed.`
-      );
+      const label = source === 'hubspot' ? 'HubSpot' : source === 'salesforce' ? 'Salesforce' : 'Pipedrive';
+  
+      setImportSuccess(count ? `Imported ${count} contacts from ${label}.` : `${label} import completed.`);
       await fetchContacts();
     } catch (err) {
-      setImportError(
-        err instanceof Error
-          ? err.message
-          : 'Failed to import contacts from selected source'
-      );
+      setImportError(err instanceof Error ? err.message : 'Failed to import contacts');
     } finally {
       setImporting(false);
-    }
-  };
-
-  const onImportClick = () => {
-    if (selectedSource === 'csv') {
-      const input = document.getElementById(
-        'csv-file-input'
-      ) as HTMLInputElement | null;
-      input?.click();
-    } else {
-      void triggerSourceImport(selectedSource);
     }
   };
 
