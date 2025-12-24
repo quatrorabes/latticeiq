@@ -1,6 +1,6 @@
-// frontend/src/pages/SettingsPage.tsx - WITH LOGOUT BUTTON
+// frontend/src/pages/SettingsPage.tsx - WITH LOGOUT BUTTON (FIXED)
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
@@ -159,7 +159,7 @@ export default function SettingsPage() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      const data = await response.json();
+      const responseData = await response.json();
       setSuccess(`${crmType.toUpperCase()} integration saved!`);
       setApiKey('');
       
@@ -267,8 +267,8 @@ export default function SettingsPage() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      const data = await response.json();
-      setSuccess(`Imported ${data.count || 0} contacts!`);
+      const responseData = await response.json();
+      setSuccess(`Imported ${responseData.count || 0} contacts!`);
     } catch (err: any) {
       console.error('Import contacts error:', err);
       setError(err.message);
