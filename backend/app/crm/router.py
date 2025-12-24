@@ -2,7 +2,7 @@
 # FILE: backend/app/crm/router.py
 # ============================================================================
 """CRM import endpoints - v3 API
-FIXED: Fetches API keys from crm_integrations table (user saves in Settings)
+FIXED: Proper JWT auth that uses settings from Render env vars
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Header
@@ -33,19 +33,46 @@ else:
 router = APIRouter(prefix="/import", tags=["CRM Import"])
 
 # ============================================================================
-# AUTH HELPER - Get user from JWT
+# AUTH HELPER - Extract user from Bearer token (JWT)
 # ============================================================================
 
-async def get_current_user_from_token(authorization: str = Header(None)) -> dict:
-    """Extract user from JWT token"""
+async def get_current_user_for_crm(authorization: str = Header(None)) -> dict:
+    """
+    Extract user from JWT Bearer token.
+    Validates token using settings from Render environment.
+    """
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
     
     try:
-        # Import from main app
-        from app.main import get_current_user
-        user = await get_current_user(authorization)
-        return {"id": user.id, "email": user.email}
+        # Parse Bearer token
+        scheme, token = authorization.split(" ", 1)
+        if scheme.lower() != "bearer":
+            raise ValueError("Invalid scheme")
+        
+        # Import jwt decoder and settings
+        from jose import JWTError, jwt
+        import os
+        
+        # Get JWT secret from Render env (matches main.py)
+        jwt_secret = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
+        jwt_algorithm = "HS256"
+        
+        # Decode token using Render's JWT_SECRET
+        payload = jwt.decode(token, jwt_secret, algorithms=[jwt_algorithm])
+        
+        user_id: str = payload.get("sub")
+        email: str = payload.get("email")
+        
+        if not user_id or not email:
+            raise ValueError("Missing required claims (sub, email)")
+        
+        return {"id": user_id, "email": email}
+    
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+    except JWTError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
@@ -97,7 +124,7 @@ def get_crm_credentials(user_id: str, crm_type: str) -> dict:
 async def import_csv(
     file: UploadFile = File(...),
     background_tasks: BackgroundTasks = None,
-    user: dict = Depends(get_current_user_from_token)
+    user: dict = Depends(get_current_user_for_crm)
 ) -> dict:
     """
     Upload CSV and import contacts
@@ -161,7 +188,7 @@ async def import_csv(
 @router.post("/hubspot")
 async def import_hubspot(
     background_tasks: BackgroundTasks = None,
-    user: dict = Depends(get_current_user_from_token)
+    user: dict = Depends(get_current_user_for_crm)
 ) -> dict:
     """
     Import contacts from HubSpot.
@@ -223,7 +250,7 @@ async def import_hubspot(
 @router.post("/salesforce")
 async def import_salesforce(
     background_tasks: BackgroundTasks = None,
-    user: dict = Depends(get_current_user_from_token)
+    user: dict = Depends(get_current_user_for_crm)
 ) -> dict:
     """
     Import contacts from Salesforce.
@@ -239,7 +266,6 @@ async def import_salesforce(
         creds = get_crm_credentials(user_id, "salesforce")
         
         # For Salesforce we need more fields - stored in api_key as JSON or separate fields
-        # Simplified: just use api_key for now
         api_key = creds["api_key"]
         instance_url = creds.get("api_url", "")
         
@@ -290,7 +316,7 @@ async def import_salesforce(
 @router.post("/pipedrive")
 async def import_pipedrive(
     background_tasks: BackgroundTasks = None,
-    user: dict = Depends(get_current_user_from_token)
+    user: dict = Depends(get_current_user_for_crm)
 ) -> dict:
     """
     Import contacts from Pipedrive.
@@ -349,7 +375,7 @@ async def import_pipedrive(
 @router.get("/status/{job_id}")
 async def get_import_status(
     job_id: UUID,
-    user: dict = Depends(get_current_user_from_token)
+    user: dict = Depends(get_current_user_for_crm)
 ) -> dict:
     """Get import job status and progress"""
     if not supabase:
