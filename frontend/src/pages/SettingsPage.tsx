@@ -1,6 +1,6 @@
-// frontend/src/pages/SettingsPage.tsx - WITH LOGOUT BUTTON (FIXED)
+// frontend/src/pages/SettingsPage.tsx - WITH LOGOUT BUTTON (CLEAN BUILD)
 
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
 
@@ -27,15 +27,16 @@ export default function SettingsPage() {
   useEffect(() => {
     checkAuth();
     fetchIntegrations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ========================================
   // AUTH CHECK
   // ========================================
-  
+
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession();
-    
+
     if (!session) {
       navigate('/');
       return;
@@ -67,9 +68,8 @@ export default function SettingsPage() {
       setLoading(true);
       setError('');
 
-      // Get the session and token
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         setError('Not authenticated. Please log in.');
         navigate('/');
@@ -79,14 +79,13 @@ export default function SettingsPage() {
       const token = session.access_token;
       console.log('Token exists:', !!token);
 
-      // Make request WITH authorization header
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations`,
         {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`, // ← CRITICAL: Include this
+            'Authorization': `Bearer ${token}`,
           },
         }
       );
@@ -120,13 +119,11 @@ export default function SettingsPage() {
 
       if (!apiKey.trim()) {
         setError('API key is required');
-        setLoading(false);
         return;
       }
 
-      // Get the session and token
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         setError('Not authenticated. Please log in.');
         navigate('/');
@@ -136,14 +133,13 @@ export default function SettingsPage() {
       const token = session.access_token;
       console.log('Saving integration with token:', !!token);
 
-      // Make request WITH authorization header
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`, // ← CRITICAL: Include this
+            'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
             crm_type: crmType,
@@ -159,11 +155,12 @@ export default function SettingsPage() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
+      // Parse response to fully drain body (avoids some fetch edge cases), but don't store it.
       await response.json();
+
       setSuccess(`${crmType.toUpperCase()} integration saved!`);
       setApiKey('');
-      
-      // Refresh list
+
       await fetchIntegrations();
     } catch (err: any) {
       console.error('Save integration error:', err);
@@ -182,9 +179,8 @@ export default function SettingsPage() {
       setTestingConnection(true);
       setError('');
 
-      // Get the session and token
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         setError('Not authenticated. Please log in.');
         return;
@@ -193,14 +189,13 @@ export default function SettingsPage() {
       const token = session.access_token;
       console.log('Testing connection with token:', !!token);
 
-      // Make request WITH authorization header
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/crm/test/${integration.crm_type}`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`, // ← CRITICAL: Include this
+            'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
             api_key: integration.api_key,
@@ -233,9 +228,8 @@ export default function SettingsPage() {
       setLoading(true);
       setError('');
 
-      // Get the session and token
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         setError('Not authenticated. Please log in.');
         navigate('/');
@@ -245,14 +239,13 @@ export default function SettingsPage() {
       const token = session.access_token;
       console.log('Importing contacts with token:', !!token);
 
-      // Make request WITH authorization header
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/crm/import/${integration.crm_type}`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`, // ← CRITICAL: Include this
+            'Authorization': `Bearer ${token}`,
           },
           body: JSON.stringify({
             api_key: integration.api_key,
@@ -267,8 +260,8 @@ export default function SettingsPage() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      await response.json();
-      setSuccess(`Imported ${responseData.count || 0} contacts!`);
+      const importResult = await response.json();
+      setSuccess(`Imported ${importResult.count || 0} contacts!`);
     } catch (err: any) {
       console.error('Import contacts error:', err);
       setError(err.message);
@@ -286,9 +279,8 @@ export default function SettingsPage() {
       setLoading(true);
       setError('');
 
-      // Get the session and token
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       if (!session) {
         setError('Not authenticated. Please log in.');
         return;
@@ -297,14 +289,13 @@ export default function SettingsPage() {
       const token = session.access_token;
       console.log('Deleting integration with token:', !!token);
 
-      // Make request WITH authorization header
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations/${id}`,
         {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`, // ← CRITICAL: Include this
+            'Authorization': `Bearer ${token}`,
           },
         }
       );
@@ -317,8 +308,6 @@ export default function SettingsPage() {
       }
 
       setSuccess('Integration deleted!');
-      
-      // Refresh list
       await fetchIntegrations();
     } catch (err: any) {
       console.error('Delete integration error:', err);
