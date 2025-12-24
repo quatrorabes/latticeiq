@@ -1,4 +1,4 @@
-// frontend/src/pages/SettingsPage.tsx - WITH LOGOUT BUTTON (CLEAN BUILD)
+// frontend/src/pages/SettingsPage.tsx - Production: simple CRM settings + Logout (TS clean)
 
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -30,10 +30,6 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // ========================================
-  // AUTH CHECK
-  // ========================================
-
   async function checkAuth() {
     const { data: { session } } = await supabase.auth.getSession();
 
@@ -45,10 +41,6 @@ export default function SettingsPage() {
     setUser(session.user);
   }
 
-  // ========================================
-  // LOGOUT
-  // ========================================
-
   async function handleLogout() {
     try {
       await supabase.auth.signOut();
@@ -58,10 +50,6 @@ export default function SettingsPage() {
       setError('Failed to log out');
     }
   }
-
-  // ========================================
-  // FETCH INTEGRATIONS WITH TOKEN
-  // ========================================
 
   async function fetchIntegrations() {
     try {
@@ -77,7 +65,6 @@ export default function SettingsPage() {
       }
 
       const token = session.access_token;
-      console.log('Token exists:', !!token);
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations`,
@@ -89,8 +76,6 @@ export default function SettingsPage() {
           },
         }
       );
-
-      console.log('Fetch integrations response:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -106,10 +91,6 @@ export default function SettingsPage() {
       setLoading(false);
     }
   }
-
-  // ========================================
-  // SAVE INTEGRATION WITH TOKEN
-  // ========================================
 
   async function handleSaveIntegration() {
     try {
@@ -131,7 +112,6 @@ export default function SettingsPage() {
       }
 
       const token = session.access_token;
-      console.log('Saving integration with token:', !!token);
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations`,
@@ -148,19 +128,16 @@ export default function SettingsPage() {
         }
       );
 
-      console.log('Save integration response:', response.status);
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      // Parse response to fully drain body (avoids some fetch edge cases), but don't store it.
+      // drain body, but don't store unused vars
       await response.json();
 
       setSuccess(`${crmType.toUpperCase()} integration saved!`);
       setApiKey('');
-
       await fetchIntegrations();
     } catch (err: any) {
       console.error('Save integration error:', err);
@@ -169,10 +146,6 @@ export default function SettingsPage() {
       setLoading(false);
     }
   }
-
-  // ========================================
-  // TEST CONNECTION WITH TOKEN
-  // ========================================
 
   async function handleTestConnection(integration: Integration) {
     try {
@@ -187,7 +160,6 @@ export default function SettingsPage() {
       }
 
       const token = session.access_token;
-      console.log('Testing connection with token:', !!token);
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/crm/test/${integration.crm_type}`,
@@ -203,8 +175,6 @@ export default function SettingsPage() {
         }
       );
 
-      console.log('Test connection response:', response.status);
-
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `HTTP ${response.status}`);
@@ -218,10 +188,6 @@ export default function SettingsPage() {
       setTestingConnection(false);
     }
   }
-
-  // ========================================
-  // IMPORT CONTACTS WITH TOKEN
-  // ========================================
 
   async function handleImportContacts(integration: Integration) {
     try {
@@ -237,7 +203,6 @@ export default function SettingsPage() {
       }
 
       const token = session.access_token;
-      console.log('Importing contacts with token:', !!token);
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/crm/import/${integration.crm_type}`,
@@ -252,8 +217,6 @@ export default function SettingsPage() {
           }),
         }
       );
-
-      console.log('Import contacts response:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -270,10 +233,6 @@ export default function SettingsPage() {
     }
   }
 
-  // ========================================
-  // DELETE INTEGRATION WITH TOKEN
-  // ========================================
-
   async function handleDeleteIntegration(id: string) {
     try {
       setLoading(true);
@@ -287,7 +246,6 @@ export default function SettingsPage() {
       }
 
       const token = session.access_token;
-      console.log('Deleting integration with token:', !!token);
 
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations/${id}`,
@@ -299,8 +257,6 @@ export default function SettingsPage() {
           },
         }
       );
-
-      console.log('Delete integration response:', response.status);
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -359,7 +315,6 @@ export default function SettingsPage() {
           </h2>
 
           <div className="space-y-4">
-            {/* CRM Type */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 CRM Type
@@ -375,7 +330,6 @@ export default function SettingsPage() {
               </select>
             </div>
 
-            {/* API Key */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 API Key
@@ -392,7 +346,6 @@ export default function SettingsPage() {
               </p>
             </div>
 
-            {/* Save Button */}
             <button
               onClick={handleSaveIntegration}
               disabled={loading}
@@ -460,10 +413,9 @@ export default function SettingsPage() {
           )}
         </div>
 
-        {/* Debug Info */}
         <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
           <p>
-            <strong>Debug:</strong> Check browser console for token details. If "Token exists: false", user is not logged in.
+            <strong>Debug:</strong> If this page shows no logout button, Vercel is not serving this file.
           </p>
         </div>
       </div>
