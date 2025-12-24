@@ -1,4 +1,4 @@
-// frontend/src/pages/SettingsPage.tsx - WITH AUTHORIZATION HEADER FIX
+// frontend/src/pages/SettingsPage.tsx - WITH LOGOUT BUTTON
 
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -42,6 +42,20 @@ export default function SettingsPage() {
     }
 
     setUser(session.user);
+  }
+
+  // ========================================
+  // LOGOUT
+  // ========================================
+
+  async function handleLogout() {
+    try {
+      await supabase.auth.signOut();
+      navigate('/');
+    } catch (err: any) {
+      console.error('Logout error:', err);
+      setError('Failed to log out');
+    }
   }
 
   // ========================================
@@ -317,11 +331,19 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-600 mt-2">Manage your CRM integrations</p>
-          {user && <p className="text-sm text-gray-500 mt-1">Logged in as: {user.email}</p>}
+        {/* Header with Logout */}
+        <div className="mb-8 flex items-center justify-between">
+          <div>
+            <h1 className="text-4xl font-bold text-gray-900">Settings</h1>
+            <p className="text-gray-600 mt-2">Manage your CRM integrations</p>
+            {user && <p className="text-sm text-gray-500 mt-1">Logged in as: {user.email}</p>}
+          </div>
+          <button
+            onClick={handleLogout}
+            className="px-6 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+          >
+            Log Out
+          </button>
         </div>
 
         {/* Messages */}
