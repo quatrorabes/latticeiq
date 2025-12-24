@@ -29,9 +29,9 @@ export default function ContactsPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
-  const [selectedSource, setSelectedSource] = useState<ImportSource>('csv');
+  const [selectedSource, setSelectedSource] = useState<ImportSource>('hubspot');
 
-  const apiUrl = import.meta.env.VITE_API_URL;
+  const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
   const fetchContacts = async () => {
     setLoading(true);
@@ -50,12 +50,9 @@ export default function ContactsPage() {
     fetchContacts();
   }, []);
 
-  const withUser = async () => {
-    const { data } = await supabase.auth.getUser();
-    if (!data.user) {
-      throw new Error('Not authenticated');
-    }
-    return data.user;
+  const getAuthToken = async () => {
+    const session = await supabase.auth.getSession();
+    return session?.data?.session?.access_token;
   };
 
   const handleCsvFileChange = async (
@@ -64,23 +61,20 @@ export default function ContactsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!apiUrl) {
-      setImportError('Missing VITE_API_URL env var');
-      return;
-    }
-
     setImporting(true);
     setImportError(null);
     setImportSuccess(null);
 
     try {
-      const user = await withUser();
+      const token = await getAuthToken();
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('user_id', user.id);
 
-      const resp = await fetch(`${apiUrl}/import/contacts/csv`, {
+      const resp = await fetch(`${apiUrl}/api/v3/crm/import/csv`, {
         method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
         body: formData,
       });
 
@@ -106,12 +100,6 @@ export default function ContactsPage() {
   };
 
   const triggerSourceImport = async (source: ImportSource) => {
-    if (!apiUrl) {
-      setImportError('Missing VITE_API_URL env var');
-      return;
-    }
-
-    // CSV uses file input instead
     if (source === 'csv') return;
 
     setImporting(true);
@@ -119,37 +107,23 @@ export default function ContactsPage() {
     setImportSuccess(null);
 
     try {
-      const user = await withUser();
+      const token = await getAuthToken();
 
-      let endpoint = '';
-      switch (source) {
-        case 'hubspot':
-          endpoint = '/import/contacts/hubspot';
-          break;
-        case 'salesforce':
-          endpoint = '/import/contacts/salesforce';
-          break;
-        case 'pipedrive':
-          endpoint = '/import/contacts/pipedrive';
-          break;
-      }
+      // FIXED: Use correct API v3 CRM endpoints
+      const endpoint = `/api/v3/crm/import/${source}`;
 
       const resp = await fetch(`${apiUrl}${endpoint}`, {
         method: 'POST',
         headers: {
+          'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          user_id: user.id,
-          // placeholder for API keys / tokens stored server-side or in env
-        }),
+        body: JSON.stringify({}),
       });
 
       if (!resp.ok) {
         const text = await resp.text();
-        throw new Error(
-          `${source} import failed: ${resp.status} ${text}`
-        );
+        throw new Error(`${source} import failed: ${resp.status} ${text}`);
       }
 
       const json = await resp.json().catch(() => null);
@@ -210,10 +184,10 @@ export default function ContactsPage() {
               }
               disabled={importing}
             >
-              <option value="csv">CSV</option>
               <option value="hubspot">HubSpot</option>
               <option value="salesforce">Salesforce</option>
               <option value="pipedrive">Pipedrive</option>
+              <option value="csv">CSV</option>
             </select>
             <button
               onClick={onImportClick}
