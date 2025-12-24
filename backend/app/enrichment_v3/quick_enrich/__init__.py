@@ -1,2 +1,6 @@
-from .quick_enrich import quick_enrich
-__all__ = ["quick_enrich"]
+"""
+Quick enrichment package
+"""
+from .quick_enrich import router
+
+__all__ = ["router"]

@@ -1,5 +1,6 @@
-# backend/enrichment_v3/__init__.py
-from .api_routes import router, set_auth_dependency
-from .routes import EnrichmentEngine
+"""
+Enrichment module - exports quick_enrich router
+"""
+from .quick_enrich.quick_enrich import router
 
-__all__ = ["router", "set_auth_dependency", "EnrichmentEngine"]
+__all__ = ["router"]

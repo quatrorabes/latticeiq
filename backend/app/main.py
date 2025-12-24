@@ -40,9 +40,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
-# CORRECT (fixed):
-from enrichment_v3.quick_enrich import quick_enrich
-QUICK_ENRICH_AVAILABLE = True
+
+# Quick enrich disabled for now - using router instead
+QUICK_ENRICH_AVAILABLE = False
 
 
 
@@ -470,7 +470,6 @@ def list_contacts(
         raise HTTPException(status_code=500, detail="Failed to retrieve contacts")
 
 # Add this near the bottom of main.py, after other router includes
-        
 @app.post("/api/v3/enrich/all")
 async def enrich_all_contacts(
     user: CurrentUser = Depends(get_current_user),
@@ -517,7 +516,6 @@ async def enrich_all_contacts(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
         
-
 # ============================================================================
 # ROUTER REGISTRATION
 # ============================================================================
