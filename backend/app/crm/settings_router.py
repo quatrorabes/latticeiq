@@ -172,51 +172,43 @@ async def get_integration(crm_type: str, user: CurrentUser = Depends(get_current
         raise HTTPException(status_code=404, detail=f"CRM integration not found: {crm_type}")
     return _to_out(existing)
 
-@router.post("/integrations", response_model=CRMIntegrationOut)
-async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = Depends(get_current_user)):
-    """
-    Create or update the integration row in crm_integrations.
-    Uses service_role key to bypass RLS.
-    """
-    _ensure_supabase()
-
-    crm_type = payload.crm_type.lower().strip()
-    if crm_type not in ("hubspot", "salesforce", "pipedrive"):
-        raise HTTPException(status_code=400, detail=f"Unsupported CRM type: {crm_type}")
-
-    existing = _get_existing_integration(user.id, crm_type)
-
+@router.post("/integrations", response_model=IntegrationOut, tags=["Settings"])
+async def upsert_integration(body: IntegrationIn, request: Request):
+    user = get_user_from_request(request)
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+        
+    if not supabase_anon or not supabase_service:
+        raise HTTPException(status_code=500, detail="Supabase not configured")
+        
     row = {
-        "user_id": user.id,
-        "crm_type": crm_type,
-        "api_key": payload.api_key,
-        "api_url": payload.api_url,
-        "import_filters": _safe_dict(payload.import_filters),
-        "required_fields": _safe_dict(payload.required_fields),
-        "auto_sync_enabled": payload.auto_sync_enabled,
-        "sync_frequency_hours": payload.sync_frequency_hours,
-        "test_status": "untested",
-        "is_active": True,
-        "updated_at": _now_iso(),
+        "user_id": user["id"],
+        "crm_type": body.crm_type,
+        "api_key_encrypted": body.api_key,
+        "base_url": body.base_url,
+        "is_active": body.is_active,
     }
-
-    if existing:
-        # Update existing using service role
-        res = (
-            supabase_service.table("crm_integrations")
-            .update(row)
-            .eq("id", existing["id"])
-            .execute()
-        )
-        if not res.data:
-            raise HTTPException(status_code=500, detail="Failed to update integration")
-        return _to_out(res.data[0])
-
-    # Create new using service role - Supabase auto-generates UUID
-    res = supabase_service.table("crm_integrations").insert(row).execute()
+    
+    # Use native Postgres upsert with on_conflict
+    res = (
+        supabase_service.table("crm_integrations")
+        .upsert(row, on_conflict="user_id,crm_type")
+        .execute()
+    )
+    
     if not res.data:
-        raise HTTPException(status_code=500, detail="Failed to create integration")
-    return _to_out(res.data[0])
+        raise HTTPException(status_code=500, detail="Failed to save integration")
+        
+    saved = res.data[0]
+    return IntegrationOut(
+        id=saved["id"],
+        crm_type=saved["crm_type"],
+        base_url=saved.get("base_url"),
+        is_active=saved["is_active"],
+        created_at=saved["created_at"],
+        updated_at=saved.get("updated_at"),
+    )
+    
 
 @router.post("/integrations/{crm_type}/test", response_model=TestConnectionResponse)
 async def test_integration(crm_type: str, payload: TestConnectionRequest, user: CurrentUser = Depends(get_current_user)):
