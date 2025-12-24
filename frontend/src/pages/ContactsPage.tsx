@@ -65,6 +65,11 @@ export default function ContactsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (!apiUrl) {
+      setImportError('Missing VITE_API_URL env var');
+      return;
+    }
+
     setImporting(true);
     setImportError(null);
     setImportSuccess(null);
@@ -105,6 +110,12 @@ export default function ContactsPage() {
   };
 
   const triggerSourceImport = async (source: ImportSource) => {
+    if (!apiUrl) {
+      setImportError('Missing VITE_API_URL env var');
+      return;
+    }
+
+    // CSV uses file input instead
     if (source === 'csv') return;
 
     setImporting(true);
@@ -120,6 +131,7 @@ export default function ContactsPage() {
           Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        // Backend should fetch stored creds from Settings (crm_integrations)
         body: JSON.stringify({}),
       });
 
