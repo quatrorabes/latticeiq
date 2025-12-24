@@ -1,24 +1,20 @@
-## File: `backend/app/crm/settings_router.py`
-
-
-
 # ============================================================================
 # FILE: backend/app/crm/settings_router.py
 # ============================================================================
 """
-CRM Settings Router (Supabase-backed)
+CRM Settings Router (Supabase-backed, UUID-native)
 
 Provides:
 - Create/update integration credentials
 - List integrations
 - Get one integration
-- Test connection (HubSpot/Salesforce/Pipedrive placeholders where needed)
+- Test connection (HubSpot/Salesforce/Pipedrive)
 
 This router is intentionally Supabase-first (no SQLAlchemy).
+Supabase auto-generates UUID ids on insert.
 """
 
 import os
-import uuid
 from datetime import datetime
 from typing import Optional, Dict, List, Any
 
@@ -27,7 +23,7 @@ from pydantic import BaseModel, Field
 
 from supabase import create_client, Client
 
-# Local CRM clients (HubSpot exists today; SF/Pipedrive may be stubs in your repo)
+# Local CRM clients
 try:
     from .hubspot_client import HubSpotClient
 except ImportError:
@@ -181,6 +177,7 @@ async def get_integration(crm_type: str, user: CurrentUser = Depends(get_current
 async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = Depends(get_current_user)):
     """
     Create or update the integration row in crm_integrations.
+    Supabase auto-generates UUID id on insert.
     """
     _ensure_supabase()
 
@@ -205,6 +202,7 @@ async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = 
     }
 
     if existing:
+        # Update existing - don't touch id
         res = (
             supabase.table("crm_integrations")
             .update(row)
@@ -215,9 +213,7 @@ async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = 
             raise HTTPException(status_code=500, detail="Failed to update integration")
         return _to_out(res.data[0])
 
-    row["id"] = str(uuid.uuid4())
-    row["created_at"] = _now_iso()
-
+    # Create new - DON'T set id, let Supabase auto-generate it
     res = supabase.table("crm_integrations").insert(row).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create integration")
