@@ -50,9 +50,21 @@ from jose import JWTError, jwt
 from pythonjsonlogger import jsonlogger
 
 
+
 # ============================================================================
 # ROUTER IMPORTS (with error handling)
 # ============================================================================
+
+# CRM Settings Router
+try:
+    from crm.settings_router import router as settings_router
+    SETTINGS_ROUTER_AVAILABLE = True
+    print("✅ CRM Settings router imported")
+except ImportError as e:
+    settings_router = None
+    SETTINGS_ROUTER_AVAILABLE = False
+    print(f"❌ CRM Settings router import failed: {e}")
+    
 
 # CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
 try:
@@ -84,6 +96,16 @@ except ImportError as e:
     SCORING_AVAILABLE = False
     print(f"❌ Scoring router import failed: {e}")
 
+# CRM Settings Router (credential management, filters, sync)
+try:
+    from crm.settings_router import router as settings_router
+    SETTINGS_ROUTER_AVAILABLE = True
+    print("✅ CRM Settings router imported")
+except ImportError as e:
+    settings_router = None
+    SETTINGS_ROUTER_AVAILABLE = False
+    print(f"❌ CRM Settings router import failed: {e}")
+    
 
 # ============================================================================
 # CONFIGURATION & SETTINGS
@@ -411,7 +433,11 @@ async def root():
         },
     }
 
-
+# Settings router (CRM credential & filter management)
+if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
+    app.include_router(settings_router)  # Already has /api/v3/settings/crm prefix
+    print("✅ Settings router registered at /api/v3/settings/crm")
+    
 # ============================================================================
 # CONTACTS CRUD ENDPOINTS (v3)
 # CRITICAL: Use 'def' not 'async def' - Supabase SDK is synchronous!
@@ -613,6 +639,18 @@ if ENRICHMENT_AVAILABLE and enrichment_router is not None:
 if SCORING_AVAILABLE and scoring_router is not None:
     app.include_router(scoring_router, prefix="/api/v3/scoring")
     print("✅ Scoring router registered at /api/v3/scoring")
+    
+# Settings router (CRM credential & filter management)
+if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
+    app.include_router(settings_router)  # Already has /api/v3/settings/crm prefix
+    print("✅ Settings router registered at /api/v3/settings/crm")
+    
+# CRM Settings router
+if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
+    app.include_router(settings_router)
+    print("✅ CRM Settings router registered")
+    
+    
 
 
 # ============================================================================
@@ -647,3 +685,4 @@ async def shutdown_event():
 # ============================================================================
 # END OF MAIN.PY
 # ============================================================================
+    
