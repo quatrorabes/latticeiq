@@ -19,7 +19,6 @@ interface ImportStatus {
 }
 
 export default function SettingsPage() {
-  // State
   const [integrations, setIntegrations] = useState<CRMIntegration[]>([]);
   const [crmType, setCrmType] = useState<'hubspot' | 'salesforce' | 'pipedrive'>('hubspot');
   const [apiKey, setApiKey] = useState('');
@@ -28,17 +27,14 @@ export default function SettingsPage() {
   const [importStatus, setImportStatus] = useState<ImportStatus>({ status: 'idle', message: '' });
   const [selectedCRM, setSelectedCRM] = useState<string>('');
 
-  // Load integrations on mount
   useEffect(() => {
     fetchIntegrations();
   }, []);
 
-  // Fetch saved CRM integrations with improved token handling
   const fetchIntegrations = async () => {
     try {
-      // Get session from Supabase
       const { data, error: sessionError } = await supabase.auth.getSession();
-      
+
       if (sessionError) {
         console.error('Session error:', sessionError);
         setError('Failed to get session');
@@ -46,7 +42,7 @@ export default function SettingsPage() {
       }
 
       const token = data?.session?.access_token;
-      
+
       if (!token) {
         console.warn('No token found. User may not be logged in.');
         setError('Not authenticated. Please log in first.');
@@ -69,7 +65,7 @@ export default function SettingsPage() {
       console.debug('Fetch response status:', res.status);
 
       if (res.status === 401) {
-        setError('Session expired. Please log out and log back in.');
+        setError('Authentication failed. Please log out and log back in.');
         return;
       }
 
@@ -78,16 +74,15 @@ export default function SettingsPage() {
         throw new Error(errData.detail || `HTTP ${res.status}`);
       }
 
-      const data_resp = await res.json();
-      console.debug('Fetched integrations:', data_resp);
-      setIntegrations(Array.isArray(data_resp) ? data_resp : []);
+      const integrations_data = await res.json();
+      console.debug('Fetched integrations:', integrations_data);
+      setIntegrations(Array.isArray(integrations_data) ? integrations_data : []);
     } catch (err) {
       console.error('fetchIntegrations error:', err);
       setError(`Failed to load integrations: ${String(err)}`);
     }
   };
 
-  // Save or update CRM integration
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -96,7 +91,7 @@ export default function SettingsPage() {
     try {
       const { data } = await supabase.auth.getSession();
       const token = data?.session?.access_token;
-      
+
       if (!token) {
         throw new Error('Not authenticated');
       }
@@ -124,7 +119,6 @@ export default function SettingsPage() {
 
       setApiKey('');
       await fetchIntegrations();
-      setError('');
     } catch (err) {
       setError(`Save failed: ${String(err)}`);
     } finally {
@@ -132,7 +126,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Test CRM connection
   const handleTest = async (type: string) => {
     try {
       const { data } = await supabase.auth.getSession();
@@ -171,7 +164,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Delete CRM integration
   const handleDelete = async (type: string) => {
     if (!confirm(`Delete ${type.toUpperCase()} integration? This cannot be undone.`)) {
       return;
@@ -204,7 +196,6 @@ export default function SettingsPage() {
     }
   };
 
-  // Import contacts from CRM
   const handleImport = async (type: string) => {
     const integration = integrations.find((i) => i.crm_type === type);
     if (!integration) {
@@ -231,16 +222,12 @@ export default function SettingsPage() {
       });
 
       if (res.status === 401) {
-        throw new Error(
-          'Authentication failed. Your session may have expired. Please log out and log back in.'
-        );
+        throw new Error('Authentication failed. Your session may have expired. Please log out and log back in.');
       }
 
       if (!res.ok) {
         const errData = await res.json();
-        throw new Error(
-          errData.detail || errData.error || `Import failed with status ${res.status}`
-        );
+        throw new Error(errData.detail || errData.error || `Import failed with status ${res.status}`);
       }
 
       const result = await res.json();
@@ -263,13 +250,11 @@ export default function SettingsPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
       <div className="max-w-5xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-white mb-2">CRM Settings</h1>
           <p className="text-slate-400">Configure and manage your CRM integrations</p>
         </div>
 
-        {/* Error Alert */}
         {error && (
           <div className="bg-red-900/20 border border-red-500/30 text-red-200 p-4 rounded-lg mb-6">
             <p className="font-medium">⚠️ Error</p>
@@ -277,7 +262,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Import Status Alert */}
         {importStatus.status !== 'idle' && (
           <div
             className={`border p-4 rounded-lg mb-6 ${
@@ -294,7 +278,6 @@ export default function SettingsPage() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Add/Edit Integration Form */}
           <div className="lg:col-span-2">
             <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-xl">
               <h2 className="text-2xl font-bold text-white mb-6">Add New Integration</h2>
@@ -342,7 +325,6 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Saved Integrations */}
           <div className="bg-slate-800/50 border border-slate-700 p-6 rounded-xl h-fit">
             <h3 className="text-lg font-bold text-white mb-4">📊 Integrations</h3>
             {integrations.length === 0 ? (
@@ -359,7 +341,6 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        {/* Integration Cards */}
         {integrations.length > 0 && (
           <div className="mt-8">
             <h2 className="text-2xl font-bold text-white mb-4">Manage Integrations</h2>
