@@ -31,7 +31,8 @@ export default function ContactsPage() {
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<ImportSource>('hubspot');
 
-  const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+  const apiUrl =
+    import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
   const fetchContacts = async () => {
     setLoading(true);
@@ -50,9 +51,12 @@ export default function ContactsPage() {
     fetchContacts();
   }, []);
 
-  const getAuthToken = async () => {
-    const session = await supabase.auth.getSession();
-    return session?.data?.session?.access_token;
+  const getAccessToken = async (): Promise<string> => {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    const token = data.session?.access_token;
+    if (!token) throw new Error('Not authenticated (missing access token)');
+    return token;
   };
 
   const handleCsvFileChange = async (
@@ -66,14 +70,15 @@ export default function ContactsPage() {
     setImportSuccess(null);
 
     try {
-      const token = await getAuthToken();
+      const token = await getAccessToken();
+
       const formData = new FormData();
       formData.append('file', file);
 
       const resp = await fetch(`${apiUrl}/api/v3/crm/import/csv`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`
+          Authorization: `Bearer ${token}`,
         },
         body: formData,
       });
@@ -101,45 +106,62 @@ export default function ContactsPage() {
 
   const triggerSourceImport = async (source: ImportSource) => {
     if (source === 'csv') return;
-    
+
     setImporting(true);
     setImportError(null);
     setImportSuccess(null);
-    
+
     try {
-      const token = await getAuthToken();
-      const endpoint = `/api/v3/crm/import/${source}`;
-      
-      const resp = await fetch(`${apiUrl}${endpoint}`, {
+      const token = await getAccessToken();
+
+      const resp = await fetch(`${apiUrl}/api/v3/crm/import/${source}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          Authorization: `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({}),
       });
-      
+
       if (!resp.ok) {
-        const json = await resp.json().catch(() => null);
-        
-        // Check if it's a missing API key error
-        if (resp.status === 422 && json?.detail?.[0]?.loc?.includes('api_key')) {
-          throw new Error(`Please configure your ${source} API key in Settings first.`);
-        }
-        
-        throw new Error(`${source} import failed: ${resp.status} ${JSON.stringify(json?.detail || json)}`);
+        const text = await resp.text();
+        throw new Error(`${source} import failed: ${resp.status} ${text}`);
       }
-  
+
       const json = await resp.json().catch(() => null);
       const count = json?.imported_count ?? json?.count ?? '';
-      const label = source === 'hubspot' ? 'HubSpot' : source === 'salesforce' ? 'Salesforce' : 'Pipedrive';
-  
-      setImportSuccess(count ? `Imported ${count} contacts from ${label}.` : `${label} import completed.`);
+      const label =
+        source === 'hubspot'
+          ? 'HubSpot'
+          : source === 'salesforce'
+          ? 'Salesforce'
+          : 'Pipedrive';
+
+      setImportSuccess(
+        count
+          ? `Imported ${count} contacts from ${label}.`
+          : `${label} import completed.`
+      );
       await fetchContacts();
     } catch (err) {
-      setImportError(err instanceof Error ? err.message : 'Failed to import contacts');
+      setImportError(
+        err instanceof Error
+          ? err.message
+          : 'Failed to import contacts from selected source'
+      );
     } finally {
       setImporting(false);
+    }
+  };
+
+  const onImportClick = () => {
+    if (selectedSource === 'csv') {
+      const input = document.getElementById(
+        'csv-file-input'
+      ) as HTMLInputElement | null;
+      input?.click();
+    } else {
+      void triggerSourceImport(selectedSource);
     }
   };
 
@@ -150,7 +172,8 @@ export default function ContactsPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Contacts</h1>
           <p className="text-gray-400 text-sm">
-            Import from CSV, HubSpot, Salesforce, or Pipedrive, then score with MDCP/BANT/SPICE.
+            Import from CSV, HubSpot, Salesforce, or Pipedrive, then score with
+            MDCP/BANT/SPICE.
           </p>
         </div>
 
@@ -169,6 +192,7 @@ export default function ContactsPage() {
               <option value="pipedrive">Pipedrive</option>
               <option value="csv">CSV</option>
             </select>
+
             <button
               onClick={onImportClick}
               disabled={importing}
@@ -176,6 +200,7 @@ export default function ContactsPage() {
             >
               {importing ? 'Importing…' : 'Import Contacts'}
             </button>
+
             {/* hidden CSV input */}
             <input
               id="csv-file-input"
@@ -215,9 +240,7 @@ export default function ContactsPage() {
       ) : contacts.length === 0 ? (
         <div className="card">
           <div className="card-body text-center">
-            <h2 className="text-xl font-semibold mb-2">
-              No contacts yet
-            </h2>
+            <h2 className="text-xl font-semibold mb-2">No contacts yet</h2>
             <p className="text-gray-400 mb-4">
               Import from your CRM or upload a CSV to get started.
             </p>
