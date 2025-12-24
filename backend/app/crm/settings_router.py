@@ -3,15 +3,7 @@
 # ============================================================================
 """
 CRM Settings Router (Supabase-backed, UUID-native)
-
-Provides:
-- Create/update integration credentials
-- List integrations
-- Get one integration
-- Test connection (HubSpot/Salesforce/Pipedrive)
-
-This router is intentionally Supabase-first (no SQLAlchemy).
-Supabase auto-generates UUID ids on insert.
+Uses service_role key for writes to bypass RLS validation.
 """
 
 import os
@@ -33,10 +25,17 @@ router = APIRouter(prefix="/api/v3/settings/crm", tags=["CRM Settings"])
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-supabase: Optional[Client] = None
+# Two clients: anon for reads, service for writes
+supabase_anon: Optional[Client] = None
+supabase_service: Optional[Client] = None
+
 if SUPABASE_URL and SUPABASE_ANON_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    supabase_anon = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+
+if SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY:
+    supabase_service = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # ============================================================================
 # Auth (Supabase token validation)
@@ -47,7 +46,7 @@ class CurrentUser(BaseModel):
     email: str = ""
 
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
-    if not supabase:
+    if not supabase_anon:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     if not authorization:
@@ -58,7 +57,7 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
         if scheme.lower() != "bearer":
             raise ValueError("Invalid scheme")
 
-        user_resp = supabase.auth.get_user(token)
+        user_resp = supabase_anon.auth.get_user(token)
         user_obj = getattr(user_resp, "user", None) or (user_resp.get("user") if isinstance(user_resp, dict) else None)
         if not user_obj:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
@@ -138,12 +137,12 @@ def _safe_dict(model_obj) -> Dict[str, Any]:
     return model_obj.model_dump() if hasattr(model_obj, "model_dump") else model_obj.dict()
 
 def _ensure_supabase():
-    if not supabase:
+    if not supabase_anon or not supabase_service:
         raise HTTPException(status_code=503, detail="Database not configured")
 
 def _get_existing_integration(user_id: str, crm_type: str) -> Optional[Dict[str, Any]]:
     res = (
-        supabase.table("crm_integrations")
+        supabase_anon.table("crm_integrations")
         .select("*")
         .eq("user_id", user_id)
         .eq("crm_type", crm_type)
@@ -162,7 +161,7 @@ def _to_out(row: Dict[str, Any]) -> CRMIntegrationOut:
 @router.get("/integrations", response_model=List[CRMIntegrationOut])
 async def list_integrations(user: CurrentUser = Depends(get_current_user)):
     _ensure_supabase()
-    res = supabase.table("crm_integrations").select("*").eq("user_id", user.id).order("created_at", desc=True).execute()
+    res = supabase_anon.table("crm_integrations").select("*").eq("user_id", user.id).order("created_at", desc=True).execute()
     return [CRMIntegrationOut(**r) for r in (res.data or [])]
 
 @router.get("/integrations/{crm_type}", response_model=CRMIntegrationOut)
@@ -177,7 +176,7 @@ async def get_integration(crm_type: str, user: CurrentUser = Depends(get_current
 async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = Depends(get_current_user)):
     """
     Create or update the integration row in crm_integrations.
-    Supabase auto-generates UUID id on insert.
+    Uses service_role key to bypass RLS.
     """
     _ensure_supabase()
 
@@ -202,9 +201,9 @@ async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = 
     }
 
     if existing:
-        # Update existing - don't touch id
+        # Update existing using service role
         res = (
-            supabase.table("crm_integrations")
+            supabase_service.table("crm_integrations")
             .update(row)
             .eq("id", existing["id"])
             .execute()
@@ -213,8 +212,8 @@ async def upsert_integration(payload: CRMIntegrationUpsert, user: CurrentUser = 
             raise HTTPException(status_code=500, detail="Failed to update integration")
         return _to_out(res.data[0])
 
-    # Create new - DON'T set id, let Supabase auto-generate it
-    res = supabase.table("crm_integrations").insert(row).execute()
+    # Create new using service role - Supabase auto-generates UUID
+    res = supabase_service.table("crm_integrations").insert(row).execute()
     if not res.data:
         raise HTTPException(status_code=500, detail="Failed to create integration")
     return _to_out(res.data[0])
@@ -253,10 +252,10 @@ async def test_integration(crm_type: str, payload: TestConnectionRequest, user: 
             "sample_fields": None,
         }
 
-    # Persist test status on the stored integration row (if exists)
+    # Persist test status using service role
     existing = _get_existing_integration(user.id, crm_type)
     if existing:
-        supabase.table("crm_integrations").update({
+        supabase_service.table("crm_integrations").update({
             "test_status": "success" if result["success"] else "failed",
             "last_test_at": _now_iso(),
             "updated_at": _now_iso(),
