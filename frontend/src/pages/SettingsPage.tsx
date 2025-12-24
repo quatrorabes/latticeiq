@@ -159,7 +159,7 @@ export default function SettingsPage() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      const responseData = await response.json();
+      await response.json();
       setSuccess(`${crmType.toUpperCase()} integration saved!`);
       setApiKey('');
       
@@ -267,7 +267,7 @@ export default function SettingsPage() {
         throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      const responseData = await response.json();
+      await response.json();
       setSuccess(`Imported ${responseData.count || 0} contacts!`);
     } catch (err: any) {
       console.error('Import contacts error:', err);
