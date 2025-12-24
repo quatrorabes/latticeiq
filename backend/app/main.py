@@ -41,7 +41,9 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 # CORRECT (fixed):
-from enrichment_v3.quick_enrich import enrich_contact_quick
+from enrichment_v3.quick_enrich import quick_enrich
+QUICK_ENRICH_AVAILABLE = True
+
 
 
 from pydantic import BaseModel, Field
@@ -473,7 +475,7 @@ def list_contacts(
 async def enrich_all_contacts(
     user: CurrentUser = Depends(get_current_user),
 ):
-    """Enrich all unscored contacts using quick enrichment"""
+    """Quick enrich all pending contacts for a user"""
     try:
         if not QUICK_ENRICH_AVAILABLE:
             raise HTTPException(
@@ -481,28 +483,37 @@ async def enrich_all_contacts(
                 detail="Quick enrichment service unavailable"
             )
             
-        # Get all unscored contacts
-        supabase_client = supabase.create_client(
+        # Get Supabase client
+        sb = supabase.create_client(
             os.getenv("SUPABASE_URL"),
             os.getenv("SUPABASE_ANON_KEY")
         )
         
-        contacts = supabase_client.table("contacts").select("*").eq(
+        # Fetch pending contacts for this user
+        response = sb.table("contacts").select("*").eq(
             "user_id", user.id
-        ).is_("score", None).limit(100).execute()
+        ).eq("enrichment_status", "pending").limit(100).execute()
         
+        contacts = response.data or []
         enriched_count = 0
-        for contact in contacts.data or []:
-            result = await enrich_contact_quick(contact)
-            if result:
-                enriched_count += 1
-                
+        
+        for contact in contacts:
+            try:
+                result = await quick_enrich(contact)
+                if result and result.get("success"):
+                    enriched_count += 1
+            except Exception as e:
+                continue
+            
         return {
             "success": True,
-            "message": f"Enriched {enriched_count} contacts",
+            "message": f"Enriched {enriched_count} of {len(contacts)} contacts",
             "enriched_count": enriched_count,
+            "total_count": len(contacts)
         }
         
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
         

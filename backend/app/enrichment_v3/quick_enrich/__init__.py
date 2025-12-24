@@ -1,2 +1,2 @@
-from .quick_enrich import enrich_contact_quick
-__all__ = ["enrich_contact_quick"]
+from .quick_enrich import quick_enrich
+__all__ = ["quick_enrich"]
