@@ -1,423 +1,239 @@
-// frontend/src/pages/SettingsPage.tsx - Production: simple CRM settings + Logout (TS clean)
-
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 interface Integration {
   id: string;
+  user_id: string;
   crm_type: string;
   api_key: string;
+  is_active: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export default function SettingsPage() {
-  const navigate = useNavigate();
-  const [user, setUser] = useState<any>(null);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-
-  // Form state
   const [crmType, setCrmType] = useState('hubspot');
   const [apiKey, setApiKey] = useState('');
-  const [testingConnection, setTestingConnection] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [testingCRM, setTestingCRM] = useState<string | null>(null);
+  const [importingCRM, setImportingCRM] = useState<string | null>(null);
+
+  const apiUrl = import.meta.env.VITE_API_URL;
 
   useEffect(() => {
-    checkAuth();
     fetchIntegrations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function checkAuth() {
-    const { data: { session } } = await supabase.auth.getSession();
+  const getAuthToken = async () => {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    return session?.access_token;
+  };
 
-    if (!session) {
-      navigate('/');
-      return;
-    }
-
-    setUser(session.user);
-  }
-
-  async function handleLogout() {
+  const fetchIntegrations = async () => {
     try {
-      await supabase.auth.signOut();
-      navigate('/');
-    } catch (err: any) {
-      console.error('Logout error:', err);
-      setError('Failed to log out');
-    }
-  }
-
-  async function fetchIntegrations() {
-    try {
-      setLoading(true);
-      setError('');
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        setError('Not authenticated. Please log in.');
-        navigate('/');
-        return;
-      }
-
-      const token = session.access_token;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
+      const token = await getAuthToken();
+      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error('Failed to fetch');
+      const data = await res.json();
       setIntegrations(data.integrations || []);
-    } catch (err: any) {
-      console.error('Fetch integrations error:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+    } catch (err) {
+      setError(String(err));
     }
-  }
+  };
 
-  async function handleSaveIntegration() {
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
     try {
-      setLoading(true);
-      setError('');
-      setSuccess('');
+      const token = await getAuthToken();
+      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          crm_type: crmType,
+          api_key: apiKey,
+          is_active: true,
+        }),
+      });
 
-      if (!apiKey.trim()) {
-        setError('API key is required');
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.detail || 'Failed');
         return;
       }
 
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        setError('Not authenticated. Please log in.');
-        navigate('/');
-        return;
-      }
-
-      const token = session.access_token;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            crm_type: crmType,
-            api_key: apiKey,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      // drain body, but don't store unused vars
-      await response.json();
-
-      setSuccess(`${crmType.toUpperCase()} integration saved!`);
+      setSuccess(`${crmType.toUpperCase()} saved!`);
       setApiKey('');
-      await fetchIntegrations();
-    } catch (err: any) {
-      console.error('Save integration error:', err);
-      setError(err.message);
+      fetchIntegrations();
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
     }
-  }
+  };
 
-  async function handleTestConnection(integration: Integration) {
+  const handleTest = async (type: string) => {
+    setTestingCRM(type);
     try {
-      setTestingConnection(true);
-      setError('');
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        setError('Not authenticated. Please log in.');
-        return;
-      }
-
-      const token = session.access_token;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/crm/test/${integration.crm_type}`,
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${apiUrl}/api/v3/settings/crm/integrations/${type}/test`,
         {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            api_key: integration.api_key,
-          }),
+          headers: { 'Authorization': `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error('Test failed');
+      const data = await res.json();
+      setSuccess(data.message || 'Connection successful!');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setTestingCRM(null);
+    }
+  };
+
+  const handleImportContacts = async (integration: Integration) => {
+    setImportingCRM(integration.crm_type);
+    try {
+      const token = await getAuthToken();
+      
+      // FIX: No body parameter - backend reads API key from crm_integrations table
+      const res = await fetch(
+        `${apiUrl}/api/v3/crm/import/${integration.crm_type}`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          // NO BODY - backend reads from database automatically
         }
       );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      setSuccess('Connection successful!');
-    } catch (err: any) {
-      console.error('Test connection error:', err);
-      setError(err.message);
-    } finally {
-      setTestingConnection(false);
-    }
-  }
-
-  async function handleImportContacts(integration: Integration) {
-    try {
-      setLoading(true);
-      setError('');
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        setError('Not authenticated. Please log in.');
-        navigate('/');
+      if (!res.ok) {
+        const err = await res.json();
+        setError(err.detail || 'Import failed');
         return;
       }
 
-      const token = session.access_token;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/crm/import/${integration.crm_type}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            api_key: integration.api_key,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      const importResult = await response.json();
-      setSuccess(`Imported ${importResult.count || 0} contacts!`);
-    } catch (err: any) {
-      console.error('Import contacts error:', err);
-      setError(err.message);
+      const data = await res.json();
+      setSuccess(`Import started! Job ID: ${data.job_id}`);
+    } catch (err) {
+      setError(String(err));
     } finally {
-      setLoading(false);
+      setImportingCRM(null);
     }
-  }
+  };
 
-  async function handleDeleteIntegration(id: string) {
+  const handleDelete = async (type: string) => {
+    if (!confirm(`Delete ${type}?`)) return;
     try {
-      setLoading(true);
-      setError('');
-
-      const { data: { session } } = await supabase.auth.getSession();
-
-      if (!session) {
-        setError('Not authenticated. Please log in.');
-        return;
-      }
-
-      const token = session.access_token;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/settings/crm/integrations/${id}`,
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${apiUrl}/api/v3/settings/crm/integrations/${type}`,
         {
           method: 'DELETE',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
+          headers: { 'Authorization': `Bearer ${token}` },
         }
       );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      setSuccess('Integration deleted!');
-      await fetchIntegrations();
-    } catch (err: any) {
-      console.error('Delete integration error:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
+      if (!res.ok) throw new Error('Delete failed');
+      setSuccess(`${type.toUpperCase()} deleted!`);
+      fetchIntegrations();
+    } catch (err) {
+      setError(String(err));
     }
-  }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        {/* Header with Logout */}
-        <div className="mb-8 flex items-center justify-between">
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-8">CRM Settings</h1>
+
+      {error && <div className="bg-red-50 p-4 mb-6 rounded border-l-4 border-red-500">{error}</div>}
+      {success && <div className="bg-green-50 p-4 mb-6 rounded border-l-4 border-green-500">{success}</div>}
+
+      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
+        <h2 className="text-xl font-bold mb-6">Add Integration</h2>
+        <form onSubmit={handleSave} className="space-y-4">
           <div>
-            <h1 className="text-4xl font-bold text-gray-900">Settings</h1>
-            <p className="text-gray-600 mt-2">Manage your CRM integrations</p>
-            {user && <p className="text-sm text-gray-500 mt-1">Logged in as: {user.email}</p>}
+            <label className="block text-sm font-medium mb-2">CRM Type</label>
+            <select
+              value={crmType}
+              onChange={(e) => setCrmType(e.target.value)}
+              className="w-full p-2 border rounded"
+            >
+              <option value="hubspot">HubSpot</option>
+              <option value="salesforce">Salesforce</option>
+              <option value="pipedrive">Pipedrive</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-2">API Key</label>
+            <input
+              type="password"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="Enter API key"
+              className="w-full p-2 border rounded"
+              required
+            />
           </div>
           <button
-            onClick={handleLogout}
-            className="px-6 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 transition-colors"
+            type="submit"
+            disabled={loading}
+            className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
           >
-            Log Out
+            {loading ? 'Saving...' : 'Save'}
           </button>
-        </div>
+        </form>
+      </div>
 
-        {/* Messages */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <p className="text-red-800">
-              <strong>Error:</strong> {error}
-            </p>
-          </div>
-        )}
-
-        {success && (
-          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg">
-            <p className="text-green-800">
-              <strong>Success:</strong> {success}
-            </p>
-          </div>
-        )}
-
-        {/* Add New Integration */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            Add CRM Integration
-          </h2>
-
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <h2 className="text-xl font-bold mb-6">Saved Integrations</h2>
+        {integrations.length === 0 ? (
+          <p className="text-gray-500">No integrations yet</p>
+        ) : (
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                CRM Type
-              </label>
-              <select
-                value={crmType}
-                onChange={(e) => setCrmType(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="hubspot">HubSpot</option>
-                <option value="salesforce">Salesforce</option>
-                <option value="pipedrive">Pipedrive</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                API Key
-              </label>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your CRM API key"
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-              <p className="text-sm text-gray-500 mt-1">
-                Your API key is encrypted and stored securely.
-              </p>
-            </div>
-
-            <button
-              onClick={handleSaveIntegration}
-              disabled={loading}
-              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {loading ? 'Saving...' : 'Save Integration'}
-            </button>
-          </div>
-        </div>
-
-        {/* Saved Integrations */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-2xl font-semibold text-gray-900 mb-4">
-            Saved Integrations
-          </h2>
-
-          {loading && !integrations.length ? (
-            <p className="text-gray-600">Loading integrations...</p>
-          ) : integrations.length === 0 ? (
-            <p className="text-gray-600">No integrations yet. Add one above!</p>
-          ) : (
-            <div className="space-y-4">
-              {integrations.map((integration) => (
-                <div
-                  key={integration.id}
-                  className="border border-gray-200 rounded-lg p-4 flex items-center justify-between"
-                >
-                  <div>
-                    <h3 className="font-semibold text-gray-900">
-                      {integration.crm_type.toUpperCase()}
-                    </h3>
-                    <p className="text-sm text-gray-500">
-                      Created: {new Date(integration.created_at).toLocaleDateString()}
-                    </p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleTestConnection(integration)}
-                      disabled={testingConnection || loading}
-                      className="px-4 py-2 bg-yellow-600 text-white rounded-lg font-medium hover:bg-yellow-700 disabled:opacity-50"
-                    >
-                      {testingConnection ? 'Testing...' : 'Test'}
-                    </button>
-
-                    <button
-                      onClick={() => handleImportContacts(integration)}
-                      disabled={loading}
-                      className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:opacity-50"
-                    >
-                      {loading ? 'Importing...' : 'Import'}
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteIntegration(integration.id)}
-                      disabled={loading}
-                      className="px-4 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 disabled:opacity-50"
-                    >
-                      Delete
-                    </button>
-                  </div>
+            {integrations.map((int) => (
+              <div key={int.id} className="flex justify-between items-center p-4 border rounded">
+                <div>
+                  <h3 className="font-semibold">{int.crm_type.toUpperCase()}</h3>
+                  <p className="text-sm text-gray-500">{int.is_active ? 'Active' : 'Inactive'}</p>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-8 p-4 bg-gray-100 rounded-lg text-sm text-gray-600">
-          <p>
-            <strong>Debug:</strong> If this page shows no logout button, Vercel is not serving this file.
-          </p>
-        </div>
+                <div className="space-x-2">
+                  <button
+                    onClick={() => handleTest(int.crm_type)}
+                    className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
+                  >
+                    {testingCRM === int.crm_type ? 'Testing...' : 'Test'}
+                  </button>
+                  <button
+                    onClick={() => handleImportContacts(int)}
+                    className="bg-green-500 text-white px-3 py-1 rounded text-sm"
+                  >
+                    {importingCRM === int.crm_type ? 'Importing...' : 'Import'}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(int.crm_type)}
+                    className="bg-red-500 text-white px-3 py-1 rounded text-sm"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
