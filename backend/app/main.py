@@ -17,11 +17,9 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.resolve()
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
-
-# Also add legacy support (if needed)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-# ========================================
 
+# ========================================
 import uuid
 import logging
 from datetime import datetime
@@ -33,9 +31,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
-
 from pydantic import BaseModel, Field
-
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
 
@@ -43,7 +39,7 @@ from pythonjsonlogger import jsonlogger
 # ROUTER IMPORTS (with error handling)
 # ============================================================================
 
-# CRM Settings Router
+# CRM Settings Router (FIXED - explicit prefix)
 try:
     from crm.settings_router import router as settings_router
     SETTINGS_ROUTER_AVAILABLE = True
@@ -91,6 +87,7 @@ class Settings(BaseModel):
     """Application configuration"""
     SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
     SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
+    SUPABASE_SERVICE_ROLE_KEY: str = Field(default="", alias="SUPABASE_SERVICE_ROLE_KEY")
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
     ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
 
@@ -103,6 +100,7 @@ class Settings(BaseModel):
         return cls(
             SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
             SUPABASE_ANON_KEY=os.getenv("SUPABASE_ANON_KEY", ""),
+            SUPABASE_SERVICE_ROLE_KEY=os.getenv("SUPABASE_SERVICE_ROLE_KEY", ""),
             LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
             ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
         )
@@ -120,11 +118,9 @@ settings = get_settings()
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("latticeiq")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-
     handler = logging.StreamHandler()
     formatter = jsonlogger.JsonFormatter("%(timestamp)s %(level)s %(name)s %(message)s %(request_id)s")
     handler.setFormatter(formatter)
-
     logger.handlers.clear()
     logger.addHandler(handler)
     return logger
@@ -139,7 +135,7 @@ def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning("⚠️ SUPABASE_URL or SUPABASE_ANON_KEY not configured")
         return None
-
+    
     try:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
         logger.info("✅ Supabase initialized successfully")
@@ -148,12 +144,28 @@ def initialize_supabase() -> Optional[Client]:
         logger.error(f"❌ Supabase initialization failed: {str(e)}", extra={"error": str(e)})
         return None
 
+# Initialize service role client for privileged operations
+def initialize_supabase_service() -> Optional[Client]:
+    if not settings.SUPABASE_URL or not settings.SUPABASE_SERVICE_ROLE_KEY:
+        logger.warning("⚠️ SUPABASE_SERVICE_ROLE_KEY not configured (CRM settings will fail RLS)")
+        return None
+    
+    try:
+        client = create_client(settings.SUPABASE_URL, settings.SUPABASE_SERVICE_ROLE_KEY)
+        logger.info("✅ Supabase service role client initialized")
+        return client
+    except Exception as e:
+        logger.error(f"❌ Supabase service role initialization failed: {str(e)}", extra={"error": str(e)})
+        return None
+
 supabase = initialize_supabase()
+supabase_service = initialize_supabase_service()
 
 async def validate_database_schema():
     if not supabase:
         logger.warning("Supabase not initialized, skipping schema validation")
         return
+    
     required_tables = ["contacts", "import_jobs", "import_logs", "dnc_list", "crm_integrations"]
     for table in required_tables:
         try:
@@ -208,32 +220,33 @@ async def get_current_user(
     """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database unavailable")
-
+    
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
+    
     try:
         scheme, token = authorization.split(" ", 1)
         if scheme.lower() != "bearer":
             raise ValueError("Invalid scheme")
-
+        
         user_resp = supabase.auth.get_user(token)
         user_obj = getattr(user_resp, "user", None) or (user_resp.get("user") if isinstance(user_resp, dict) else None)
+        
         if not user_obj:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
-
+        
         user_id = getattr(user_obj, "id", None) or user_obj.get("id")
         email = getattr(user_obj, "email", None) or user_obj.get("email") or ""
-
+        
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token (missing user id)")
-
+        
         return CurrentUser(id=str(user_id), email=str(email))
-
+    
     except HTTPException:
         raise
     except ValueError as e:
@@ -305,6 +318,7 @@ def _health_payload() -> dict:
         "version": "3.0.0",
         "timestamp": datetime.utcnow().isoformat(),
         "supabase": "connected" if supabase else "disconnected",
+        "supabase_service": "connected" if supabase_service else "disconnected",
         "environment": settings.ENVIRONMENT,
         "crm_available": CRM_ROUTER_AVAILABLE,
         "enrichment_available": ENRICHMENT_AVAILABLE,
@@ -359,7 +373,7 @@ def list_contacts(
     try:
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
-
+        
         result = (
             supabase.table("contacts")
             .select("*", count="exact")
@@ -368,9 +382,8 @@ def list_contacts(
             .range(offset, offset + limit - 1)
             .execute()
         )
-
+        
         logger.info(f"Retrieved {len(result.data or [])} contacts", extra={"user_id": user.id, "request_id": request_id})
-
         return {
             "contacts": result.data or [],
             "count": result.count,
@@ -378,7 +391,6 @@ def list_contacts(
             "limit": limit,
             "offset": offset,
         }
-
     except Exception as e:
         logger.error(f"Error listing contacts: {str(e)}", extra={"user_id": user.id, "request_id": request_id})
         raise HTTPException(status_code=500, detail="Failed to retrieve contacts")
@@ -391,7 +403,7 @@ def get_contact(
     try:
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
-
+        
         result = (
             supabase.table("contacts")
             .select("*")
@@ -400,11 +412,11 @@ def get_contact(
             .single()
             .execute()
         )
-
+        
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
+        
         return result.data
-
     except HTTPException:
         raise
     except Exception as e:
@@ -419,19 +431,19 @@ def create_contact(
     try:
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
-
+        
         data = contact.model_dump()
         data["user_id"] = user.id
         data["id"] = str(uuid.uuid4())
         data["created_at"] = datetime.utcnow().isoformat()
-
+        
         result = supabase.table("contacts").insert(data).execute()
+        
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create contact")
-
+        
         logger.info(f"Contact created: {data['id']}", extra={"user_id": user.id})
         return result.data[0]
-
     except HTTPException:
         raise
     except Exception as e:
@@ -447,13 +459,14 @@ def update_contact(
     try:
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
-
+        
         update_data = {k: v for k, v in patch.model_dump().items() if v is not None}
+        
         if not update_data:
             return {"updated": False, "message": "No fields to update"}
-
+        
         update_data["updated_at"] = datetime.utcnow().isoformat()
-
+        
         result = (
             supabase.table("contacts")
             .update(update_data)
@@ -461,13 +474,12 @@ def update_contact(
             .eq("user_id", user.id)
             .execute()
         )
-
+        
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
-
+        
         logger.info(f"Contact updated: {contact_id}", extra={"user_id": user.id})
         return result.data[0]
-
     except HTTPException:
         raise
     except Exception as e:
@@ -482,7 +494,7 @@ def delete_contact(
     try:
         if not supabase:
             raise HTTPException(status_code=503, detail="Database unavailable")
-
+        
         result = (
             supabase.table("contacts")
             .delete()
@@ -490,13 +502,12 @@ def delete_contact(
             .eq("user_id", user.id)
             .execute()
         )
-
+        
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
-
+        
         logger.info(f"Contact deleted: {contact_id}", extra={"user_id": user.id})
         return None
-
     except HTTPException:
         raise
     except Exception as e:
@@ -504,31 +515,50 @@ def delete_contact(
         raise HTTPException(status_code=500, detail="Failed to delete contact")
 
 # ============================================================================
-# ROUTER REGISTRATION
+# ROUTER REGISTRATION (CORRECTED)
 # ============================================================================
 
+# Register Contacts Router
 app.include_router(contacts_router)
+print("✅ Contacts router registered at /api/v3/contacts")
 
+# Register CRM Router
 if CRM_ROUTER_AVAILABLE and crm_router is not None:
     app.include_router(crm_router, prefix="/api/v3/crm")
     print("✅ CRM router registered at /api/v3/crm")
+else:
+    logger.warning("⚠️ CRM router not available")
 
+# Register Enrichment Router
 if ENRICHMENT_AVAILABLE and enrichment_router is not None:
     app.include_router(enrichment_router, prefix="/api/v3/enrichment")
     print("✅ Enrichment router registered at /api/v3/enrichment")
+else:
+    logger.warning("⚠️ Enrichment router not available")
 
+# Register Scoring Router
 if SCORING_AVAILABLE and scoring_router is not None:
     app.include_router(scoring_router, prefix="/api/v3/scoring")
     print("✅ Scoring router registered at /api/v3/scoring")
+else:
+    logger.warning("⚠️ Scoring router not available")
 
+# Register Settings Router (CRITICAL FIX)
+# The settings_router MUST define its own prefix internally.
+# If it doesn't, you must add it here: prefix="/api/v3/settings"
 if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    # This router already defines its own prefix (per your earlier implementation),
-    # so we include without adding another prefix here.
+    # OPTION A: If settings_router.py already has prefix defined:
     app.include_router(settings_router)
     print("✅ Settings router registered")
+    
+    # OPTION B: If settings_router.py doesn't have prefix, uncomment below:
+    # app.include_router(settings_router, prefix="/api/v3/settings")
+    # print("✅ Settings router registered at /api/v3/settings")
+else:
+    logger.warning("⚠️ Settings router not available")
 
 # ============================================================================
-# STARTUP
+# STARTUP & SHUTDOWN
 # ============================================================================
 
 @app.on_event("startup")
@@ -538,7 +568,8 @@ async def startup_event():
     logger.info("=" * 70)
     logger.info(f"Environment: {settings.ENVIRONMENT}")
     logger.info(f"Version: 3.0.0")
-    logger.info(f"Supabase: {'Connected' if supabase else 'Disconnected'}")
+    logger.info(f"Supabase (anon): {'Connected' if supabase else 'Disconnected'}")
+    logger.info(f"Supabase (service): {'Connected' if supabase_service else 'Disconnected'}")
     logger.info(f"CRM Module: {'✅ Available' if CRM_ROUTER_AVAILABLE else '❌ Not Available'}")
     logger.info(f"Settings Module: {'✅ Available' if SETTINGS_ROUTER_AVAILABLE else '❌ Not Available'}")
     logger.info(f"Enrichment Module: {'✅ Available' if ENRICHMENT_AVAILABLE else '❌ Not Available'}")
