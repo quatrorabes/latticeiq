@@ -40,6 +40,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
+# CORRECT (fixed):
+from enrichment_v3.quick_enrich import enrich_contact_quick
+
 
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
@@ -464,6 +467,45 @@ def list_contacts(
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve contacts")
 
+# Add this near the bottom of main.py, after other router includes
+        
+@app.post("/api/v3/enrich/all")
+async def enrich_all_contacts(
+    user: CurrentUser = Depends(get_current_user),
+):
+    """Enrich all unscored contacts using quick enrichment"""
+    try:
+        if not QUICK_ENRICH_AVAILABLE:
+            raise HTTPException(
+                status_code=503,
+                detail="Quick enrichment service unavailable"
+            )
+            
+        # Get all unscored contacts
+        supabase_client = supabase.create_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_ANON_KEY")
+        )
+        
+        contacts = supabase_client.table("contacts").select("*").eq(
+            "user_id", user.id
+        ).is_("score", None).limit(100).execute()
+        
+        enriched_count = 0
+        for contact in contacts.data or []:
+            result = await enrich_contact_quick(contact)
+            if result:
+                enriched_count += 1
+                
+        return {
+            "success": True,
+            "message": f"Enriched {enriched_count} contacts",
+            "enriched_count": enriched_count,
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
 
 # ============================================================================
 # ROUTER REGISTRATION
@@ -510,3 +552,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("🛑 LatticeIQ API Shutting Down")
+    
