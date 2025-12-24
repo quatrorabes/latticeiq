@@ -368,7 +368,11 @@ if SCORING_AVAILABLE:
     app.include_router(scoring_router)
     
 ##app.include_router(contacts_router)
-
+# Add this in router registration section (around line 365)
+if CRM_ROUTER_AVAILABLE and crm_router:
+    app.include_router(crm_router, prefix="/api/v3/crm")
+    print("✅ CRM router registered at /api/v3/crm")
+    
 
 # ============================================================================
 # HEALTH ENDPOINTS (response_model removed for Pydantic 2.10.5 compatibility)

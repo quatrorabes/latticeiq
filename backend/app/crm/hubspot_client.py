@@ -69,15 +69,14 @@ class HubSpotClient:
 	def map_to_latticeiq(self, hs_contact: Dict[str, Any]) -> Dict[str, Any]:
 		"""Map HubSpot contact to LatticeIQ schema"""
 		props = hs_contact.get("properties", {})
-		
 		return {
-			"first_name": props.get("firstname", {}).get("value", "Unknown"),
-			"last_name": props.get("lastname", {}).get("value", ""),
-			"email": props.get("email", {}).get("value", ""),
-			"phone": props.get("phone", {}).get("value"),
-			"company": props.get("company", {}).get("value"),
-			"title": props.get("jobtitle", {}).get("value"),
-			"lifecycle_stage": props.get("lifecyclestage", {}).get("value"),
+			"first_name": props.get("firstname") or "Unknown",
+			"last_name": props.get("lastname") or "",
+			"email": props.get("email") or "",
+			"phone": props.get("phone"),
+			"company": props.get("company"),
+			"title": props.get("jobtitle"),
+			"lifecycle_stage": props.get("lifecyclestage"),
 			"external_id": hs_contact.get("id"),
 			"crm_type": "hubspot",
 		}
