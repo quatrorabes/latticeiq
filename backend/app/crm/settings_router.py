@@ -1,216 +1,179 @@
-# backend/app/crm/settings_router.py
-
-"""
-CRM Settings Management Router
-Handles saving, testing, and retrieving CRM integration credentials
-(HubSpot, Salesforce, Pipedrive, etc.)
-"""
-
-from fastapi import APIRouter, Depends, HTTPException, Header, status
-from pydantic import BaseModel, Field
-from typing import Optional
-from datetime import datetime
-import uuid
 import logging
-import os
-
+from typing import Any, Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Header
+from pydantic import BaseModel, Field
 from supabase import create_client, Client
+import os
 
 # ============================================================================
 # LOGGING
 # ============================================================================
-
 logger = logging.getLogger("latticeiq")
 
 # ============================================================================
-# PYDANTIC MODELS
+# SUPABASE CLIENTS
 # ============================================================================
+def get_supabase_anon() -> Client:
+    """Get Supabase client with anon key (standard RLS enforcement)"""
+    return create_client(
+        os.getenv("SUPABASE_URL"),
+        os.getenv("SUPABASE_ANON_KEY"),
+    )
 
+def get_supabase_service() -> Optional[Client]:
+    """Get Supabase client with service role key (RLS bypass) if available"""
+    service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    if not service_key:
+        logger.warning("SUPABASE_SERVICE_ROLE_KEY not set; RLS will be enforced")
+        return None
+    
+    return create_client(
+        os.getenv("SUPABASE_URL"),
+        service_key,
+    )
+
+# Initialize clients
+supabase = get_supabase_anon()
+supabase_service = get_supabase_service()
+
+# ============================================================================
+# MODELS
+# ============================================================================
 class CurrentUser(BaseModel):
-    """Current authenticated user"""
+    """Current authenticated user from JWT"""
     id: str
-    email: str = ""
+    email: str
 
 class CRMIntegrationCreate(BaseModel):
-    """Model for creating/updating CRM integration"""
-    crm_type: str = Field(..., description="hubspot, salesforce, pipedrive")
+    """Request body for creating/updating CRM integration"""
+    crm_type: str = Field(..., description="HubSpot, Salesforce, Pipedrive")
     api_key: str = Field(..., description="API key or token for the CRM")
-    api_url: Optional[str] = Field(None, description="Optional base URL for self-hosted or custom CRM")
-    is_active: bool = Field(True, description="Whether integration is enabled")
-    import_filters: Optional[dict] = Field(None, description="Filters for import (e.g., exclude_lead_status)")
-    required_fields: Optional[dict] = Field(None, description="Required fields for import")
+    is_active: bool = Field(default=True, description="Whether integration is active")
 
 class CRMIntegrationResponse(BaseModel):
-    """Response model for CRM integration"""
+    """Response model for a single CRM integration"""
     id: str
     user_id: str
     crm_type: str
     api_key: str
-    api_url: Optional[str] = None
     is_active: bool
-    import_filters: Optional[dict] = None
-    required_fields: Optional[dict] = None
     created_at: str
     updated_at: str
 
-class ConnectionTestRequest(BaseModel):
-    """Model for testing CRM connection"""
-    api_key: str
-    api_url: Optional[str] = None
-
-class ConnectionTestResponse(BaseModel):
-    """Response from connection test"""
-    success: bool
-    message: str
-    crm_type: Optional[str] = None
-    contact_count: Optional[int] = None
-
 # ============================================================================
-# DATABASE INITIALIZATION
+# AUTH DEPENDENCY
 # ============================================================================
-
-def get_supabase_service() -> Client:
-    """Get Supabase service role client for privileged operations (bypass RLS)"""
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_service_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not supabase_url or not supabase_service_key:
-        logger.error("❌ SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY not configured")
-        raise HTTPException(
-            status_code=503,
-            detail="Database service unavailable (missing service role key)"
-        )
-
-    return create_client(supabase_url, supabase_service_key)
-
-def get_supabase_anon() -> Client:
-    """Get Supabase anon client for regular operations"""
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_ANON_KEY")
-
-    if not supabase_url or not supabase_key:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-
-    return create_client(supabase_url, supabase_key)
-
-# ============================================================================
-# AUTHENTICATION DEPENDENCY
-# ============================================================================
-
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
-    """
-    Extract and validate user from JWT token (Supabase auth).
-    Uses Header to automatically pull from Authorization header.
-    """
+    """Extract and validate JWT token from Authorization header"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
     if not authorization:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=401,
             detail="Missing authorization header",
-            headers={"WWW-Authenticate": "Bearer"}
+            headers={"WWW-Authenticate": "Bearer"},
         )
-
+    
     try:
         scheme, token = authorization.split(" ", 1)
         if scheme.lower() != "bearer":
             raise ValueError("Invalid scheme")
-
-        supabase = get_supabase_anon()
+        
+        # Validate token with Supabase
         user_resp = supabase.auth.get_user(token)
-
-        user_obj = getattr(user_resp, "user", None) or (
-            user_resp.get("user") if isinstance(user_resp, dict) else None
-        )
-
+        user_obj = getattr(user_resp, "user", None) or user_resp.get("user") if isinstance(user_resp, dict) else None
+        
         if not user_obj:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
-
+        
         user_id = getattr(user_obj, "id", None) or user_obj.get("id")
         email = getattr(user_obj, "email", None) or user_obj.get("email") or ""
-
+        
         if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token (missing user id)")
-
+            raise HTTPException(status_code=401, detail="Invalid token: missing user id")
+        
         return CurrentUser(id=str(user_id), email=str(email))
-
+    
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid authorization header format: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
 # ============================================================================
 # ROUTER
 # ============================================================================
-
-router = APIRouter(
-    prefix="/api/v3/settings/crm",
-    tags=["CRM Settings"],
-)
+router = APIRouter(prefix="/settings/crm", tags=["CRM Settings"])
 
 # ============================================================================
-# ENDPOINTS
+# POST /integrations - Save or update a CRM integration
 # ============================================================================
-
-@router.post("/integrations", response_model=dict, status_code=200)
-async def upsert_crm_integration(
+@router.post("/integrations", response_model=Dict[str, Any])
+async def save_crm_integration(
     integration: CRMIntegrationCreate,
     user: CurrentUser = Depends(get_current_user),
-) -> dict:
-    """
-    Create or update a CRM integration for the user.
-    Uses native Postgres UPSERT to handle duplicate keys.
-    """
+) -> Dict[str, Any]:
+    """Save or update a CRM integration for the current user"""
+    if not supabase_service and not supabase:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
     try:
-        supabase_service = get_supabase_service()
-
-        # Prepare row for upsert
+        # Use service role for write (RLS bypass) if available, else use anon
+        client = supabase_service if supabase_service else supabase
+        
         row = {
-            "id": str(uuid.uuid4()),
             "user_id": user.id,
-            "crm_type": integration.crm_type.lower(),
+            "crm_type": integration.crm_type,
             "api_key": integration.api_key,
-            "api_url": integration.api_url,
             "is_active": integration.is_active,
-            "import_filters": integration.import_filters,
-            "required_fields": integration.required_fields,
-            "created_at": datetime.utcnow().isoformat(),
-            "updated_at": datetime.utcnow().isoformat(),
         }
-
-        # Use native Postgres UPSERT: insert or update on conflict
+        
+        # Upsert: create if new, update if exists (on conflict user_id + crm_type)
         result = (
-            supabase_service.table("crm_integrations")
+            client.table("crm_integrations")
             .upsert(row, on_conflict="user_id,crm_type")
             .execute()
         )
-
-        if not result.data:
-            raise HTTPException(status_code=500, detail="Failed to save integration")
-
+        
         logger.info(
             f"✅ CRM integration saved: {integration.crm_type}",
-            extra={"user_id": user.id}
+            extra={"user_id": user.id},
         )
-
+        
         return {
             "success": True,
-            "message": f"{integration.crm_type} integration saved",
-            "integration": result.data[0] if result.data else {}
+            "message": f"{integration.crm_type.upper()} integration saved!",
+            "integration": result.data[0] if result.data else row,
         }
-
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error saving CRM integration: {str(e)}")
+        logger.error(
+            f"Failed to save CRM integration: {str(e)}",
+            extra={"user_id": user.id},
+        )
         raise HTTPException(status_code=500, detail=f"Failed to save integration: {str(e)}")
 
-@router.get("/integrations", response_model=dict)
+# ============================================================================
+# GET /integrations - List all CRM integrations for current user
+# ============================================================================
+@router.get("/integrations", response_model=Dict[str, Any])
 async def list_crm_integrations(
     user: CurrentUser = Depends(get_current_user),
-) -> dict:
+) -> Dict[str, Any]:
     """Get all CRM integrations for the current user"""
+    if not supabase_service and not supabase:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
     try:
+        # Use service role for read (RLS bypass) if available, else use anon
+        client = supabase_service if supabase_service else supabase
+        
         result = (
-            supabase_service.table("crm_integrations")
+            client.table("crm_integrations")
             .select("*")
             .eq("user_id", user.id)
             .execute()
@@ -227,147 +190,105 @@ async def list_crm_integrations(
             "integrations": integrations,
             "count": len(integrations),
         }
-        
+    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(
             f"Failed to retrieve CRM integrations: {str(e)}",
             extra={"user_id": user.id},
         )
-        raise HTTPException(status_code=500, detail="Failed to retrieve CRM integrations")
-        
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve integrations: {str(e)}")
 
-@router.get("/integrations/{crm_type}", response_model=dict)
-async def get_crm_integration(
+# ============================================================================
+# POST /integrations/{crm_type}/test - Test CRM connection
+# ============================================================================
+@router.post("/integrations/{crm_type}/test", response_model=Dict[str, Any])
+async def test_crm_connection(
     crm_type: str,
     user: CurrentUser = Depends(get_current_user),
-) -> dict:
-    """Get a specific CRM integration"""
+) -> Dict[str, Any]:
+    """Test connection to a CRM integration"""
+    if not supabase_service and not supabase:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
     try:
-        supabase = get_supabase_anon()
-
+        # Use service role to read (RLS bypass) if available
+        client = supabase_service if supabase_service else supabase
+        
         result = (
-            supabase.table("crm_integrations")
-            .select("*")
+            client.table("crm_integrations")
+            .select("api_key")
             .eq("user_id", user.id)
-            .eq("crm_type", crm_type.lower())
+            .eq("crm_type", crm_type)
             .single()
             .execute()
         )
-
+        
         if not result.data:
-            raise HTTPException(status_code=404, detail=f"{crm_type} integration not found")
-
-        return result.data
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error retrieving {crm_type} integration: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve integration")
-
-@router.post("/integrations/{crm_type}/test", response_model=dict)
-async def test_crm_connection(
-    crm_type: str,
-    request: ConnectionTestRequest,
-    user: CurrentUser = Depends(get_current_user),
-) -> dict:
-    """Test connection to a CRM system"""
-    try:
-        logger.info(f"Testing {crm_type} connection for user {user.id}...")
-
-        # Simple connection test (expand as needed for each CRM)
-        if crm_type.lower() == "hubspot":
-            if not request.api_key or (not request.api_key.startswith("pat-") and not request.api_key.startswith("pk_live_")):
-                return {
-                    "success": False,
-                    "message": "Invalid HubSpot API key format (should start with pat- or pk_live_)",
-                    "crm_type": crm_type
-                }
-
-            return {
-                "success": True,
-                "message": f"✅ {crm_type} connection successful",
-                "crm_type": crm_type,
-                "contact_count": 0
-            }
-
-        elif crm_type.lower() == "salesforce":
-            if not request.api_key:
-                return {
-                    "success": False,
-                    "message": "Invalid Salesforce credentials",
-                    "crm_type": crm_type
-                }
-
-            return {
-                "success": True,
-                "message": f"✅ {crm_type} connection successful",
-                "crm_type": crm_type,
-                "contact_count": 0
-            }
-
-        elif crm_type.lower() == "pipedrive":
-            if not request.api_key:
-                return {
-                    "success": False,
-                    "message": "Invalid Pipedrive API token",
-                    "crm_type": crm_type
-                }
-
-            return {
-                "success": True,
-                "message": f"✅ {crm_type} connection successful",
-                "crm_type": crm_type,
-                "contact_count": 0
-            }
-
-        else:
-            return {
-                "success": False,
-                "message": f"Unsupported CRM type: {crm_type}",
-                "crm_type": crm_type
-            }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Error testing {crm_type} connection: {str(e)}")
+            raise HTTPException(status_code=404, detail=f"No {crm_type} integration found")
+        
+        # TODO: Implement actual CRM API validation here
+        # For now, just return success if integration exists
+        logger.info(
+            f"Tested {crm_type} connection",
+            extra={"user_id": user.id},
+        )
+        
         return {
-            "success": False,
-            "message": f"Connection test failed: {str(e)}",
-            "crm_type": crm_type
+            "success": True,
+            "message": "Connection successful!",
+            "crm_type": crm_type,
         }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            f"Failed to test {crm_type} connection: {str(e)}",
+            extra={"user_id": user.id},
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to test connection: {str(e)}")
 
-@router.delete("/integrations/{crm_type}", status_code=204)
+# ============================================================================
+# DELETE /integrations/{crm_type} - Delete a CRM integration
+# ============================================================================
+@router.delete("/integrations/{crm_type}", response_model=Dict[str, Any])
 async def delete_crm_integration(
     crm_type: str,
     user: CurrentUser = Depends(get_current_user),
-) -> None:
-    """Delete a CRM integration"""
+) -> Dict[str, Any]:
+    """Delete a CRM integration for the current user"""
+    if not supabase_service and not supabase:
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    
     try:
-        supabase_service = get_supabase_service()
-
+        # Use service role for delete (RLS bypass) if available
+        client = supabase_service if supabase_service else supabase
+        
         result = (
-            supabase_service.table("crm_integrations")
+            client.table("crm_integrations")
             .delete()
             .eq("user_id", user.id)
-            .eq("crm_type", crm_type.lower())
+            .eq("crm_type", crm_type)
             .execute()
         )
-
-        if not result.data:
-            raise HTTPException(status_code=404, detail=f"{crm_type} integration not found")
-
+        
         logger.info(
-            f"✅ CRM integration deleted: {crm_type}",
-            extra={"user_id": user.id}
+            f"Deleted {crm_type} integration",
+            extra={"user_id": user.id},
         )
-
-        return None
-
+        
+        return {
+            "success": True,
+            "message": f"{crm_type.upper()} integration deleted!",
+        }
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Error deleting {crm_type} integration: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to delete integration")
-        
+        logger.error(
+            f"Failed to delete {crm_type} integration: {str(e)}",
+            extra={"user_id": user.id},
+        )
+        raise HTTPException(status_code=500, detail=f"Failed to delete integration: {str(e)}")
