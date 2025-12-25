@@ -1,6 +1,7 @@
-// frontend/src/components/Sidebar.tsx
+
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
 
 interface SidebarProps {
   onLogout: () => void;
@@ -23,52 +24,46 @@ export default function Sidebar({ onLogout }: SidebarProps) {
 
   return (
     <aside
-      className={`${
+      className={`bg-gray-900 border-r border-gray-800 transition-all duration-300 ${
         isCollapsed ? 'w-20' : 'w-64'
-      } bg-gray-900 border-r border-gray-700 flex flex-col transition-all duration-300`}
+      } h-screen sticky top-0 flex flex-col`}
     >
       {/* Header */}
-      <div className="p-6 border-b border-gray-700 flex items-center justify-between">
+      <div className="flex items-center justify-between p-4 border-b border-gray-800">
         {!isCollapsed && <h1 className="text-xl font-bold text-cyan-400">LatticeIQ</h1>}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="text-gray-400 hover:text-white transition"
+          className="p-1 hover:bg-gray-800 rounded transition"
         >
-          {isCollapsed ? '→' : '←'}
+          {isCollapsed ? <Menu size={20} /> : <X size={20} />}
         </button>
       </div>
 
       {/* Navigation */}
-      // Add navigation links:
-      <NavLink to="/contacts">
-        <Users size={18} />
-        <span>Contacts</span>
-      </NavLink>
       <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => (
           <button
             key={item.path}
             onClick={() => navigate(item.path)}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded transition ${
+            className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${
               isActive(item.path)
-                ? 'bg-cyan-600/20 text-cyan-400 border-l-2 border-cyan-400'
-                : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                ? 'bg-cyan-600 text-white'
+                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
             }`}
-            title={isCollapsed ? item.label : ''}
           >
             <span className="text-lg">{item.icon}</span>
-            {!isCollapsed && <span>{item.label}</span>}
+            {!isCollapsed && <span className="text-sm font-medium">{item.label}</span>}
           </button>
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-700">
+      {/* Logout */}
+      <div className="p-4 border-t border-gray-800">
         <button
           onClick={onLogout}
-          className="w-full px-4 py-2 bg-red-900/20 hover:bg-red-900/40 text-red-300 rounded transition text-sm"
+          className="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition text-sm font-medium"
         >
-          {isCollapsed ? '📤' : 'Sign Out'}
+          {!isCollapsed ? 'Logout' : '→'}
         </button>
       </div>
     </aside>

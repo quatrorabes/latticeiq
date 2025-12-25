@@ -1,6 +1,6 @@
 // frontend/src/pages/ScoringConfigPage.tsx
 import { useState } from 'react';
-import { ChevronDown, Info, TrendingUp, Copy, Check } from 'lucide-react';
+import { ChevronDown, Info, TrendingUp } from 'lucide-react';
 
 interface ScoringFramework {
   id: 'mdcp' | 'bant' | 'spice';
@@ -155,16 +155,10 @@ const FRAMEWORKS: Record<string, ScoringFramework> = {
 export default function ScoringConfigPage() {
   const [selectedFramework, setSelectedFramework] = useState<'mdcp' | 'bant' | 'spice'>('mdcp');
   const [expandedDimension, setExpandedDimension] = useState<string | null>(null);
-  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const framework = FRAMEWORKS[selectedFramework];
 
-  const handleCopy = (text: string, index: number) => {
-    navigator.clipboard.writeText(text);
-    setCopiedIndex(index);
-    setTimeout(() => setCopiedIndex(null), 2000);
-  };
 
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
@@ -246,7 +240,7 @@ export default function ScoringConfigPage() {
               Scoring Dimensions
             </h3>
             <div className="space-y-3">
-              {framework.dimensions.map((dimension, idx) => (
+              {framework.dimensions.map((dimension) => (
                 <div
                   key={dimension.key}
                   className="bg-gray-800 border border-gray-700 rounded-lg overflow-hidden hover:border-gray-600 transition"
