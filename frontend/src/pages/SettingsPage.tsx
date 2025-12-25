@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import React, { useEffect, useMemo, useState } from "react";
+import { supabase } from "../lib/supabaseClient";
 
 interface Integration {
   id: string;
@@ -11,56 +11,84 @@ interface Integration {
   updated_at: string;
 }
 
+type NullableString = string | null;
+
 export default function SettingsPage() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [crmType, setCrmType] = useState('hubspot');
-  const [apiKey, setApiKey] = useState('');
+  const [crmType, setCrmType] = useState("hubspot");
+  const [apiKey, setApiKey] = useState("");
+
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [testingCRM, setTestingCRM] = useState<string | null>(null);
-  const [importingCRM, setImportingCRM] = useState<string | null>(null);
+  const [error, setError] = useState<NullableString>(null);
+  const [success, setSuccess] = useState<NullableString>(null);
 
-  const apiUrl = import.meta.env.VITE_API_URL;
+  const [testingCRM, setTestingCRM] = useState<NullableString>(null);
+  const [importingCRM, setImportingCRM] = useState<NullableString>(null);
 
-  useEffect(() => {
-    fetchIntegrations();
-  }, []);
+  const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
 
-  const getAuthToken = async () => {
+  const isConfigured = useMemo(() => !!apiUrl, [apiUrl]);
+
+  const getAuthToken = async (): Promise<string> => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-    return session?.access_token;
+
+    const token = session?.access_token;
+    if (!token) throw new Error("Not logged in (missing access token).");
+    return token;
   };
 
   const fetchIntegrations = async () => {
+    if (!apiUrl) {
+      setError("Missing VITE_API_URL in frontend environment.");
+      return;
+    }
+
     try {
+      setError(null);
       const token = await getAuthToken();
+
       const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error('Failed to fetch');
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Failed to fetch integrations (${res.status}): ${txt}`);
+      }
+
       const data = await res.json();
       setIntegrations(data.integrations || []);
-    } catch (err) {
-      setError(String(err));
+    } catch (err: any) {
+      setError(err?.message || String(err));
     }
   };
 
+  useEffect(() => {
+    fetchIntegrations();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!apiUrl) {
+      setError("Missing VITE_API_URL in frontend environment.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
       const token = await getAuthToken();
+
       const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           crm_type: crmType,
@@ -69,104 +97,152 @@ export default function SettingsPage() {
         }),
       });
 
+      const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
-        const err = await res.json();
-        setError(err.detail || 'Failed');
+        setError(data?.detail || data?.error || "Failed to save integration.");
         return;
       }
 
-      setSuccess(`${crmType.toUpperCase()} saved!`);
-      setApiKey('');
-      fetchIntegrations();
-    } catch (err) {
-      setError(String(err));
+      setSuccess(data?.message || `${crmType.toUpperCase()} saved!`);
+      setApiKey("");
+      await fetchIntegrations();
+    } catch (err: any) {
+      setError(err?.message || String(err));
     } finally {
       setLoading(false);
     }
   };
 
   const handleTest = async (type: string) => {
+    if (!apiUrl) {
+      setError("Missing VITE_API_URL in frontend environment.");
+      return;
+    }
+
     setTestingCRM(type);
+    setError(null);
+    setSuccess(null);
+
     try {
       const token = await getAuthToken();
+
       const res = await fetch(
         `${apiUrl}/api/v3/settings/crm/integrations/${type}/test`,
         {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
-      if (!res.ok) throw new Error('Test failed');
-      const data = await res.json();
-      setSuccess(data.message || 'Connection successful!');
-    } catch (err) {
-      setError(String(err));
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setError(data?.detail || data?.error || "Test failed");
+        return;
+      }
+
+      setSuccess(data?.message || "Connection successful!");
+    } catch (err: any) {
+      setError(err?.message || String(err));
     } finally {
       setTestingCRM(null);
     }
   };
 
   const handleImportContacts = async (integration: Integration) => {
+    if (!apiUrl) {
+      setError("Missing VITE_API_URL in frontend environment.");
+      return;
+    }
+
     setImportingCRM(integration.crm_type);
+    setError(null);
+    setSuccess(null);
+
     try {
       const token = await getAuthToken();
-      
-      // FIX: No body parameter - backend reads API key from crm_integrations table
-      const res = await fetch(
-        `${apiUrl}/api/v3/crm/import/${integration.crm_type}`,
-        {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}` },
-          // NO BODY - backend reads from database automatically
-        }
-      );
+
+      // IMPORTANT: No request body — backend reads api_key from crm_integrations table.
+      const res = await fetch(`${apiUrl}/api/v3/crm/import/${integration.crm_type}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        const err = await res.json();
-        setError(err.detail || 'Import failed');
+        setError(data?.detail || data?.error || "Import failed");
         return;
       }
 
-      const data = await res.json();
-      setSuccess(`Import started! Job ID: ${data.job_id}`);
-    } catch (err) {
-      setError(String(err));
+      // backend response may be job_id or jobId depending on implementation; handle both.
+      const jobId = data?.job_id || data?.jobId || data?.id || "unknown";
+      setSuccess(data?.message || `Import started! Job ID: ${jobId}`);
+    } catch (err: any) {
+      setError(err?.message || String(err));
     } finally {
       setImportingCRM(null);
     }
   };
 
   const handleDelete = async (type: string) => {
+    if (!apiUrl) {
+      setError("Missing VITE_API_URL in frontend environment.");
+      return;
+    }
+
     if (!confirm(`Delete ${type}?`)) return;
+
+    setError(null);
+    setSuccess(null);
+
     try {
       const token = await getAuthToken();
-      const res = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${type}`,
-        {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` },
-        }
-      );
-      if (!res.ok) throw new Error('Delete failed');
+
+      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations/${type}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Delete failed (${res.status}): ${txt}`);
+      }
+
       setSuccess(`${type.toUpperCase()} deleted!`);
-      fetchIntegrations();
-    } catch (err) {
-      setError(String(err));
+      await fetchIntegrations();
+    } catch (err: any) {
+      setError(err?.message || String(err));
     }
   };
 
+  if (!isConfigured) {
+    return (
+      <div className="p-6 max-w-4xl mx-auto">
+        <h1 className="text-2xl font-bold mb-2">CRM Settings</h1>
+        <div className="bg-red-100 p-4 rounded text-red-700">
+          Missing <code>VITE_API_URL</code>. Set it to your Render base URL (no trailing slash).
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-3xl font-bold mb-8">CRM Settings</h1>
+      <h1 className="text-2xl font-bold mb-6">CRM Settings</h1>
 
-      {error && <div className="bg-red-50 p-4 mb-6 rounded border-l-4 border-red-500">{error}</div>}
-      {success && <div className="bg-green-50 p-4 mb-6 rounded border-l-4 border-green-500">{success}</div>}
+      {error && <div className="bg-red-100 p-4 mb-4 rounded text-red-700">{error}</div>}
+      {success && (
+        <div className="bg-green-100 p-4 mb-4 rounded text-green-700">{success}</div>
+      )}
 
-      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 className="text-xl font-bold mb-6">Add Integration</h2>
+      <div className="bg-white p-6 rounded shadow mb-6">
+        <h2 className="text-lg font-bold mb-4">Add Integration</h2>
+
         <form onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">CRM Type</label>
+            <label className="block text-sm font-medium">CRM Type</label>
             <select
               value={crmType}
               onChange={(e) => setCrmType(e.target.value)}
@@ -177,8 +253,9 @@ export default function SettingsPage() {
               <option value="pipedrive">Pipedrive</option>
             </select>
           </div>
+
           <div>
-            <label className="block text-sm font-medium mb-2">API Key</label>
+            <label className="block text-sm font-medium">API Key</label>
             <input
               type="password"
               value={apiKey}
@@ -188,44 +265,56 @@ export default function SettingsPage() {
               required
             />
           </div>
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+            className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700 disabled:opacity-50"
           >
-            {loading ? 'Saving...' : 'Save'}
+            {loading ? "Saving..." : "Save"}
           </button>
         </form>
       </div>
 
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-bold mb-6">Saved Integrations</h2>
+      <div className="bg-white p-6 rounded shadow">
+        <h2 className="text-lg font-bold mb-4">Saved Integrations</h2>
+
         {integrations.length === 0 ? (
           <p className="text-gray-500">No integrations yet</p>
         ) : (
           <div className="space-y-4">
             {integrations.map((int) => (
-              <div key={int.id} className="flex justify-between items-center p-4 border rounded">
+              <div
+                key={int.id}
+                className="flex items-center justify-between p-4 border rounded"
+              >
                 <div>
-                  <h3 className="font-semibold">{int.crm_type.toUpperCase()}</h3>
-                  <p className="text-sm text-gray-500">{int.is_active ? 'Active' : 'Inactive'}</p>
+                  <div className="font-bold">{int.crm_type.toUpperCase()}</div>
+                  <div className="text-sm text-gray-500">
+                    {int.is_active ? "Active" : "Inactive"}
+                  </div>
                 </div>
+
                 <div className="space-x-2">
                   <button
                     onClick={() => handleTest(int.crm_type)}
-                    className="bg-blue-500 text-white px-3 py-1 rounded text-sm"
+                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
+                    disabled={testingCRM === int.crm_type}
                   >
-                    {testingCRM === int.crm_type ? 'Testing...' : 'Test'}
+                    {testingCRM === int.crm_type ? "Testing..." : "Test"}
                   </button>
+
                   <button
                     onClick={() => handleImportContacts(int)}
-                    className="bg-green-500 text-white px-3 py-1 rounded text-sm"
+                    className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
+                    disabled={importingCRM === int.crm_type}
                   >
-                    {importingCRM === int.crm_type ? 'Importing...' : 'Import'}
+                    {importingCRM === int.crm_type ? "Importing..." : "Import"}
                   </button>
+
                   <button
                     onClick={() => handleDelete(int.crm_type)}
-                    className="bg-red-500 text-white px-3 py-1 rounded text-sm"
+                    className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
                   >
                     Delete
                   </button>
