@@ -535,8 +535,9 @@ if SCORING_AVAILABLE and scoring_router is not None:
     print("✅ Scoring router registered at /api/v3/scoring")
 
 if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    app.include_router(settings_router)
-    print("✅ Settings router registered")
+    app.include_router(settings_router, prefix="/api/v3")
+    print("✅ Settings router registered at /api/v3/settings/crm")
+    
 
 # ============================================================================
 # STARTUP / SHUTDOWN
