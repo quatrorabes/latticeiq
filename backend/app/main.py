@@ -41,6 +41,13 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 
+# Add import at top (with other imports)
+from app.enrichment_v3.enrich_router import router as enrich_router
+
+# Add registration (near other router includes, around line 50-100)
+app.include_router(enrich_router, prefix="/api/v3")
+
+
 # Quick enrich disabled for now - using router instead
 QUICK_ENRICH_AVAILABLE = False
 
@@ -49,6 +56,7 @@ QUICK_ENRICH_AVAILABLE = False
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
+
 
 # ============================================================================
 # ROUTER IMPORTS (with error handling)
@@ -521,6 +529,8 @@ async def enrich_all_contacts(
 # ============================================================================
 
 app.include_router(contacts_router)
+
+app.include_router(enrich_router, prefix="/api/v3")
 
 if CRM_ROUTER_AVAILABLE and crm_router is not None:
     app.include_router(crm_router, prefix="/api/v3/crm")
