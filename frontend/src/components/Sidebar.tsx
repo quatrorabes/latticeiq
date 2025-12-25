@@ -2,6 +2,9 @@ import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 
+console.log("SIDEBAR LOADED FROM:", import.meta.url);
+
+
 interface SidebarProps {
   onLogout: () => void;
 }
