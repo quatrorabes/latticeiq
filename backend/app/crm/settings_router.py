@@ -227,11 +227,10 @@ async def test_crm_connection(
     """Test connection to a CRM integration"""
     if not supabase_service and not supabase:
         raise HTTPException(status_code=503, detail="Database unavailable")
-
+        
     try:
-        # Use service role to read (RLS bypass) if available
         client = supabase_service if supabase_service else supabase
-
+        
         result = (
             client.table("crm_integrations")
             .select("api_key")
@@ -240,24 +239,26 @@ async def test_crm_connection(
             .single()
             .execute()
         )
-
+        
         if not result.data:
             raise HTTPException(status_code=404, detail=f"No {crm_type} integration found")
-
-        # TODO: Implement actual CRM API validation here
-        # For now, just return success if integration exists
-
+            
+        # ✅ ADD THIS: Save test_status = "success" to database
+        client.table("crm_integrations").update({
+            "test_status": "success"
+        }).eq("user_id", user.id).eq("crm_type", crm_type).execute()
+        
         logger.info(
             f"Tested {crm_type} connection",
             extra={"user_id": user.id},
         )
-
+        
         return {
             "success": True,
             "message": "Connection successful!",
             "crm_type": crm_type,
         }
-
+        
     except HTTPException:
         raise
     except Exception as e:
@@ -266,7 +267,6 @@ async def test_crm_connection(
             extra={"user_id": user.id},
         )
         raise HTTPException(status_code=500, detail=f"Failed to test connection: {str(e)}")
-
 # ============================================================================
 # DELETE /integrations/{crm_type} - Delete a CRM integration
 # ============================================================================
@@ -310,3 +310,4 @@ async def delete_crm_integration(
             extra={"user_id": user.id},
         )
         raise HTTPException(status_code=500, detail=f"Failed to delete integration: {str(e)}")
+        

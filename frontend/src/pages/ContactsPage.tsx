@@ -48,7 +48,7 @@ export default function ContactsPage() {
       setLoading(true);
       setError(null);
       const token = await getAuthToken();
-      const res = await fetch(`${apiUrl}/api/contacts`, {
+      const res = await fetch(`${apiUrl}/api/v3/contacts`, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
