@@ -36,6 +36,10 @@ else:
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-pro")
 
+# Code fence markers for parsing
+CODE_FENCE = "```
+CODE_FENCE_JSON = "```json"
+
 # ============================================================================
 # AUTH
 # ============================================================================
@@ -77,6 +81,21 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
 # ============================================================================
 
 router = APIRouter(prefix="/enrich", tags=["Enrichment"])
+
+# ============================================================================
+# HELPER: Strip code fences from response
+# ============================================================================
+
+def strip_code_fences(content: str) -> str:
+    """Remove markdown code fences from AI response"""
+    content = content.strip()
+    if content.startswith(CODE_FENCE_JSON):
+        content = content[len(CODE_FENCE_JSON):]
+    elif content.startswith(CODE_FENCE):
+        content = content[len(CODE_FENCE):]
+    if content.endswith(CODE_FENCE):
+        content = content[:-len(CODE_FENCE)]
+    return content.strip()
 
 # ============================================================================
 # ENRICH CONTACT ENDPOINT
@@ -176,14 +195,7 @@ Return ONLY valid JSON, no markdown or extra text."""
             raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
 
         # 5. Parse response (handle markdown code fences)
-        content = raw_content.strip()
-        if content.startswith("```
-            content = content[7:]
-        if content.startswith("```"):
-            content = content[3:]
-        if content.endswith("```
-            content = content[:-3]
-        content = content.strip()
+        content = strip_code_fences(raw_content)
 
         try:
             enrichment_data = json.loads(content)
@@ -207,7 +219,7 @@ Return ONLY valid JSON, no markdown or extra text."""
 
         supabase.table("contacts").update(update_data).eq("id", contact_id).execute()
 
-        logger.info(f"✅ Enriched contact {contact_id}", extra={"user_id": user_id})
+        logger.info(f"Enriched contact {contact_id}", extra={"user_id": user_id})
 
         return {
             "success": True,
