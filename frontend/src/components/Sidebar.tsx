@@ -22,17 +22,13 @@ export default function Sidebar({ onLogout }: SidebarProps) {
   const isActive = (path: string) => location.pathname === path;
 
   return (
-    <aside
-      className={`bg-gray-900 border-r border-gray-800 transition-all duration-300 ${
-        isCollapsed ? 'w-20' : 'w-64'
-      } h-screen sticky top-0 flex flex-col`}
-    >
+    <div className={`flex flex-col h-screen bg-gray-900 border-r border-gray-700 transition-all ${isCollapsed ? 'w-20' : 'w-64'}`}>
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-800">
+      <div className="flex items-center justify-between p-4 border-b border-gray-700">
         {!isCollapsed && <h1 className="text-xl font-bold text-cyan-400">LatticeIQ</h1>}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="p-1 hover:bg-gray-800 rounded transition"
+          className="p-2 hover:bg-gray-800 rounded"
         >
           {isCollapsed ? <Menu size={20} /> : <X size={20} />}
         </button>
@@ -44,10 +40,10 @@ export default function Sidebar({ onLogout }: SidebarProps) {
           <button
             key={item.path}
             onClick={() => navigate(item.path)}
-            className={`w-full flex items-center gap-3 px-4 py-2 rounded-lg transition ${
+            className={`w-full flex items-center gap-3 px-4 py-2 rounded transition-colors ${
               isActive(item.path)
                 ? 'bg-cyan-600 text-white'
-                : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                : 'text-gray-400 hover:bg-gray-800'
             }`}
           >
             <span className="text-lg">{item.icon}</span>
@@ -57,14 +53,15 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       </nav>
 
       {/* Logout */}
-      <div className="p-4 border-t border-gray-800">
+      <div className="p-4 border-t border-gray-700">
         <button
           onClick={onLogout}
-          className="w-full px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg transition text-sm font-medium"
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-900 hover:bg-red-800 text-red-400 rounded transition-colors"
         >
-          {!isCollapsed ? 'Logout' : '→'}
+          <span>🚪</span>
+          {!isCollapsed && <span className="text-sm font-medium">Logout</span>}
         </button>
       </div>
-    </aside>
+    </div>
   );
 }
