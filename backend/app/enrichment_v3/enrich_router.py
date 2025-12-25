@@ -7,6 +7,7 @@ Contact Enrichment API - Uses Perplexity AI to enrich contact data
 
 import os
 import json
+import re
 import logging
 from typing import Any, Dict
 from datetime import datetime
@@ -26,19 +27,27 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+  supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 elif SUPABASE_URL and SUPABASE_ANON_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+  supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 else:
-    supabase = None
-
+  supabase = None
+  
 # Perplexity API
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-pro")
 
-# Code fence markers for parsing
-CODE_FENCE = "```
-CODE_FENCE_JSON = "```json"
+
+def strip_code_fences(content: str) -> str:
+  """Remove markdown code fences from AI response"""
+  content = content.strip()
+  fence = chr(96) + chr(96) + chr(96)
+  if content.startswith(fence):
+    content = content.split("\n", 1)[-1]
+  if content.endswith(fence):
+    content = content.rsplit("\n", 1)[0]
+  return content.strip()
+    
 
 # ============================================================================
 # AUTH
@@ -268,3 +277,4 @@ async def get_enrichment_status(
         "enrichment_data": result.data.get("enrichment_data"),
         "enriched_at": result.data.get("enriched_at"),
     }
+    
