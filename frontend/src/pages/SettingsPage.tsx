@@ -1,329 +1,162 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { supabase } from "../lib/supabaseClient";
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
+import CRMIntegrationCard from '../components/CRMIntegrationCard';
 
-interface Integration {
-  id: string;
-  user_id: string;
+interface CRMIntegration {
+  id: number;
   crm_type: string;
-  api_key: string;
   is_active: boolean;
+  test_status: 'untested' | 'success' | 'failed';
+  last_test_at?: string;
+  last_sync_at?: string;
+  import_filters: Record<string, any>;
+  required_fields: Record<string, any>;
+  auto_sync_enabled: boolean;
+  sync_frequency_hours: number;
   created_at: string;
   updated_at: string;
 }
 
-type NullableString = string | null;
+const SettingsPage: React.FC = () => {
+  const [integrations, setIntegrations] = useState<CRMIntegration[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export default function SettingsPage() {
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [crmType, setCrmType] = useState("hubspot");
-  const [apiKey, setApiKey] = useState("");
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<NullableString>(null);
-  const [success, setSuccess] = useState<NullableString>(null);
-
-  const [testingCRM, setTestingCRM] = useState<NullableString>(null);
-  const [importingCRM, setImportingCRM] = useState<NullableString>(null);
-
-  const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
-
-  const isConfigured = useMemo(() => !!apiUrl, [apiUrl]);
-
-  const getAuthToken = async (): Promise<string> => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-
-    const token = session?.access_token;
-    if (!token) throw new Error("Not logged in (missing access token).");
-    return token;
-  };
-
-  const fetchIntegrations = async () => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
+  const CRM_TYPES = [
+    {
+      id: 'hubspot',
+      name: 'HubSpot',
+      icon: '🎯',
+      description: 'Connect your HubSpot CRM for intelligent contact importing',
+      docs: 'https://developers.hubspot.com/docs/crm/apis/authentication'
+    },
+    {
+      id: 'salesforce',
+      name: 'Salesforce',
+      icon: '☁️',
+      description: 'Connect your Salesforce instance for enterprise contact management',
+      docs: 'https://developer.salesforce.com/docs/atlas.en-us.api_rest.meta/api_rest/quickstart.htm'
+    },
+    {
+      id: 'pipedrive',
+      name: 'Pipedrive',
+      icon: '📊',
+      description: 'Connect your Pipedrive account for sales pipeline automation',
+      docs: 'https://developers.pipedrive.com/docs/api/v1/'
     }
+  ];
 
-    try {
-      setError(null);
-      const token = await getAuthToken();
-
-      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Failed to fetch integrations (${res.status}): ${txt}`);
-      }
-
-      const data = await res.json();
-      setIntegrations(data.integrations || []);
-    } catch (err: any) {
-      setError(err?.message || String(err));
-    }
-  };
-
+  // Fetch integrations on mount
   useEffect(() => {
-    fetchIntegrations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (supabase) {
+      fetchIntegrations();
+    }
   }, []);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
+  const fetchIntegrations = async () => {
     try {
-      const token = await getAuthToken();
+      setLoading(true);
+      const session = await supabase.auth.getSession();
+      const token = session?.data?.session?.access_token;
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
-        method: "POST",
+      const response = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
         headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          crm_type: crmType,
-          api_key: apiKey,
-          is_active: true,
-        }),
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
       });
 
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.detail || data?.error || "Failed to save integration.");
-        return;
-      }
-
-      setSuccess(data?.message || `${crmType.toUpperCase()} saved!`);
-      setApiKey("");
-      await fetchIntegrations();
-    } catch (err: any) {
-      setError(err?.message || String(err));
+      if (!response.ok) throw new Error('Failed to fetch integrations');
+      const data = await response.json();
+      setIntegrations(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+      console.error('Error fetching integrations:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleTest = async (type: string) => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    setTestingCRM(type);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const token = await getAuthToken();
-
-      const res = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${type}/test`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.detail || data?.error || "Test failed");
-        return;
-      }
-
-      setSuccess(data?.message || "Connection successful!");
-    } catch (err: any) {
-      setError(err?.message || String(err));
-    } finally {
-      setTestingCRM(null);
-    }
+  const handleIntegrationUpdate = () => {
+    fetchIntegrations();
   };
-
-  const handleImportContacts = async (integration: Integration) => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    setImportingCRM(integration.crm_type);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const token = await getAuthToken();
-
-      // IMPORTANT: No request body — backend reads api_key from crm_integrations table.
-      const res = await fetch(`${apiUrl}/api/v3/crm/import/${integration.crm_type}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.detail || data?.error || "Import failed");
-        return;
-      }
-
-      // backend response may be job_id or jobId depending on implementation; handle both.
-      const jobId = data?.job_id || data?.jobId || data?.id || "unknown";
-      setSuccess(data?.message || `Import started! Job ID: ${jobId}`);
-    } catch (err: any) {
-      setError(err?.message || String(err));
-    } finally {
-      setImportingCRM(null);
-    }
-  };
-
-  const handleDelete = async (type: string) => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    if (!confirm(`Delete ${type}?`)) return;
-
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const token = await getAuthToken();
-
-      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations/${type}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Delete failed (${res.status}): ${txt}`);
-      }
-
-      setSuccess(`${type.toUpperCase()} deleted!`);
-      await fetchIntegrations();
-    } catch (err: any) {
-      setError(err?.message || String(err));
-    }
-  };
-
-  if (!isConfigured) {
-    return (
-      <div className="p-6 max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2">CRM Settings</h1>
-        <div className="bg-red-100 p-4 rounded text-red-700">
-          Missing <code>VITE_API_URL</code>. Set it to your Render base URL (no trailing slash).
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">CRM Settings</h1>
-
-      {error && <div className="bg-red-100 p-4 mb-4 rounded text-red-700">{error}</div>}
-      {success && (
-        <div className="bg-green-100 p-4 mb-4 rounded text-green-700">{success}</div>
-      )}
-
-      <div className="bg-white p-6 rounded shadow mb-6">
-        <h2 className="text-lg font-bold mb-4">Add Integration</h2>
-
-        <form onSubmit={handleSave} className="space-y-4">
+    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-8">
+      {/* Header */}
+      <div className="max-w-6xl mx-auto mb-12">
+        <div className="flex items-center gap-4 mb-4">
+          <div className="text-4xl">⚙️</div>
           <div>
-            <label className="block text-sm font-medium">CRM Type</label>
-            <select
-              value={crmType}
-              onChange={(e) => setCrmType(e.target.value)}
-              className="w-full p-2 border rounded"
-            >
-              <option value="hubspot">HubSpot</option>
-              <option value="salesforce">Salesforce</option>
-              <option value="pipedrive">Pipedrive</option>
-            </select>
+            <h1 className="text-4xl font-bold text-white mb-2">CRM Integrations</h1>
+            <p className="text-lg text-slate-400">
+              Connect and manage your CRM data sources with advanced filtering and validation
+            </p>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium">API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter API key"
-              className="w-full p-2 border rounded"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700 disabled:opacity-50"
-          >
-            {loading ? "Saving..." : "Save"}
-          </button>
-        </form>
+        </div>
       </div>
 
-      <div className="bg-white p-6 rounded shadow">
-        <h2 className="text-lg font-bold mb-4">Saved Integrations</h2>
+      {/* Error Alert */}
+      {error && (
+        <div className="max-w-6xl mx-auto mb-8 p-4 bg-red-900/30 border border-red-500/50 rounded-lg">
+          <p className="text-red-400">Error: {error}</p>
+        </div>
+      )}
 
-        {integrations.length === 0 ? (
-          <p className="text-gray-500">No integrations yet</p>
+      {/* CRM Cards Grid */}
+      <div className="max-w-6xl mx-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-64">
+            <div className="text-slate-400">Loading integrations...</div>
+          </div>
         ) : (
-          <div className="space-y-4">
-            {integrations.map((int) => (
-              <div
-                key={int.id}
-                className="flex items-center justify-between p-4 border rounded"
-              >
-                <div>
-                  <div className="font-bold">{int.crm_type.toUpperCase()}</div>
-                  <div className="text-sm text-gray-500">
-                    {int.is_active ? "Active" : "Inactive"}
-                  </div>
-                </div>
-
-                <div className="space-x-2">
-                  <button
-                    onClick={() => handleTest(int.crm_type)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700"
-                    disabled={testingCRM === int.crm_type}
-                  >
-                    {testingCRM === int.crm_type ? "Testing..." : "Test"}
-                  </button>
-
-                  <button
-                    onClick={() => handleImportContacts(int)}
-                    className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700"
-                    disabled={importingCRM === int.crm_type}
-                  >
-                    {importingCRM === int.crm_type ? "Importing..." : "Import"}
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(int.crm_type)}
-                    className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {CRM_TYPES.map((crm) => {
+              const integration = integrations.find(i => i.crm_type === crm.id);
+              return (
+                <CRMIntegrationCard
+                  key={crm.id}
+                  crm={crm}
+                  integration={integration}
+                  onUpdate={handleIntegrationUpdate}
+                  supabase={supabase}
+                />
+              );
+            })}
           </div>
         )}
       </div>
+
+      {/* Info Section */}
+      <div className="max-w-6xl mx-auto mt-16 p-8 bg-slate-800/50 rounded-lg border border-slate-700/50">
+        <h2 className="text-xl font-bold text-white mb-4">How It Works</h2>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div>
+            <div className="text-2xl mb-2">🔐</div>
+            <h3 className="font-semibold text-white mb-2">Secure Credentials</h3>
+            <p className="text-sm text-slate-400">API keys are encrypted and stored securely in Supabase</p>
+          </div>
+          <div>
+            <div className="text-2xl mb-2">🧪</div>
+            <h3 className="font-semibold text-white mb-2">Test Connection</h3>
+            <p className="text-sm text-slate-400">Verify your credentials work before enabling sync</p>
+          </div>
+          <div>
+            <div className="text-2xl mb-2">⚙️</div>
+            <h3 className="font-semibold text-white mb-2">Advanced Filters</h3>
+            <p className="text-sm text-slate-400">Exclude unqualified leads, DNC records, and more</p>
+          </div>
+          <div>
+            <div className="text-2xl mb-2">🔄</div>
+            <h3 className="font-semibold text-white mb-2">Auto Sync</h3>
+            <p className="text-sm text-slate-400">Keep your contacts up-to-date with periodic syncs</p>
+          </div>
+        </div>
+      </div>
     </div>
   );
-}
+};
+
+export default SettingsPage;
