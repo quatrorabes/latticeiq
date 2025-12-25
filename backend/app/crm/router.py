@@ -5,17 +5,16 @@
 CRM import endpoints - v3 API
 
 IMPORTANT AUTH NOTE (real user flow):
-- Frontend sends Supabase access_token in Authorization: Bearer <token>
+- Frontend sends Supabase access_token in Authorization: Bearer
 - Backend must validate that token using Supabase Auth (NOT local JWT_SECRET)
 - Do NOT attempt to jwt.decode() with Render env JWT_SECRET; Supabase signs tokens.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks, Header
-from uuid import UUID, uuid4
+from uuid import uuid4
 from typing import Optional
 from datetime import datetime
 import os
-
 from supabase import create_client
 
 from .models import ImportJob, ImportLog, DNCEntry
@@ -23,9 +22,7 @@ from .csv_parser import CSVParser
 from .hubspot_client import HubSpotClient
 from .salesforce_client import SalesforceClient
 from .pipedrive_client import PipedriveClient
-
 from crm.settings_router import supabase_service
-
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
@@ -44,14 +41,12 @@ router = APIRouter(prefix="/import", tags=["CRM Import"])
 async def get_current_user_for_crm(authorization: str = Header(None)) -> dict:
     """
     Validates Supabase JWT by asking Supabase who the user is.
-
     This is the correct approach for Supabase Auth:
     - token signature is verified by Supabase
     - backend trusts Supabase response
     """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
-
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
@@ -83,21 +78,25 @@ async def get_current_user_for_crm(authorization: str = Header(None)) -> dict:
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-
 # ============================================================================
 # HELPER: Get CRM credentials from crm_integrations table
 # ============================================================================
 
 def get_crm_credentials(user_id: str, crm_type: str) -> dict:
+    """
+    Retrieve CRM credentials from database using service-role client (RLS bypass).
+    This allows backend to access credentials even though they belong to a user.
+    """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
+    # Use service role client to bypass RLS (credentials are backend resource)
     client = supabase_service if supabase_service else supabase
-    
+
     result = (
         client.table("crm_integrations")
-        .select("api_key")
-        .eq("user_id", user.id)
+        .select("api_key, api_url, import_filters, required_fields, test_status")
+        .eq("user_id", user_id)
         .eq("crm_type", crm_type)
         .single()
         .execute()
@@ -109,7 +108,7 @@ def get_crm_credentials(user_id: str, crm_type: str) -> dict:
             detail=f"No {crm_type} integration configured. Please add your API key in Settings first."
         )
 
-    integration = result.data[0]
+    integration = result.data[0] if isinstance(result.data, list) else result.data
 
     # Optional guardrail: require they tested
     if integration.get("test_status") not in (None, "success"):
@@ -125,7 +124,6 @@ def get_crm_credentials(user_id: str, crm_type: str) -> dict:
         "required_fields": integration.get("required_fields", {}) or {},
     }
 
-
 # ============================================================================
 # CSV IMPORT ENDPOINT
 # ============================================================================
@@ -136,6 +134,7 @@ async def import_csv(
     background_tasks: BackgroundTasks = None,
     user: dict = Depends(get_current_user_for_crm),
 ) -> dict:
+    """Upload and parse CSV file, then import contacts in background"""
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -146,17 +145,15 @@ async def import_csv(
             raise HTTPException(status_code=400, detail="File must be CSV")
 
         content = await file.read()
-
         parser = CSVParser(user_id=user_id)
         contacts, errors = parser.parse(content)
 
         if not contacts:
             raise HTTPException(status_code=400, detail=f"No valid contacts found. Errors: {errors}")
 
-        job_id = uuid4()
-
+        job_id = str(uuid4())
         supabase.table("import_jobs").insert({
-            "id": str(job_id),
+            "id": job_id,
             "user_id": user_id,
             "crm_type": "csv",
             "status": "running",
@@ -168,7 +165,7 @@ async def import_csv(
             background_tasks.add_task(_process_csv_import, job_id=job_id, user_id=user_id, contacts=contacts)
 
         return {
-            "job_id": str(job_id),
+            "job_id": job_id,
             "status": "running",
             "total_contacts": len(contacts),
             "message": f"Importing {len(contacts)} contacts. Parse errors: {len(errors)}",
@@ -179,7 +176,6 @@ async def import_csv(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
 # HUBSPOT IMPORT ENDPOINT
 # ============================================================================
@@ -189,6 +185,7 @@ async def import_hubspot(
     background_tasks: BackgroundTasks = None,
     user: dict = Depends(get_current_user_for_crm),
 ) -> dict:
+    """Start HubSpot contact sync in background"""
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -206,10 +203,9 @@ async def import_hubspot(
         if not client.test_connection():
             raise HTTPException(status_code=401, detail="Invalid HubSpot API key")
 
-        job_id = uuid4()
-
+        job_id = str(uuid4())
         supabase.table("import_jobs").insert({
-            "id": str(job_id),
+            "id": job_id,
             "user_id": user_id,
             "crm_type": "hubspot",
             "status": "running",
@@ -219,16 +215,15 @@ async def import_hubspot(
         if background_tasks:
             background_tasks.add_task(_process_hubspot_import, job_id=job_id, user_id=user_id, client=client)
 
-        return {"job_id": str(job_id), "status": "running", "message": "HubSpot sync started"}
+        return {"job_id": job_id, "status": "running", "message": "HubSpot sync started"}
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
-# SALESFORCE IMPORT ENDPOINT (unchanged shape; still expects you to store creds)
+# SALESFORCE IMPORT ENDPOINT
 # ============================================================================
 
 @router.post("/salesforce")
@@ -236,6 +231,7 @@ async def import_salesforce(
     background_tasks: BackgroundTasks = None,
     user: dict = Depends(get_current_user_for_crm),
 ) -> dict:
+    """Start Salesforce contact sync in background"""
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -243,14 +239,12 @@ async def import_salesforce(
 
     try:
         creds = get_crm_credentials(user_id, "salesforce")
-
         instance_url = creds.get("api_url") or ""
         access_token = creds.get("api_key") or ""
 
         if not instance_url or not access_token:
             raise HTTPException(status_code=400, detail="Salesforce not fully configured in Settings.")
 
-        # NOTE: your SalesforceClient signature may differ; adjust if needed.
         client = SalesforceClient(
             instance_url=instance_url,
             client_id="",
@@ -262,10 +256,9 @@ async def import_salesforce(
         if not client.test_connection():
             raise HTTPException(status_code=401, detail="Invalid Salesforce credentials")
 
-        job_id = uuid4()
-
+        job_id = str(uuid4())
         supabase.table("import_jobs").insert({
-            "id": str(job_id),
+            "id": job_id,
             "user_id": user_id,
             "crm_type": "salesforce",
             "status": "running",
@@ -275,13 +268,12 @@ async def import_salesforce(
         if background_tasks:
             background_tasks.add_task(_process_salesforce_import, job_id=job_id, user_id=user_id, client=client)
 
-        return {"job_id": str(job_id), "status": "running", "message": "Salesforce sync started"}
+        return {"job_id": job_id, "status": "running", "message": "Salesforce sync started"}
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # PIPEDRIVE IMPORT ENDPOINT
@@ -292,6 +284,7 @@ async def import_pipedrive(
     background_tasks: BackgroundTasks = None,
     user: dict = Depends(get_current_user_for_crm),
 ) -> dict:
+    """Start Pipedrive contact sync in background"""
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -309,10 +302,9 @@ async def import_pipedrive(
         if not client.test_connection():
             raise HTTPException(status_code=401, detail="Invalid Pipedrive API token")
 
-        job_id = uuid4()
-
+        job_id = str(uuid4())
         supabase.table("import_jobs").insert({
-            "id": str(job_id),
+            "id": job_id,
             "user_id": user_id,
             "crm_type": "pipedrive",
             "status": "running",
@@ -321,13 +313,12 @@ async def import_pipedrive(
         if background_tasks:
             background_tasks.add_task(_process_pipedrive_import, job_id=job_id, user_id=user_id, client=client)
 
-        return {"job_id": str(job_id), "status": "running", "message": "Pipedrive sync started"}
+        return {"job_id": job_id, "status": "running", "message": "Pipedrive sync started"}
 
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ============================================================================
 # IMPORT STATUS ENDPOINT
@@ -335,9 +326,10 @@ async def import_pipedrive(
 
 @router.get("/status/{job_id}")
 async def get_import_status(
-    job_id: UUID,
+    job_id: str,
     user: dict = Depends(get_current_user_for_crm),
 ) -> dict:
+    """Get status of an import job"""
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
@@ -347,7 +339,7 @@ async def get_import_status(
         response = (
             supabase.table("import_jobs")
             .select("*")
-            .eq("id", str(job_id))
+            .eq("id", job_id)
             .eq("user_id", user_id)
             .execute()
         )
@@ -357,7 +349,7 @@ async def get_import_status(
 
         job = response.data[0]
 
-        logs_response = supabase.table("import_logs").select("*").eq("job_id", str(job_id)).execute()
+        logs_response = supabase.table("import_logs").select("*").eq("job_id", job_id).execute()
         logs = logs_response.data or []
 
         return {
@@ -382,12 +374,12 @@ async def get_import_status(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # ============================================================================
-# BACKGROUND IMPORT TASKS (kept from your existing router.py)
+# BACKGROUND IMPORT TASKS
 # ============================================================================
 
-def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
+def _process_csv_import(job_id: str, user_id: str, contacts: list):
+    """Background task: Process CSV contacts"""
     if not supabase:
         return
 
@@ -404,11 +396,12 @@ def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
                     .eq("email", contact.email)
                     .execute()
                 )
+
                 if dnc.data:
                     skipped += 1
                     supabase.table("import_logs").insert({
                         "id": str(uuid4()),
-                        "job_id": str(job_id),
+                        "job_id": job_id,
                         "email": contact.email,
                         "status": "skipped",
                         "reason": "DNC",
@@ -422,11 +415,12 @@ def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
                     .eq("email", contact.email)
                     .execute()
                 )
+
                 if existing.data:
                     skipped += 1
                     supabase.table("import_logs").insert({
                         "id": str(uuid4()),
-                        "job_id": str(job_id),
+                        "job_id": job_id,
                         "contact_id": existing.data[0]["id"],
                         "email": contact.email,
                         "status": "duplicate",
@@ -434,9 +428,9 @@ def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
                     }).execute()
                     continue
 
-                contact_id = uuid4()
+                contact_id = str(uuid4())
                 supabase.table("contacts").insert({
-                    "id": str(contact_id),
+                    "id": contact_id,
                     "user_id": user_id,
                     "first_name": contact.first_name,
                     "last_name": contact.last_name,
@@ -451,8 +445,8 @@ def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
                 imported += 1
                 supabase.table("import_logs").insert({
                     "id": str(uuid4()),
-                    "job_id": str(job_id),
-                    "contact_id": str(contact_id),
+                    "job_id": job_id,
+                    "contact_id": contact_id,
                     "email": contact.email,
                     "status": "success",
                 }).execute()
@@ -461,7 +455,7 @@ def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
                 skipped += 1
                 supabase.table("import_logs").insert({
                     "id": str(uuid4()),
-                    "job_id": str(job_id),
+                    "job_id": job_id,
                     "email": contact.email,
                     "status": "error",
                     "reason": str(e)[:200],
@@ -472,17 +466,18 @@ def _process_csv_import(job_id: UUID, user_id: str, contacts: list):
             "imported_contacts": imported,
             "skipped_contacts": skipped,
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
     except Exception as e:
         supabase.table("import_jobs").update({
             "status": "failed",
             "error_message": str(e)[:500],
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
 
-def _process_hubspot_import(job_id: UUID, user_id: str, client: HubSpotClient):
+def _process_hubspot_import(job_id: str, user_id: str, client: HubSpotClient):
+    """Background task: Process HubSpot contacts"""
     if not supabase:
         return
 
@@ -502,25 +497,28 @@ def _process_hubspot_import(job_id: UUID, user_id: str, client: HubSpotClient):
                     continue
 
                 dnc = supabase.table("dnc_list").select("*").eq("user_id", user_id).eq("email", email).execute()
+
                 if dnc.data:
                     skipped += 1
                     continue
 
                 existing = supabase.table("contacts").select("*").eq("user_id", user_id).eq("email", email).execute()
+
                 if existing.data:
                     skipped += 1
                     continue
 
-                contact_id = uuid4()
+                contact_id = str(uuid4())
                 supabase.table("contacts").insert({
-                    "id": str(contact_id),
+                    "id": contact_id,
                     "user_id": user_id,
                     "first_name": contact_data.get("first_name"),
                     "last_name": contact_data.get("last_name"),
                     "email": email,
                     "phone": contact_data.get("phone"),
                     "company": contact_data.get("company"),
-                    "job_title": contact_data.get("title"),
+                    "job_title": contact_data.get("job_title"),
+                    "linkedin_url": contact_data.get("linkedin_url"),
                     "external_id": contact_data.get("external_id"),
                     "crm_type": "hubspot",
                     "enrichment_status": "pending",
@@ -537,17 +535,18 @@ def _process_hubspot_import(job_id: UUID, user_id: str, client: HubSpotClient):
             "skipped_contacts": skipped,
             "total_contacts": imported + skipped,
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
     except Exception as e:
         supabase.table("import_jobs").update({
             "status": "failed",
             "error_message": str(e)[:500],
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
 
-def _process_salesforce_import(job_id: UUID, user_id: str, client: SalesforceClient):
+def _process_salesforce_import(job_id: str, user_id: str, client: SalesforceClient):
+    """Background task: Process Salesforce contacts"""
     if not supabase:
         return
 
@@ -567,25 +566,28 @@ def _process_salesforce_import(job_id: UUID, user_id: str, client: SalesforceCli
                     continue
 
                 dnc = supabase.table("dnc_list").select("*").eq("user_id", user_id).eq("email", email).execute()
+
                 if dnc.data:
                     skipped += 1
                     continue
 
                 existing = supabase.table("contacts").select("*").eq("user_id", user_id).eq("email", email).execute()
+
                 if existing.data:
                     skipped += 1
                     continue
 
-                contact_id = uuid4()
+                contact_id = str(uuid4())
                 supabase.table("contacts").insert({
-                    "id": str(contact_id),
+                    "id": contact_id,
                     "user_id": user_id,
                     "first_name": contact_data.get("first_name"),
                     "last_name": contact_data.get("last_name"),
                     "email": email,
                     "phone": contact_data.get("phone"),
                     "company": contact_data.get("company"),
-                    "job_title": contact_data.get("title"),
+                    "job_title": contact_data.get("job_title"),
+                    "linkedin_url": contact_data.get("linkedin_url"),
                     "external_id": contact_data.get("external_id"),
                     "crm_type": "salesforce",
                     "enrichment_status": "pending",
@@ -602,17 +604,18 @@ def _process_salesforce_import(job_id: UUID, user_id: str, client: SalesforceCli
             "skipped_contacts": skipped,
             "total_contacts": imported + skipped,
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
     except Exception as e:
         supabase.table("import_jobs").update({
             "status": "failed",
             "error_message": str(e)[:500],
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
 
-def _process_pipedrive_import(job_id: UUID, user_id: str, client: PipedriveClient):
+def _process_pipedrive_import(job_id: str, user_id: str, client: PipedriveClient):
+    """Background task: Process Pipedrive contacts"""
     if not supabase:
         return
 
@@ -632,25 +635,28 @@ def _process_pipedrive_import(job_id: UUID, user_id: str, client: PipedriveClien
                     continue
 
                 dnc = supabase.table("dnc_list").select("*").eq("user_id", user_id).eq("email", email).execute()
+
                 if dnc.data:
                     skipped += 1
                     continue
 
                 existing = supabase.table("contacts").select("*").eq("user_id", user_id).eq("email", email).execute()
+
                 if existing.data:
                     skipped += 1
                     continue
 
-                contact_id = uuid4()
+                contact_id = str(uuid4())
                 supabase.table("contacts").insert({
-                    "id": str(contact_id),
+                    "id": contact_id,
                     "user_id": user_id,
                     "first_name": contact_data.get("first_name"),
                     "last_name": contact_data.get("last_name"),
                     "email": email,
                     "phone": contact_data.get("phone"),
                     "company": contact_data.get("company"),
-                    "job_title": contact_data.get("title"),
+                    "job_title": contact_data.get("job_title"),
+                    "linkedin_url": contact_data.get("linkedin_url"),
                     "external_id": contact_data.get("external_id"),
                     "crm_type": "pipedrive",
                     "enrichment_status": "pending",
@@ -667,12 +673,11 @@ def _process_pipedrive_import(job_id: UUID, user_id: str, client: PipedriveClien
             "skipped_contacts": skipped,
             "total_contacts": imported + skipped,
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
+        }).eq("id", job_id).execute()
 
     except Exception as e:
         supabase.table("import_jobs").update({
             "status": "failed",
             "error_message": str(e)[:500],
             "completed_at": datetime.utcnow().isoformat(),
-        }).eq("id", str(job_id)).execute()
-        
+        }).eq("id", job_id).execute()

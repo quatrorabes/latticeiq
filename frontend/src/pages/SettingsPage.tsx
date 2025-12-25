@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import { supabase } from "../lib/supabaseClient";
 
 interface Integration {
@@ -17,11 +18,9 @@ export default function SettingsPage() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [crmType, setCrmType] = useState("hubspot");
   const [apiKey, setApiKey] = useState("");
-
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<NullableString>(null);
   const [success, setSuccess] = useState<NullableString>(null);
-
   const [testingCRM, setTestingCRM] = useState<NullableString>(null);
   const [importingCRM, setImportingCRM] = useState<NullableString>(null);
 
@@ -32,7 +31,6 @@ export default function SettingsPage() {
     const {
       data: { session },
     } = await supabase.auth.getSession();
-
     const token = session?.access_token;
     if (!token) throw new Error("Not logged in (missing access token).");
     return token;
@@ -47,7 +45,6 @@ export default function SettingsPage() {
     try {
       setError(null);
       const token = await getAuthToken();
-
       const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -82,7 +79,6 @@ export default function SettingsPage() {
 
     try {
       const token = await getAuthToken();
-
       const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
         method: "POST",
         headers: {
@@ -125,7 +121,6 @@ export default function SettingsPage() {
 
     try {
       const token = await getAuthToken();
-
       const res = await fetch(
         `${apiUrl}/api/v3/settings/crm/integrations/${type}/test`,
         {
@@ -197,11 +192,13 @@ export default function SettingsPage() {
 
     try {
       const token = await getAuthToken();
-
-      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations/${type}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch(
+        `${apiUrl}/api/v3/settings/crm/integrations/${type}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
       if (!res.ok) {
         const txt = await res.text();
@@ -222,11 +219,11 @@ export default function SettingsPage() {
 
   if (!isConfigured) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2">CRM Settings</h1>
-        <div className="bg-red-100 p-4 rounded text-red-700">
-          Missing <code>VITE_API_URL</code>. Set it to your Render base URL (no trailing slash).
-        </div>
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">CRM Settings</h1>
+        <p className="text-red-600">
+          Missing VITE_API_URL. Set it to your Render base URL (no trailing slash).
+        </p>
       </div>
     );
   }
@@ -236,35 +233,37 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold mb-6">CRM Settings</h1>
 
       {error && <div className="bg-red-100 p-4 mb-4 rounded text-red-700">{error}</div>}
+
       {success && (
-        <div className="bg-green-100 p-4 mb-4 rounded text-green-700">{success}</div>
+        <div className="bg-green-100 p-4 mb-4 rounded text-green-700">
+          {success}
+        </div>
       )}
 
       {/* Optional quick action (visible only if HubSpot is saved & active) */}
-      <div className="bg-white p-6 rounded shadow mb-6 flex items-center justify-between">
-        <div>
-          <div className="text-lg font-bold">Quick actions</div>
-          <div className="text-sm text-gray-500">
+      {hubspotIntegration && (
+        <div className="bg-blue-50 p-4 mb-6 rounded border border-blue-200">
+          <h3 className="font-bold text-blue-900 mb-2">Quick actions</h3>
+          <p className="text-sm text-blue-800 mb-3">
             Import uses the saved key from Settings (no API key sent in the request).
-          </div>
+          </p>
+          <button
+            onClick={() => handleImportContacts("hubspot")}
+            disabled={!hubspotIntegration || importingCRM === "hubspot"}
+            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
+            title={!hubspotIntegration ? "Save and activate HubSpot first" : "Start HubSpot import"}
+          >
+            {importingCRM === "hubspot" ? "Importing..." : "Import HubSpot"}
+          </button>
         </div>
+      )}
 
-        <button
-          onClick={() => handleImportContacts("hubspot")}
-          disabled={!hubspotIntegration || importingCRM === "hubspot"}
-          className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-          title={!hubspotIntegration ? "Save and activate HubSpot first" : "Start HubSpot import"}
-        >
-          {importingCRM === "hubspot" ? "Importing..." : "Import HubSpot"}
-        </button>
-      </div>
-
+      {/* Add Integration Form */}
       <div className="bg-white p-6 rounded shadow mb-6">
         <h2 className="text-lg font-bold mb-4">Add Integration</h2>
-
         <form onSubmit={handleSave} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium">CRM Type</label>
+            <label className="block text-sm font-medium mb-1">CRM Type</label>
             <select
               value={crmType}
               onChange={(e) => setCrmType(e.target.value)}
@@ -277,7 +276,7 @@ export default function SettingsPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium">API Key</label>
+            <label className="block text-sm font-medium mb-1">API Key</label>
             <input
               type="password"
               value={apiKey}
@@ -298,20 +297,23 @@ export default function SettingsPage() {
         </form>
       </div>
 
+      {/* Saved Integrations */}
       <div className="bg-white p-6 rounded shadow">
         <h2 className="text-lg font-bold mb-4">Saved Integrations</h2>
-
         {integrations.length === 0 ? (
           <p className="text-gray-500">No integrations yet</p>
         ) : (
           <div className="space-y-4">
             {integrations.map((int) => (
-              <div key={int.id} className="flex items-center justify-between p-4 border rounded">
+              <div
+                key={int.id}
+                className="flex items-center justify-between p-4 border rounded"
+              >
                 <div>
-                  <div className="font-bold">{int.crm_type.toUpperCase()}</div>
-                  <div className="text-sm text-gray-500">
+                  <h3 className="font-bold">{int.crm_type.toUpperCase()}</h3>
+                  <p className="text-sm text-gray-500">
                     {int.is_active ? "Active" : "Inactive"}
-                  </div>
+                  </p>
                 </div>
 
                 <div className="space-x-2">
