@@ -209,30 +209,32 @@ async def list_crm_integrations(
 ) -> dict:
     """Get all CRM integrations for the current user"""
     try:
-        supabase = get_supabase_anon()
-
         result = (
-            supabase.table("crm_integrations")
+            supabase_service.table("crm_integrations")
             .select("*")
             .eq("user_id", user.id)
             .execute()
         )
-
+        
+        integrations = result.data or []
         logger.info(
-            f"Retrieved {len(result.data or [])} CRM integrations",
-            extra={"user_id": user.id}
+            f"Retrieved {len(integrations)} CRM integrations",
+            extra={"user_id": user.id},
         )
-
+        
         return {
-            "integrations": result.data or [],
-            "count": len(result.data or [])
+            "success": True,
+            "integrations": integrations,
+            "count": len(integrations),
         }
-
-    except HTTPException:
-        raise
+        
     except Exception as e:
-        logger.error(f"❌ Error listing CRM integrations: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to retrieve integrations")
+        logger.error(
+            f"Failed to retrieve CRM integrations: {str(e)}",
+            extra={"user_id": user.id},
+        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve CRM integrations")
+        
 
 @router.get("/integrations/{crm_type}", response_model=dict)
 async def get_crm_integration(
@@ -368,3 +370,4 @@ async def delete_crm_integration(
     except Exception as e:
         logger.error(f"❌ Error deleting {crm_type} integration: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete integration")
+        
