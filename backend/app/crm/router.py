@@ -24,6 +24,9 @@ from .hubspot_client import HubSpotClient
 from .salesforce_client import SalesforceClient
 from .pipedrive_client import PipedriveClient
 
+from crm.settings_router import supabase_service
+
+
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
@@ -89,12 +92,14 @@ def get_crm_credentials(user_id: str, crm_type: str) -> dict:
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
 
+    client = supabase_service if supabase_service else supabase
+    
     result = (
-        supabase.table("crm_integrations")
-        .select("*")
-        .eq("user_id", user_id)
+        client.table("crm_integrations")
+        .select("api_key")
+        .eq("user_id", user.id)
         .eq("crm_type", crm_type)
-        .eq("is_active", True)
+        .single()
         .execute()
     )
 
@@ -670,3 +675,4 @@ def _process_pipedrive_import(job_id: UUID, user_id: str, client: PipedriveClien
             "error_message": str(e)[:500],
             "completed_at": datetime.utcnow().isoformat(),
         }).eq("id", str(job_id)).execute()
+        
