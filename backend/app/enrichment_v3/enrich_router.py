@@ -37,17 +37,26 @@ else:
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-pro")
 
+import re
 
 def strip_code_fences(content: str) -> str:
   """Remove markdown code fences from AI response"""
   content = content.strip()
-  fence = chr(96) + chr(96) + chr(96)
-  if content.startswith(fence):
-    content = content.split("\n", 1)[-1]
-  if content.endswith(fence):
-    content = content.rsplit("\n", 1)[0]
-  return content.strip()
+  # Build fence pattern using chr(96) to avoid string literal issues
+  fence = chr(96) * 3  # Three backtick characters
+  fence_json = fence + "json"
+  
+  # Remove opening fences
+  if content.startswith(fence_json):
+    content = content[len(fence_json):].lstrip()
+  elif content.startswith(fence):
+    content = content[len(fence):].lstrip()
     
+  # Remove closing fences
+  if content.endswith(fence):
+    content = content[:-len(fence)].rstrip()
+    
+  return content.strip()
 
 # ============================================================================
 # AUTH
