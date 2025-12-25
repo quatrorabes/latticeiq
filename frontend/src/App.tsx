@@ -5,11 +5,13 @@ import { supabase } from './lib/supabaseClient';
 import Layout from './components/Layout';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
-import ContactsPage from './pages/ContactsPage';
 import Dashboard from './pages/Dashboard';
 import EnrichmentPage from './pages/EnrichmentPage';
 import SettingsPage from './pages/SettingsPage';
 import ProfileConfigPage from './pages/ProfileConfigPage';
+import ContactDetailModal from './components/ContactDetailModal';
+import ContactsPage from './pages/ContactsPage';
+import ScoringConfigPage from './pages/ScoringConfigPage';
 
 function App() {
   const [session, setSession] = useState<boolean | null>(null);
@@ -44,6 +46,7 @@ function App() {
           <Route path="contacts" element={<ContactsPage />} />
           <Route path="dashboard" element={<Dashboard />} />
           <Route path="enrichment" element={<EnrichmentPage />} />
+          <Route path="/scoring" element={<ScoringConfigPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="profile-config" element={<ProfileConfigPage />} />
         </Route>

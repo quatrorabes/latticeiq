@@ -39,6 +39,11 @@ export default function Sidebar({ onLogout }: SidebarProps) {
       </div>
 
       {/* Navigation */}
+      // Add navigation links:
+      <NavLink to="/contacts">
+        <Users size={18} />
+        <span>Contacts</span>
+      </NavLink>
       <nav className="flex-1 p-4 space-y-2">
         {navItems.map((item) => (
           <button
