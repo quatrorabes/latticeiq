@@ -40,7 +40,7 @@ export const BANTConfig: React.FC = () => {
     (async () => {
       setLoading(true);
       try {
-        const data = await getScoringConfig('BANT');
+        const data = await getScoringConfig('bant');
         if (!isMounted) return;
         setConfig({
           budget_weight: data.budget_weight ?? DEFAULT_BANT_CONFIG.budget_weight,
@@ -85,7 +85,7 @@ export const BANTConfig: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveScoringConfig('BANT', config);
+      await saveScoringConfig('bant', config);
       alert('BANT configuration saved');
     } catch (e) {
       console.error('Failed to save BANT config:', e);

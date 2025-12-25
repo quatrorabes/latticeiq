@@ -38,7 +38,7 @@ export const SPICEConfig: React.FC = () => {
     (async () => {
       setLoading(true);
       try {
-        const data = await getScoringConfig('SPICE');
+        const data = await getScoringConfig('spice');
         if (!isMounted) return;
         setConfig({
           situation_weight:
@@ -88,7 +88,7 @@ export const SPICEConfig: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveScoringConfig('SPICE', config);
+      await saveScoringConfig('spice', config);
       alert('SPICE configuration saved');
     } catch (e) {
       console.error('Failed to save SPICE config:', e);

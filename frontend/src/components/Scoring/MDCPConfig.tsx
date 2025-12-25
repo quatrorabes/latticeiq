@@ -41,7 +41,7 @@ export const MDCPConfig: React.FC = () => {
     (async () => {
       setLoading(true);
       try {
-        const data = await getScoringConfig('MDCP');
+        const data = await getScoringConfig('mdcp');
         if (!isMounted) return;
 
         // Defensive mapping: fall back to defaults if fields missing
@@ -93,7 +93,7 @@ export const MDCPConfig: React.FC = () => {
   const handleSave = async () => {
     setSaving(true);
     try {
-      await saveScoringConfig('MDCP', config);
+      await saveScoringConfig('mdcp', config);
       alert('MDCP configuration saved');
     } catch (e) {
       console.error('Failed to save MDCP config:', e);
