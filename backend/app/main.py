@@ -1,9 +1,6 @@
 # ============================================================================
-
 # FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
-
 # ============================================================================
-
 """
 Enterprise-grade FastAPI application for LatticeIQ
 
@@ -41,79 +38,45 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
 
-# Add import at top (with other imports)
-from app.enrichment_v3.enrich_router import router as enrich_router
-
-# Add registration (near other router includes, around line 50-100)
-app.include_router(enrich_router, prefix="/api/v3")
-
-
-# Quick enrich disabled for now - using router instead
-QUICK_ENRICH_AVAILABLE = False
-
-
-
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
 
-
 # ============================================================================
-# ROUTER IMPORTS (with error handling)
+# CREATE APP FIRST (before importing routers)
 # ============================================================================
 
-# CRM Settings Router
-try:
-    from crm.settings_router import router as settings_router
+app = FastAPI(
+    title="LatticeIQ Sales Intelligence API",
+    version="3.0.0",
+    description="Enterprise sales enrichment and lead scoring platform",
+    docs_url="/api/docs",
+    openapi_url="/api/openapi.json",
+    redoc_url="/api/redoc",
+)
 
-    SETTINGS_ROUTER_AVAILABLE = True
-    print("✅ CRM Settings router imported")
-except ImportError as e:
-    settings_router = None
-    SETTINGS_ROUTER_AVAILABLE = False
-    print(f"❌ CRM Settings router import failed: {e}")
+# ========================================
+# Add middleware
+# ========================================
 
-# CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
-try:
-    from crm.router import router as crm_router
+app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    CRM_ROUTER_AVAILABLE = True
-    print("✅ CRM router imported")
-except ImportError as e:
-    crm_router = None
-    CRM_ROUTER_AVAILABLE = False
-    print(f"❌ CRM router import failed: {e}")
-
-# Enrichment Router (Perplexity/GPT-4)
-try:
-    from enrichment_v3 import router as enrichment_router
-
-    ENRICHMENT_AVAILABLE = True
-    print("✅ Enrichment router imported")
-except ImportError as e:
-    enrichment_router = None
-    ENRICHMENT_AVAILABLE = False
-    print(f"❌ Enrichment router import failed: {e}")
-
-# Scoring Router (MDCP/BANT/SPICE)
-try:
-    from scoring.router import router as scoring_router
-
-    SCORING_AVAILABLE = True
-    print("✅ Scoring router imported")
-except ImportError as e:
-    scoring_router = None
-    SCORING_AVAILABLE = False
-    print(f"❌ Scoring router import failed: {e}")
+# Quick enrich disabled for now - using router instead
+QUICK_ENRICH_AVAILABLE = False
 
 # ============================================================================
 # CONFIGURATION & SETTINGS
 # ============================================================================
 
-
 class Settings(BaseModel):
     """Application configuration"""
-
     SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
     SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
@@ -132,11 +95,9 @@ class Settings(BaseModel):
             ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
         )
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings.from_env()
-
 
 settings = get_settings()
 
@@ -144,28 +105,23 @@ settings = get_settings()
 # LOGGING SETUP
 # ============================================================================
 
-
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("latticeiq")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-
     handler = logging.StreamHandler()
     formatter = jsonlogger.JsonFormatter(
         "%(timestamp)s %(level)s %(name)s %(message)s %(request_id)s"
     )
     handler.setFormatter(formatter)
-
     logger.handlers.clear()
     logger.addHandler(handler)
     return logger
-
 
 logger = setup_logging(settings.LOG_LEVEL)
 
 # ============================================================================
 # DATABASE INITIALIZATION
 # ============================================================================
-
 
 def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
@@ -182,9 +138,7 @@ def initialize_supabase() -> Optional[Client]:
         )
         return None
 
-
 supabase = initialize_supabase()
-
 
 async def validate_database_schema():
     if not supabase:
@@ -199,16 +153,13 @@ async def validate_database_schema():
         except Exception as e:
             logger.error(f"❌ Table validation failed for {table}: {str(e)}")
 
-
 # ============================================================================
 # PYDANTIC MODELS
 # ============================================================================
 
-
 class CurrentUser(BaseModel):
     id: str
     email: str = ""
-
 
 class ContactCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
@@ -220,7 +171,6 @@ class ContactCreate(BaseModel):
     linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
 
-
 class ContactUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
     last_name: Optional[str] = Field(None, max_length=100)
@@ -230,17 +180,14 @@ class ContactUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
-
     enrichment_data: Optional[dict] = None
     mdcp_score: Optional[int] = Field(None, ge=0, le=100)
     bant_score: Optional[int] = Field(None, ge=0, le=100)
     spice_score: Optional[int] = Field(None, ge=0, le=100)
 
-
 # ============================================================================
 # AUTHENTICATION (Supabase-validated)
 # ============================================================================
-
 
 async def get_current_user(
     authorization: str = Header(None),
@@ -252,7 +199,6 @@ async def get_current_user(
     """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database unavailable")
-
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -290,286 +236,132 @@ async def get_current_user(
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-
 # ============================================================================
-# FASTAPI APPLICATION
-# ============================================================================
-
-app = FastAPI(
-    title="LatticeIQ Sales Intelligence API",
-    version="3.0.0",
-    description="Enterprise sales enrichment and lead scoring platform",
-    docs_url="/api/docs",
-    openapi_url="/api/openapi.json",
-    redoc_url="/api/redoc",
-)
-
-# ============================================================================
-# MIDDLEWARE STACK
+# ROUTER IMPORTS (with error handling)
 # ============================================================================
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID", "X-Process-Time"],
-    max_age=3600,
-)
+# CRM Settings Router
+try:
+    from app.crm.settings_router import router as settings_router
+    SETTINGS_ROUTER_AVAILABLE = True
+    print("✅ CRM Settings router imported")
+except ImportError as e:
+    settings_router = None
+    SETTINGS_ROUTER_AVAILABLE = False
+    print(f"❌ CRM Settings router import failed: {e}")
 
-app.add_middleware(GZipMiddleware, minimum_size=1000)
+# CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
+try:
+    from app.crm.router import router as crm_router
+    CRM_ROUTER_AVAILABLE = True
+    print("✅ CRM router imported")
+except ImportError as e:
+    crm_router = None
+    CRM_ROUTER_AVAILABLE = False
+    print(f"❌ CRM router import failed: {e}")
 
-# ---------------------------------------------------------------------------
-# FORCE CORS HEADERS (fixes cases where proxies/cache/preflight drop headers)
-# ---------------------------------------------------------------------------
+# Enrichment Router (Perplexity/GPT-4)
+try:
+    from app.enrichment_v3.enrich_router import router as enrich_router
+    ENRICH_ROUTER_AVAILABLE = True
+    print("✅ Enrichment router imported")
+except ImportError as e:
+    enrich_router = None
+    ENRICH_ROUTER_AVAILABLE = False
+    print(f"❌ Enrichment router import failed: {e}")
 
-@app.middleware("http")
-async def force_cors_headers(request: Request, call_next):
-    # Handle preflight explicitly
-    if request.method == "OPTIONS":
-        resp = Response(status_code=200)
-    else:
-        resp = await call_next(request)
-
-    resp.headers["Access-Control-Allow-Origin"] = request.headers.get("origin", "*")
-    resp.headers["Vary"] = "Origin"
-    resp.headers["Access-Control-Allow-Credentials"] = "true"
-    resp.headers["Access-Control-Allow-Methods"] = "GET,POST,PUT,DELETE,PATCH,OPTIONS"
-    resp.headers["Access-Control-Allow-Headers"] = request.headers.get(
-        "access-control-request-headers",
-        "Authorization,Content-Type,X-Request-ID",
-    )
-    return resp
-
-
-# ============================================================================
-# EXCEPTION HANDLERS
-# ============================================================================
-
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    logger.error(
-        f"HTTP {exc.status_code}: {exc.detail}",
-        extra={"request_id": request_id, "path": str(request.url.path)},
-    )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": exc.detail,
-            "request_id": request_id,
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
-    logger.warning("Validation error", extra={"request_id": request_id, "errors": exc.errors()})
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-        content={"detail": exc.errors(), "request_id": request_id},
-    )
-
+# Scoring Router (MDCP/BANT/SPICE)
+try:
+    from app.scoring.router import router as scoring_router
+    SCORING_AVAILABLE = True
+    print("✅ Scoring router imported")
+except ImportError as e:
+    scoring_router = None
+    SCORING_AVAILABLE = False
+    print(f"❌ Scoring router import failed: {e}")
 
 # ============================================================================
-# HEALTH ENDPOINTS
+# REGISTER ALL ROUTERS (after app creation)
 # ============================================================================
 
+if SETTINGS_ROUTER_AVAILABLE:
+    app.include_router(settings_router, prefix="/api/v3")
+    print("✅ Settings router registered at /api/v3")
 
-def _health_payload() -> dict:
-    return {
-        "status": "ok",
-        "version": "3.0.0",
-        "timestamp": datetime.utcnow().isoformat(),
-        "supabase": "connected" if supabase else "disconnected",
-        "environment": settings.ENVIRONMENT,
-        "crm_available": CRM_ROUTER_AVAILABLE,
-        "enrichment_available": ENRICHMENT_AVAILABLE,
-        "scoring_available": SCORING_AVAILABLE,
-        "settings_available": SETTINGS_ROUTER_AVAILABLE,
-    }
+if CRM_ROUTER_AVAILABLE:
+    app.include_router(crm_router, prefix="/api/v3")
+    print("✅ CRM router registered at /api/v3")
 
+if ENRICH_ROUTER_AVAILABLE:
+    app.include_router(enrich_router, prefix="/api/v3")
+    print("✅ Enrichment router registered at /api/v3")
+
+if SCORING_AVAILABLE:
+    app.include_router(scoring_router, prefix="/api/v3")
+    print("✅ Scoring router registered at /api/v3")
+
+# ============================================================================
+# HEALTH CHECK ENDPOINT
+# ============================================================================
 
 @app.get("/health")
-async def health_check():
-    return _health_payload()
-
-
-@app.get("/api/health")
-async def api_health():
-    return _health_payload()
-
-
-@app.get("/apihealth")
-async def apihealth_alias():
-    return _health_payload()
-
-
-@app.get("/api/v3/health")
-async def api_v3_health():
-    return _health_payload()
-
-
-@app.get("/")
-async def root():
+async def health():
     return {
-        "message": "LatticeIQ Sales Intelligence API",
-        "version": "3.0.0",
-        "docs": "/api/docs",
-        "environment": settings.ENVIRONMENT,
-        "modules": {
-            "crm": CRM_ROUTER_AVAILABLE,
-            "enrichment": ENRICHMENT_AVAILABLE,
-            "scoring": SCORING_AVAILABLE,
-            "settings": SETTINGS_ROUTER_AVAILABLE,
-        },
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "database": "connected" if supabase else "disconnected",
     }
 
-
 # ============================================================================
-# CONTACTS CRUD ENDPOINTS (v3)
-# ============================================================================
-
-contacts_router = APIRouter(prefix="/api/v3/contacts", tags=["Contacts"])
-
-
-@contacts_router.get("", response_model=dict)
-def list_contacts(
-    limit: int = 100,
-    offset: int = 0,
-    user: CurrentUser = Depends(get_current_user),
-):
-    request_id = str(uuid.uuid4())
-    try:
-        if not supabase:
-            raise HTTPException(status_code=503, detail="Database unavailable")
-
-        result = (
-            supabase.table("contacts")
-            .select("*", count="exact")
-            .eq("user_id", user.id)
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-
-        logger.info(
-            f"Retrieved {len(result.data or [])} contacts",
-            extra={"user_id": user.id, "request_id": request_id},
-        )
-
-        return {
-            "contacts": result.data or [],
-            "count": result.count,
-            "total": result.count,
-            "limit": limit,
-            "offset": offset,
-        }
-
-    except Exception as e:
-        logger.error(
-            f"Error listing contacts: {str(e)}",
-            extra={"user_id": user.id, "request_id": request_id},
-        )
-        raise HTTPException(status_code=500, detail="Failed to retrieve contacts")
-
-# Add this near the bottom of main.py, after other router includes
-@app.post("/api/v3/enrich/all")
-async def enrich_all_contacts(
-    user: CurrentUser = Depends(get_current_user),
-):
-    """Quick enrich all pending contacts for a user"""
-    try:
-        if not QUICK_ENRICH_AVAILABLE:
-            raise HTTPException(
-                status_code=503,
-                detail="Quick enrichment service unavailable"
-            )
-            
-        # Get Supabase client
-        sb = supabase.create_client(
-            os.getenv("SUPABASE_URL"),
-            os.getenv("SUPABASE_ANON_KEY")
-        )
-        
-        # Fetch pending contacts for this user
-        response = sb.table("contacts").select("*").eq(
-            "user_id", user.id
-        ).eq("enrichment_status", "pending").limit(100).execute()
-        
-        contacts = response.data or []
-        enriched_count = 0
-        
-        for contact in contacts:
-            try:
-                result = await quick_enrich(contact)
-                if result and result.get("success"):
-                    enriched_count += 1
-            except Exception as e:
-                continue
-            
-        return {
-            "success": True,
-            "message": f"Enriched {enriched_count} of {len(contacts)} contacts",
-            "enriched_count": enriched_count,
-            "total_count": len(contacts)
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-        
-# ============================================================================
-# ROUTER REGISTRATION
-# ============================================================================
-
-app.include_router(contacts_router)
-
-app.include_router(enrich_router, prefix="/api/v3")
-
-if CRM_ROUTER_AVAILABLE and crm_router is not None:
-    app.include_router(crm_router, prefix="/api/v3/crm")
-    print("✅ CRM router registered at /api/v3/crm")
-
-if ENRICHMENT_AVAILABLE and enrichment_router is not None:
-    app.include_router(enrichment_router, prefix="/api/v3/enrichment")
-    print("✅ Enrichment router registered at /api/v3/enrichment")
-
-if SCORING_AVAILABLE and scoring_router is not None:
-    app.include_router(scoring_router, prefix="/api/v3/scoring")
-    print("✅ Scoring router registered at /api/v3/scoring")
-
-if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    app.include_router(settings_router, prefix="/api/v3")
-    print("✅ Settings router registered at /api/v3/settings/crm")
-    
-
-# ============================================================================
-# STARTUP / SHUTDOWN
+# STARTUP/SHUTDOWN EVENTS
 # ============================================================================
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("=" * 70)
-    logger.info("🚀 LatticeIQ API Starting Up")
-    logger.info("=" * 70)
-    logger.info(f"Environment: {settings.ENVIRONMENT}")
-    logger.info("Version: 3.0.0")
-    logger.info(f"Supabase: {'Connected' if supabase else 'Disconnected'}")
-    logger.info(f"CRM Module: {'✅ Available' if CRM_ROUTER_AVAILABLE else '❌ Not Available'}")
-    logger.info(f"Settings Module: {'✅ Available' if SETTINGS_ROUTER_AVAILABLE else '❌ Not Available'}")
-    logger.info(f"Enrichment Module: {'✅ Available' if ENRICHMENT_AVAILABLE else '❌ Not Available'}")
-    logger.info(f"Scoring Module: {'✅ Available' if SCORING_AVAILABLE else '❌ Not Available'}")
+    logger.info("🚀 LatticeIQ API starting up...")
     await validate_database_schema()
-    logger.info("=" * 70)
-
+    logger.info("✅ Application startup complete")
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("🛑 LatticeIQ API Shutting Down")
-    
+    logger.info("🛑 LatticeIQ API shutting down...")
+
+# ============================================================================
+# ERROR HANDLERS
+# ============================================================================
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={
+            "detail": exc.errors(),
+            "body": exc.body,
+        },
+    )
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail},
+    )
+
+# ============================================================================
+# ROOT ENDPOINT
+# ============================================================================
+
+@app.get("/")
+async def root():
+    return {
+        "name": "LatticeIQ Sales Intelligence API",
+        "version": "3.0.0",
+        "endpoints": {
+            "health": "/health",
+            "docs": "/api/docs",
+            "crm_settings": "/api/v3/settings/crm",
+            "crm_import": "/api/v3/import",
+            "enrich": "/api/v3/enrich",
+            "scoring": "/api/v3/score",
+        },
+    }
