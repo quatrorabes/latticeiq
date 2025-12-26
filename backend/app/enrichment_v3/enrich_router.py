@@ -7,7 +7,6 @@ Contact Enrichment API - Uses Perplexity AI to enrich contact data
 
 import os
 import json
-import re
 import logging
 from typing import Any, Dict
 from datetime import datetime
@@ -27,36 +26,15 @@ SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
 if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-  supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 elif SUPABASE_URL and SUPABASE_ANON_KEY:
-  supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
 else:
-  supabase = None
-  
+    supabase = None
+
 # Perplexity API
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-pro")
-
-import re
-
-def strip_code_fences(content: str) -> str:
-  """Remove markdown code fences from AI response"""
-  content = content.strip()
-  # Build fence pattern using chr(96) to avoid string literal issues
-  fence = chr(96) * 3  # Three backtick characters
-  fence_json = fence + "json"
-  
-  # Remove opening fences
-  if content.startswith(fence_json):
-    content = content[len(fence_json):].lstrip()
-  elif content.startswith(fence):
-    content = content[len(fence):].lstrip()
-    
-  # Remove closing fences
-  if content.endswith(fence):
-    content = content[:-len(fence)].rstrip()
-    
-  return content.strip()
 
 # ============================================================================
 # AUTH
@@ -99,21 +77,6 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
 # ============================================================================
 
 router = APIRouter(prefix="/enrich", tags=["Enrichment"])
-
-# ============================================================================
-# HELPER: Strip code fences from response
-# ============================================================================
-
-def strip_code_fences(content: str) -> str:
-    """Remove markdown code fences from AI response"""
-    content = content.strip()
-    if content.startswith(CODE_FENCE_JSON):
-        content = content[len(CODE_FENCE_JSON):]
-    elif content.startswith(CODE_FENCE):
-        content = content[len(CODE_FENCE):]
-    if content.endswith(CODE_FENCE):
-        content = content[:-len(CODE_FENCE)]
-    return content.strip()
 
 # ============================================================================
 # ENRICH CONTACT ENDPOINT
@@ -213,7 +176,14 @@ Return ONLY valid JSON, no markdown or extra text."""
             raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
 
         # 5. Parse response (handle markdown code fences)
-        content = strip_code_fences(raw_content)
+        content = raw_content.strip()
+        if content.startswith("```
+            content = content[7:]
+        if content.startswith("```"):
+            content = content[3:]
+        if content.endswith("```
+            content = content[:-3]
+        content = content.strip()
 
         try:
             enrichment_data = json.loads(content)
@@ -237,7 +207,7 @@ Return ONLY valid JSON, no markdown or extra text."""
 
         supabase.table("contacts").update(update_data).eq("id", contact_id).execute()
 
-        logger.info(f"Enriched contact {contact_id}", extra={"user_id": user_id})
+        logger.info(f"✅ Enriched contact {contact_id}", extra={"user_id": user_id})
 
         return {
             "success": True,
@@ -286,4 +256,3 @@ async def get_enrichment_status(
         "enrichment_data": result.data.get("enrichment_data"),
         "enriched_at": result.data.get("enriched_at"),
     }
-    
