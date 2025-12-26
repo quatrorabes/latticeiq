@@ -63,7 +63,7 @@ export default function ContactsPage() {
 
       if (!response.ok) throw new Error('Failed to fetch contacts');
       const data = await response.json();
-      setContacts(data || []);
+      setContacts(data.contacts || []);
     } catch (err) {
       console.error('Error fetching contacts:', err);
     } finally {
