@@ -1,40 +1,8 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { supabase } from '../lib/supabaseClient';
+import type { Contact } from '../types/contact';
 
 const APIURL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-
-interface Contact {
-  id: string;
-  userid: string;
-  firstname: string;
-  lastname: string;
-  email: string;
-  phone?: string | null;
-  company?: string | null;
-  title?: string | null;
-  linkedinurl?: string | null;
-  website?: string | null;
-  vertical?: string | null;
-  personatype?: string | null;
-  enrichmentstatus: 'pending' | 'processing' | 'completed' | 'failed';
-  enrichmentdata?: {
-    summary?: string;
-    openingline?: string;
-    talkingpoints?: string[];
-    personatype?: string;
-    vertical?: string;
-    inferredtitle?: string;
-    inferredcompanywebsite?: string;
-    inferredlocation?: string;
-    rawtext?: string;
-  } | null;
-  apexscore?: number | null;
-  mdcscore?: number | null;
-  rssscore?: number | null;
-  createdat?: string;
-  updatedat?: string;
-}
 
 interface ContactDetailModalProps {
   contact: Contact | null;
@@ -50,286 +18,234 @@ export default function ContactDetailModal({
   onEnrichComplete,
 }: ContactDetailModalProps) {
   const [enriching, setEnriching] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'enrichment'>('overview');
 
-  if (!contact || !isOpen) return null;
+  if (!isOpen || !contact) return null;
 
-  const enrichContact = async () => {
+  const handleEnrich = async () => {
+    if (!contact?.id) return;
+    
+    setEnriching(true);
     try {
-      setEnriching(true);
-      
-      // Get Supabase session for JWT token
-      const { data } = await supabase.auth.getSession();
-      const token = data?.session?.access_token;
-
-      if (!token) {
-        alert('Authentication required. Please log in.');
-        return;
-      }
-
-      // Call the correct endpoint: /api/v3/enrichment/quick-enrich/{contact_id}
       const response = await fetch(
         `${APIURL}/api/v3/enrichment/quick-enrich/${contact.id}`,
         {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}),
+          headers: { 'Content-Type': 'application/json' },
         }
       );
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Enrichment failed');
-      }
+      if (!response.ok) throw new Error('Enrichment failed');
 
-      // Success - refresh after a moment to allow backend processing
-      setTimeout(() => {
-        onEnrichComplete?.();
-        alert('Enrichment triggered! Data will appear in a few seconds.');
-      }, 500);
-    } catch (err) {
-      console.error('Enrichment error:', err);
-      alert(`Error: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const result = await response.json();
+      console.log('✅ Enrichment result:', result);
+
+      if (onEnrichComplete) {
+        onEnrichComplete();
+      }
+    } catch (error) {
+      console.error('❌ Enrichment error:', error);
+      alert('Enrichment failed. Please try again.');
     } finally {
       setEnriching(false);
     }
   };
 
-  const getEnrichmentStatus = () => {
-    switch (contact.enrichmentstatus) {
+  const getStatusColor = (status: string) => {
+    switch (status) {
       case 'completed':
-        return <span className="text-xs px-2 py-1 bg-green-900 text-green-300 rounded">✓ Enriched</span>;
+        return 'bg-green-100 text-green-800';
       case 'processing':
-        return <span className="text-xs px-2 py-1 bg-blue-900 text-blue-300 rounded">◐ Processing...</span>;
-      case 'pending':
-        return <span className="text-xs px-2 py-1 bg-yellow-900 text-yellow-300 rounded">○ Pending</span>;
+        return 'bg-blue-100 text-blue-800';
       case 'failed':
-        return <span className="text-xs px-2 py-1 bg-red-900 text-red-300 rounded">✗ Failed</span>;
+        return 'bg-red-100 text-red-800';
       default:
-        return null;
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
   return (
-    <>
-      {/* Overlay */}
-      <div
-        className="fixed inset-0 bg-black bg-opacity-50 z-40"
-        onClick={onClose}
-      />
-
-      {/* Modal */}
-      <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl max-h-[90vh] bg-gray-900 border border-gray-800 rounded-lg shadow-2xl z-50 overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-800">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-start">
           <div>
-            <h2 className="text-xl font-semibold text-white">
-              {contact.firstname} {contact.lastname}
+            <h2 className="text-2xl font-bold text-gray-900">
+              {contact.first_name} {contact.last_name}
             </h2>
-            <p className="text-sm text-gray-400">{contact.email}</p>
+            <p className="text-gray-600 mt-1">{contact.email}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {getEnrichmentStatus()}
-            <button
-              onClick={onClose}
-              className="p-1 hover:bg-gray-800 rounded transition"
-            >
-              <X size={20} className="text-gray-400" />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600"
+          >
+            <X className="w-6 h-6" />
+          </button>
         </div>
 
-        {/* Tabs */}
-        <div className="flex gap-1 px-6 pt-4 border-b border-gray-800">
-          {(['overview', 'enrichment'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 text-sm font-medium capitalize transition ${
-                activeTab === tab
-                  ? 'text-cyan-400 border-b-2 border-cyan-400'
-                  : 'text-gray-400 hover:text-gray-300'
-              }`}
+        <div className="p-6 space-y-6">
+          <div className="flex items-center justify-between">
+            <span
+              className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(
+                contact.enrichment_status
+              )}`}
             >
-              {tab}
-            </button>
-          ))}
-        </div>
+              {contact.enrichment_status}
+            </span>
+          </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {activeTab === 'overview' && (
-            <div className="space-y-3">
-              <DetailRow label="Email" value={contact.email} isLink />
-              <DetailRow label="Phone" value={contact.phone} />
-              <DetailRow label="Company" value={contact.company} />
-              <DetailRow label="Title" value={contact.title} />
-              <DetailRow label="LinkedIn" value={contact.linkedinurl} isLink />
-              <DetailRow label="Website" value={contact.website} isLink />
-              {contact.apexscore !== null && (
-                <DetailRow
-                  label="APEX Score"
-                  value={contact.apexscore?.toString()}
-                />
+          <div className="grid grid-cols-2 gap-4">
+            <DetailRow label="Company" value={contact.company} />
+            <DetailRow label="Title" value={contact.title} />
+            <DetailRow label="Phone" value={contact.phone} />
+            <DetailRow label="Website" value={contact.website} isLink />
+            <DetailRow label="LinkedIn" value={contact.linkedin_url} isLink />
+            
+            {contact.apex_score !== null && (
+              <DetailRow
+                label="Apex Score"
+                value={contact.apex_score?.toString()}
+              />
+            )}
+          </div>
+
+          {contact.enrichment_data ? (
+            <div className="space-y-4">
+              {contact.enrichment_data.summary && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                    Summary
+                  </h3>
+                  <p className="text-gray-600">
+                    {contact.enrichment_data.summary}
+                  </p>
+                </div>
               )}
-              {contact.vertical && (
-                <DetailRow label="Vertical" value={contact.vertical} />
+
+              {contact.enrichment_data.openingline && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                    Opening Line
+                  </h3>
+                  <p className="text-gray-600 italic">
+                    "{contact.enrichment_data.openingline}"
+                  </p>
+                </div>
               )}
-              {contact.personatype && (
-                <DetailRow label="Persona" value={contact.personatype} />
+
+              {contact.enrichment_data.talkingpoints &&
+                contact.enrichment_data.talkingpoints.length > 0 && (
+                  <div>
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                      Talking Points
+                    </h3>
+                    <ul className="list-disc list-inside space-y-1">
+                      {contact.enrichment_data.talkingpoints.map(
+                        (point: string, idx: number) => (
+                          <li key={idx} className="text-gray-600">
+                            {point}
+                          </li>
+                        )
+                      )}
+                    </ul>
+                  </div>
+                )}
+
+              {contact.enrichment_data.inferredcompanywebsite && (
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-700 mb-2">
+                    Company Website
+                  </h3>
+                  <a
+                    href={contact.enrichment_data.inferredcompanywebsite}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-800"
+                  >
+                    {contact.enrichment_data.inferredcompanywebsite}
+                  </a>
+                </div>
               )}
-            </div>
-          )}
 
-          {activeTab === 'enrichment' && (
-            <div className="space-y-6">
-              {contact.enrichmentdata ? (
-                <>
-                  {contact.enrichmentdata.summary && (
+              {(contact.enrichment_data.personatype ||
+                contact.enrichment_data.vertical ||
+                contact.enrichment_data.inferredtitle ||
+                contact.enrichment_data.inferredlocation) && (
+                <div className="grid grid-cols-2 gap-4">
+                  {contact.enrichment_data.personatype && (
                     <div>
-                      <h3 className="text-sm font-semibold text-cyan-400 mb-2">
-                        Summary
-                      </h3>
-                      <p className="text-sm text-gray-300 leading-relaxed">
-                        {contact.enrichmentdata.summary}
-                      </p>
+                      <span className="text-sm font-semibold text-gray-700">
+                        Persona:{' '}
+                      </span>
+                      <span className="text-gray-600">
+                        {contact.enrichment_data.personatype}
+                      </span>
                     </div>
                   )}
-
-                  {contact.enrichmentdata.openingline && (
+                  {contact.enrichment_data.vertical && (
                     <div>
-                      <h3 className="text-sm font-semibold text-cyan-400 mb-2">
-                        Opening Line
-                      </h3>
-                      <p className="text-sm text-gray-300 italic">
-                        "{contact.enrichmentdata.openingline}"
-                      </p>
+                      <span className="text-sm font-semibold text-gray-700">
+                        Vertical:{' '}
+                      </span>
+                      <span className="text-gray-600">
+                        {contact.enrichment_data.vertical}
+                      </span>
                     </div>
                   )}
-
-                  {contact.enrichmentdata.talkingpoints &&
-                    contact.enrichmentdata.talkingpoints.length > 0 && (
-                      <div>
-                        <h3 className="text-sm font-semibold text-cyan-400 mb-2">
-                          Talking Points
-                        </h3>
-                        <ul className="space-y-2">
-                          {contact.enrichmentdata.talkingpoints.map(
-                            (point, idx) => (
-                              <li
-                                key={idx}
-                                className="text-sm text-gray-300 flex items-start gap-2"
-                              >
-                                <span className="text-cyan-400 mt-1">•</span>
-                                <span>{point}</span>
-                              </li>
-                            )
-                          )}
-                        </ul>
-                      </div>
-                    )}
-
-                  {contact.enrichmentdata.inferredcompanywebsite && (
+                  {contact.enrichment_data.inferredtitle && (
                     <div>
-                      <h3 className="text-sm font-semibold text-cyan-400 mb-2">
-                        Company Website
-                      </h3>
-                      <a
-                        href={contact.enrichmentdata.inferredcompanywebsite}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-cyan-400 hover:text-cyan-300 truncate"
-                      >
-                        {contact.enrichmentdata.inferredcompanywebsite}
-                      </a>
+                      <span className="text-sm font-semibold text-gray-700">
+                        Title:{' '}
+                      </span>
+                      <span className="text-gray-600">
+                        {contact.enrichment_data.inferredtitle}
+                      </span>
                     </div>
                   )}
-
-                  {(contact.enrichmentdata.personatype ||
-                    contact.enrichmentdata.vertical ||
-                    contact.enrichmentdata.inferredtitle ||
-                    contact.enrichmentdata.inferredlocation) && (
-                    <div className="grid grid-cols-2 gap-4 pt-4">
-                      {contact.enrichmentdata.personatype && (
-                        <div className="bg-gray-800 p-3 rounded">
-                          <p className="text-xs text-gray-400">Persona</p>
-                          <p className="text-sm text-cyan-400 font-medium">
-                            {contact.enrichmentdata.personatype}
-                          </p>
-                        </div>
-                      )}
-                      {contact.enrichmentdata.vertical && (
-                        <div className="bg-gray-800 p-3 rounded">
-                          <p className="text-xs text-gray-400">Vertical</p>
-                          <p className="text-sm text-cyan-400 font-medium">
-                            {contact.enrichmentdata.vertical}
-                          </p>
-                        </div>
-                      )}
-                      {contact.enrichmentdata.inferredtitle && (
-                        <div className="bg-gray-800 p-3 rounded">
-                          <p className="text-xs text-gray-400">Inferred Title</p>
-                          <p className="text-sm text-cyan-400 font-medium">
-                            {contact.enrichmentdata.inferredtitle}
-                          </p>
-                        </div>
-                      )}
-                      {contact.enrichmentdata.inferredlocation && (
-                        <div className="bg-gray-800 p-3 rounded">
-                          <p className="text-xs text-gray-400">Location</p>
-                          <p className="text-sm text-cyan-400 font-medium">
-                            {contact.enrichmentdata.inferredlocation}
-                          </p>
-                        </div>
-                      )}
+                  {contact.enrichment_data.inferredlocation && (
+                    <div>
+                      <span className="text-sm font-semibold text-gray-700">
+                        Location:{' '}
+                      </span>
+                      <span className="text-gray-600">
+                        {contact.enrichment_data.inferredlocation}
+                      </span>
                     </div>
                   )}
-                </>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-gray-400 mb-4">No enrichment data yet.</p>
                 </div>
               )}
             </div>
+          ) : (
+            <p className="text-gray-500 italic">No enrichment data available</p>
           )}
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex gap-3 p-6 border-t border-gray-800">
+        <div className="sticky bottom-0 bg-gray-50 px-6 py-4 flex justify-end gap-3 border-t border-gray-200">
           <button
-            onClick={enrichContact}
-            disabled={enriching || contact.enrichmentstatus === 'processing'}
-            className={`flex-1 px-4 py-2 rounded font-medium transition ${
-              enriching || contact.enrichmentstatus === 'processing'
-                ? 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                : 'bg-cyan-600 hover:bg-cyan-700 text-white'
+            onClick={handleEnrich}
+            disabled={enriching || contact.enrichment_status === 'processing'}
+            className={`px-4 py-2 rounded-md ${
+              enriching || contact.enrichment_status === 'processing'
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
             }`}
           >
-            {enriching ? '⟳ Enriching...' : 'Enrich Now'}
+            {enriching ? 'Enriching...' : 'Enrich Contact'}
           </button>
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded font-medium transition"
+            className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
           >
             Close
           </button>
         </div>
       </div>
-    </>
+    </div>
   );
 }
-
-/**
- * Helper Components
- */
 
 function DetailRow({
   label,
   value,
-  isLink,
+  isLink = false,
 }: {
   label: string;
   value?: string | null;
@@ -338,20 +254,22 @@ function DetailRow({
   if (!value) return null;
 
   return (
-    <div className="flex justify-between items-center py-2 border-b border-gray-800">
-      <span className="text-sm text-gray-400">{label}</span>
-      {isLink ? (
-        <a
-          href={value}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-sm text-cyan-400 hover:text-cyan-300 truncate"
-        >
-          {value}
-        </a>
-      ) : (
-        <span className="text-sm text-gray-300">{value}</span>
-      )}
+    <div>
+      <dt className="text-sm font-medium text-gray-500">{label}</dt>
+      <dd className="mt-1 text-sm text-gray-900">
+        {isLink ? (
+          <a
+            href={value}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800"
+          >
+            {value}
+          </a>
+        ) : (
+          value
+        )}
+      </dd>
     </div>
   );
 }

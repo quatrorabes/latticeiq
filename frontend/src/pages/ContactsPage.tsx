@@ -2,33 +2,21 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import ContactDetailModal from '../components/ContactDetailModal';
+import type { Contact } from '../types/contact';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-interface Contact {
-  id: string;
-  user_id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  phone?: string;
-  company?: string;
+// Extend the base Contact type with the additional fields we use
+interface ContactWithScores extends Contact {
   job_title?: string;
-  linkedin_url?: string;
-  website?: string;
-  enrichment_status: string;
-  enrichment_data?: Record<string, any>;
   mdcp_score?: number;
   bant_score?: number;
   spice_score?: number;
-  apex_score?: number;
-  created_at: string;
-  updated_at: string;
 }
 
 export default function ContactsPage() {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+  const [contacts, setContacts] = useState<ContactWithScores[]>([]);
+  const [filteredContacts, setFilteredContacts] = useState<ContactWithScores[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState<string>('all');
@@ -92,10 +80,14 @@ export default function ContactsPage() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'enriched':
+      case 'completed':
         return <span className="px-2 py-1 text-xs bg-green-900 text-green-300 rounded">Enriched</span>;
       case 'pending':
         return <span className="px-2 py-1 text-xs bg-yellow-900 text-yellow-300 rounded">Pending</span>;
+      case 'processing':
+        return <span className="px-2 py-1 text-xs bg-blue-900 text-blue-300 rounded">Processing</span>;
+      case 'failed':
+        return <span className="px-2 py-1 text-xs bg-red-900 text-red-300 rounded">Failed</span>;
       default:
         return <span className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded">Not Enriched</span>;
     }
@@ -104,7 +96,7 @@ export default function ContactsPage() {
   // Summary stats
   const stats = {
     total: contacts.length,
-    enriched: contacts.filter((c) => c.enrichment_status === 'enriched').length,
+    enriched: contacts.filter((c) => c.enrichment_status === 'completed').length,
     pending: contacts.filter((c) => c.enrichment_status === 'pending').length,
     avgScore: contacts.length > 0
       ? Math.round(
@@ -147,9 +139,10 @@ export default function ContactsPage() {
             className="px-4 py-2 bg-gray-900 border border-gray-800 rounded text-white focus:outline-none focus:border-cyan-600"
           >
             <option value="all">All Status</option>
-            <option value="enriched">Enriched</option>
+            <option value="completed">Enriched</option>
             <option value="pending">Pending</option>
-            <option value="not_enriched">Not Enriched</option>
+            <option value="processing">Processing</option>
+            <option value="failed">Failed</option>
           </select>
         </div>
 
@@ -205,7 +198,7 @@ export default function ContactsPage() {
                       </a>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-400">{contact.company || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-400">{contact.job_title || '-'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-400">{contact.job_title || contact.title || '-'}</td>
                     <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.mdcp_score)}`}>
                       {contact.mdcp_score ?? '-'}
                     </td>
@@ -234,8 +227,8 @@ export default function ContactsPage() {
       {/* Contact Detail Modal */}
       <ContactDetailModal
         contact={selectedContact}
+        isOpen={selectedContact !== null}
         onClose={() => setSelectedContact(null)}
-        onUpdate={fetchContacts}
       />
     </div>
   );
@@ -249,3 +242,4 @@ function StatCard({ label, value, accent = 'text-cyan-400' }: { label: string; v
     </div>
   );
 }
+        
