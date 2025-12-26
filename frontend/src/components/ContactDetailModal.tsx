@@ -27,7 +27,7 @@ export default function ContactDetailModal({
     setEnriching(true);
     try {
       const response = await fetch(
-        `${APIURL}/api/v3/enrichment/quick-enrich/${contact.id}`,
+        `${APIURL}/api/v3/enrich/${contact.id}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
