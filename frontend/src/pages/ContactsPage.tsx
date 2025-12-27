@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { ContactDetailModalPremium } from '../components/ContactDetailModalPremium';
 import type { Contact } from '../types/contact';
 
 export default function ContactsPage() {
@@ -107,18 +106,12 @@ export default function ContactsPage() {
         ) : (
           <table className="w-full">
             <thead><tr className="border-b border-slate-700 bg-slate-700">
-              <th className="px-6 py-4 text-left">Name</th>
-              <th className="px-6 py-4 text-left">Email</th>
-              <th className="px-6 py-4 text-left">Company</th>
-              <th className="px-6 py-4 text-left">Title</th>
-              <th className="px-6 py-4 text-left">Score</th>
-              <th className="px-6 py-4 text-left">Status</th>
-              <th className="px-6 py-4 text-left">Actions</th>
+              <th className="px-6 py-4 text-left">Name</th><th className="px-6 py-4 text-left">Email</th><th className="px-6 py-4 text-left">Company</th>
+              <th className="px-6 py-4 text-left">Title</th><th className="px-6 py-4 text-left">Score</th><th className="px-6 py-4 text-left">Status</th><th className="px-6 py-4 text-left">Actions</th>
             </tr></thead>
             <tbody>
               {filteredContacts.map(function(c: Contact) {
-                return (<tr key={c.id} className="border-b border-slate-700 hover:bg-slate-700 cursor-pointer"
-                  onClick={function() { handleRowClick(c); }}>
+                return (<tr key={c.id} className="border-b border-slate-700 hover:bg-slate-700 cursor-pointer" onClick={function() { handleRowClick(c); }}>
                   <td className="px-6 py-4 text-white">{c.first_name} {c.last_name}</td>
                   <td className="px-6 py-4 text-slate-400">{c.email}</td>
                   <td className="px-6 py-4 text-slate-400">{c.company || 'N/A'}</td>
@@ -131,10 +124,7 @@ export default function ContactsPage() {
                       {c.enrichment_status || 'pending'}
                     </span>
                   </td>
-                  <td className="px-6 py-4">
-                    <button onClick={function(e) { handleDeleteContact(c.id, e); }}
-                      className="text-red-400 hover:text-red-300">Delete</button>
-                  </td>
+                  <td className="px-6 py-4"><button onClick={function(e) { handleDeleteContact(c.id, e); }} className="text-red-400">Delete</button></td>
                 </tr>);
               })}
             </tbody>
@@ -142,27 +132,31 @@ export default function ContactsPage() {
         )}
       </div>
       <div className="mt-6 grid grid-cols-3 gap-4">
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <p className="text-slate-400 text-sm">Total</p>
-          <p className="text-3xl font-bold text-white mt-2">{contacts.length}</p>
-        </div>
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <p className="text-slate-400 text-sm">Enriched</p>
-          <p className="text-3xl font-bold text-green-500 mt-2">
-            {contacts.filter(function(c: Contact) { return c.enrichment_status === 'completed'; }).length}
-          </p>
-        </div>
-        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-          <p className="text-slate-400 text-sm">Avg Score</p>
-          <p className="text-3xl font-bold text-blue-500 mt-2">
-            {contacts.length > 0 ? (contacts.reduce(function(s: number, c: Contact) { return s + (c.apex_score||0); }, 0) / contacts.length).toFixed(0) : 'N/A'}
-          </p>
-        </div>
+        <div className="bg-slate-800 rounded-lg p-4"><p className="text-slate-400 text-sm">Total</p><p className="text-3xl font-bold text-white mt-2">{contacts.length}</p></div>
+        <div className="bg-slate-800 rounded-lg p-4"><p className="text-slate-400 text-sm">Enriched</p><p className="text-3xl font-bold text-green-500 mt-2">{contacts.filter(function(c: Contact) { return c.enrichment_status === 'completed'; }).length}</p></div>
+        <div className="bg-slate-800 rounded-lg p-4"><p className="text-slate-400 text-sm">Avg Score</p><p className="text-3xl font-bold text-blue-500 mt-2">{contacts.length > 0 ? (contacts.reduce(function(s: number, c: Contact) { return s + (c.apex_score||0); }, 0) / contacts.length).toFixed(0) : 'N/A'}</p></div>
       </div>
+
       {isModalOpen && selectedContact && (
-        <ContactDetailModalPremium contact={selectedContact} isOpen={isModalOpen}
-          onClose={handleCloseModal} onEnrichComplete={fetchContacts}
-          onContactUpdate={function(c: Contact) { setContacts(contacts.map(function(x: Contact) { return x.id === c.id ? c : x; })); }} />
+        <div className="fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
+          <div className="bg-slate-800 rounded-lg max-w-2xl w-full max-h-96 overflow-y-auto border border-slate-700">
+            <div className="p-6">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">{selectedContact.first_name} {selectedContact.last_name}</h2>
+                  <p className="text-slate-400 text-sm mt-1">{selectedContact.email}</p>
+                </div>
+                <button onClick={handleCloseModal} className="text-slate-400 hover:text-white text-2xl">×</button>
+              </div>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div><p className="text-slate-400 text-sm">Company</p><p className="text-white font-medium">{selectedContact.company || 'N/A'}</p></div>
+                <div><p className="text-slate-400 text-sm">Title</p><p className="text-white font-medium">{selectedContact.job_title || 'N/A'}</p></div>
+                <div><p className="text-slate-400 text-sm">APEX Score</p><p className={'text-lg font-bold ' + getScoreColor(selectedContact.apex_score)}>{selectedContact.apex_score?.toFixed(1) || 'N/A'}</p></div>
+                <div><p className="text-slate-400 text-sm">Status</p><span className={'text-xs px-2 py-1 rounded ' + getStatusBadge(selectedContact.enrichment_status)}>{selectedContact.enrichment_status || 'pending'}</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
