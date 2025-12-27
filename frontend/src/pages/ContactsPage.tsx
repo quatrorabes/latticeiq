@@ -1,4 +1,4 @@
-// frontend/src/pages/ContactsPage.tsx
+// frontend/src/pages/ContactsPage.tsx - COMPLETE FIXED FILE
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ContactDetailModalPremium } from '../components/ContactDetailModalPremium';
@@ -25,7 +25,7 @@ export default function ContactsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {  { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(
@@ -58,41 +58,54 @@ export default function ContactsPage() {
     setFilteredContacts(filtered);
   };
 
+  // ✅ FIX: Properly open modal with selected contact
   const handleRowClick = (contact: Contact) => {
+    console.log('Row clicked:', contact.id, contact.first_name);
     setSelectedContact(contact);
     setIsModalOpen(true);
   };
 
   const handleCloseModal = () => {
+    console.log('Modal closing');
     setIsModalOpen(false);
     setSelectedContact(null);
   };
 
   const handleEnrichComplete = () => {
+    console.log('Enrichment complete, refetching');
     fetchContacts();
   };
 
   const handleContactUpdate = (updatedContact: Contact) => {
+    console.log('Contact updated:', updatedContact.id);
     setContacts(contacts.map(c => c.id === updatedContact.id ? updatedContact : c));
   };
 
-  const handleDeleteContact = async (contactId: string) => {
+  const handleDeleteContact = async (contactId: string, e: React.MouseEvent) => {
+    // ✅ FIX: Prevent row click when deleting
+    e.stopPropagation();
+    
     if (!confirm('Delete this contact?')) return;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      const {  { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      await fetch(
+      const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/contacts/${contactId}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${session.access_token}` },
         }
       );
+
+      if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
+      
       setContacts(contacts.filter(c => c.id !== contactId));
       setIsModalOpen(false);
+      console.log('Contact deleted:', contactId);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed');
+      console.error('Delete error:', err);
     }
   };
 
@@ -190,10 +203,7 @@ export default function ContactsPage() {
                   </td>
                   <td className="px-6 py-4">
                     <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteContact(contact.id);
-                      }}
+                      onClick={(e) => handleDeleteContact(contact.id, e)}
                       className="text-red-400 hover:text-red-300 text-sm font-medium"
                     >
                       Delete
@@ -227,13 +237,16 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      <ContactDetailModalPremium
-        contact={selectedContact}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-        onEnrichComplete={handleEnrichComplete}
-        onContactUpdate={handleContactUpdate}
-      />
+      {/* ✅ FIX: Modal is rendered conditionally based on isModalOpen state */}
+      {isModalOpen && selectedContact && (
+        <ContactDetailModalPremium
+          contact={selectedContact}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          onEnrichComplete={handleEnrichComplete}
+          onContactUpdate={handleContactUpdate}
+        />
+      )}
     </div>
   );
 }
