@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { Contact } from '../types/contact';
 
 interface ContactDetailModalProps {
@@ -38,7 +39,7 @@ export default function ContactDetailModal({ contact, isOpen, onClose, onEnrichC
     </div>
   );
 
-  return (
+  const modalContent = (
     <>
       {/* Backdrop */}
       <div 
@@ -198,4 +199,6 @@ export default function ContactDetailModal({ contact, isOpen, onClose, onEnrichC
       </div>
     </>
   );
+
+  return createPortal(modalContent, document.body);
 }
