@@ -1,4 +1,4 @@
-// frontend/src/pages/ContactsPage.tsx - COMPLETE FIXED FILE
+// frontend/src/pages/ContactsPage.tsx
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ContactDetailModalPremium } from '../components/ContactDetailModalPremium';
@@ -58,7 +58,6 @@ export default function ContactsPage() {
     setFilteredContacts(filtered);
   };
 
-  // ✅ FIX: Properly open modal with selected contact
   const handleRowClick = (contact: Contact) => {
     console.log('Row clicked:', contact.id, contact.first_name);
     setSelectedContact(contact);
@@ -81,10 +80,9 @@ export default function ContactsPage() {
     setContacts(contacts.map(c => c.id === updatedContact.id ? updatedContact : c));
   };
 
-  const handleDeleteContact = async (contactId: string, e: React.MouseEvent) => {
-    // ✅ FIX: Prevent row click when deleting
+  const handleDeleteContact = async (contactId: string, e: MouseEvent) => {
     e.stopPropagation();
-    
+
     if (!confirm('Delete this contact?')) return;
     try {
       const {  { session } } = await supabase.auth.getSession();
@@ -99,7 +97,7 @@ export default function ContactsPage() {
       );
 
       if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
-      
+
       setContacts(contacts.filter(c => c.id !== contactId));
       setIsModalOpen(false);
       console.log('Contact deleted:', contactId);
@@ -203,7 +201,7 @@ export default function ContactsPage() {
                   </td>
                   <td className="px-6 py-4">
                     <button
-                      onClick={(e) => handleDeleteContact(contact.id, e)}
+                      onClick={(e) => handleDeleteContact(contact.id, e as unknown as MouseEvent)}
                       className="text-red-400 hover:text-red-300 text-sm font-medium"
                     >
                       Delete
@@ -237,7 +235,6 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {/* ✅ FIX: Modal is rendered conditionally based on isModalOpen state */}
       {isModalOpen && selectedContact && (
         <ContactDetailModalPremium
           contact={selectedContact}
