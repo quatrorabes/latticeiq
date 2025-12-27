@@ -1,6 +1,7 @@
-import { createContext, useContext, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { createContext, useContext } from 'react';
 
-const PortalContext = createContext<HTMLDivElement | null>(null);
+const PortalContext = createContext<HTMLElement | null>(null);
 
 export function PortalProvider({ children }: { children: ReactNode }) {
   return (
