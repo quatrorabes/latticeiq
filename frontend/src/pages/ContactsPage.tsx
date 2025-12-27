@@ -7,14 +7,43 @@ export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // Listen for auth state changes
   useEffect(() => {
-    fetchContacts();
+    const {  { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('Auth state changed:', event, session?.user?.email);
+      if (session) {
+        setIsAuthenticated(true);
+      } else {
+        setIsAuthenticated(false);
+        setIsLoading(false);
+      }
+    });
+
+    // Check initial session
+    supabase.auth.getSession().then(({  { session } }) => {
+      console.log('Initial session:', session?.user?.email);
+      if (session) {
+        setIsAuthenticated(true);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  // Fetch contacts when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchContacts();
+    }
+  }, [isAuthenticated]);
 
   useEffect(() => {
     filterContacts();
@@ -24,18 +53,39 @@ export default function ContactsPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const authData = await supabase.auth.getSession();
-      const session = authData.data.session;
+      const {  { session } } = await supabase.auth.getSession();
+      
+      console.log('Fetching contacts, session:', session?.user?.email);
+      
       if (!session) {
-        throw new Error('Not authenticated');
+        setError('Please log in to view contacts');
+        setIsLoading(false);
+        return;
       }
+
       const url = `${import.meta.env.VITE_API_URL}/api/v3/contacts`;
-      const headers = { 'Authorization': `Bearer ${session.access_token}` };
-      const response = await fetch(url, { headers });
+      console.log('Fetching from:', url);
+      console.log('Token:', session.access_token.substring(0, 20) + '...');
+
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('Response status:', response.status);
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch: ${response.status}`);
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+        throw new Error(`Failed to fetch: ${response.status} - ${errorText}`);
       }
+
       const data = await response.json();
+      console.log('Contacts loaded:', data);
+      
       const contactList = data.contacts || data || [];
       setContacts(contactList);
     } catch (err) {
@@ -71,40 +121,36 @@ export default function ContactsPage() {
 
   const handleDeleteContact = async (contactId: string, e: React.MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation();
-    if (!confirm('Delete this contact?')) {
-      return;
-    }
+    if (!confirm('Delete this contact?')) return;
+    
     try {
-      const authData = await supabase.auth.getSession();
-      const session = authData.data.session;
+      const {  { session } } = await supabase.auth.getSession();
       if (!session) {
-        throw new Error('Not authenticated');
+        setError('Not authenticated');
+        return;
       }
-      const url = `${import.meta.env.VITE_API_URL}/api/v3/contacts/${contactId}`;
-      const headers = { 'Authorization': `Bearer ${session.access_token}` };
-      const response = await fetch(url, { method: 'DELETE', headers });
-      if (!response.ok) {
-        throw new Error(`Delete failed: ${response.status}`);
-      }
-      const filtered = contacts.filter((c) => c.id !== contactId);
-      setContacts(filtered);
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v3/contacts/${contactId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }
+      );
+
+      if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
+      setContacts(contacts.filter((c) => c.id !== contactId));
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Delete failed';
-      setError(msg);
-      console.error('Delete error:', err);
+      setError(err instanceof Error ? err.message : 'Delete failed');
     }
   };
 
   const getStatusBadge = (status: string | null | undefined) => {
     switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'processing': return 'bg-yellow-100 text-yellow-800';
+      case 'failed': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -114,6 +160,18 @@ export default function ContactsPage() {
     if (score >= 50) return 'text-yellow-600';
     return 'text-red-600';
   };
+
+  // Show login prompt if not authenticated
+  if (!isAuthenticated && !isLoading) {
+    return (
+      <div className="p-6 bg-slate-900 min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-2xl font-bold text-white mb-4">Please Log In</h2>
+          <p className="text-slate-400">You need to be logged in to view contacts.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 bg-slate-900 min-h-screen">
@@ -210,7 +268,7 @@ export default function ContactsPage() {
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm">Avg APEX</p>
           <p className="text-3xl font-bold text-blue-500 mt-2">
-            {contacts.length > 0 
+            {contacts.length > 0
               ? (contacts.filter((c) => c.apex_score).reduce((s, c) => s + (c.apex_score || 0), 0) / contacts.length).toFixed(0)
               : 'N/A'}
           </p>
