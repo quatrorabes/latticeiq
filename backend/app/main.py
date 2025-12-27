@@ -68,9 +68,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Quick enrich disabled for now - using router instead
-QUICK_ENRICH_AVAILABLE = False
-
 # ============================================================================
 # CONFIGURATION & SETTINGS
 # ============================================================================
@@ -240,6 +237,16 @@ async def get_current_user(
 # ROUTER IMPORTS (with error handling)
 # ============================================================================
 
+# Contacts Router (CRUD)
+try:
+    from app.contacts_router import router as contacts_router
+    CONTACTS_ROUTER_AVAILABLE = True
+    print("✅ Contacts router imported")
+except ImportError as e:
+    contacts_router = None
+    CONTACTS_ROUTER_AVAILABLE = False
+    print(f"❌ Contacts router import failed: {e}")
+
 # CRM Settings Router
 try:
     from app.crm.settings_router import router as settings_router
@@ -260,15 +267,15 @@ except ImportError as e:
     CRM_ROUTER_AVAILABLE = False
     print(f"❌ CRM router import failed: {e}")
 
-# Enrichment Router (Perplexity/GPT-4)
+# Quick Enrichment Router (Perplexity - fast lookup)
 try:
     from app.enrichment_v3.enrich_router import router as enrich_router
     ENRICH_ROUTER_AVAILABLE = True
-    print("✅ Enrichment router imported")
+    print("✅ Quick Enrichment router imported")
 except ImportError as e:
     enrich_router = None
     ENRICH_ROUTER_AVAILABLE = False
-    print(f"❌ Enrichment router import failed: {e}")
+    print(f"❌ Quick Enrichment router import failed: {e}")
 
 # Scoring Router (MDCP/BANT/SPICE)
 try:
@@ -290,34 +297,98 @@ except ImportError as e:
     ICP_AVAILABLE = False
     print(f"❌ ICP router import failed: {e}")
     
+# ============================================================================
+# ROUTER IMPORTS (with error handling)
+# ============================================================================
+
+# Contacts Router (CRUD)
+try:
+    from app.contacts_router import router as contacts_router
+    CONTACTS_ROUTER_AVAILABLE = True
+    print("✅ Contacts router imported")
+except ImportError as e:
+    contacts_router = None
+    CONTACTS_ROUTER_AVAILABLE = False
+    print(f"❌ Contacts router import failed: {e}")
+
+# CRM Settings Router
+try:
+    from app.crm.settings_router import router as settings_router
+    SETTINGS_ROUTER_AVAILABLE = True
+    print("✅ CRM Settings router imported")
+except ImportError as e:
+    settings_router = None
+    SETTINGS_ROUTER_AVAILABLE = False
+    print(f"❌ CRM Settings router import failed: {e}")
+
+# CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
+try:
+    from app.crm.router import router as crm_router
+    CRM_ROUTER_AVAILABLE = True
+    print("✅ CRM router imported")
+except ImportError as e:
+    crm_router = None
+    CRM_ROUTER_AVAILABLE = False
+    print(f"❌ CRM router import failed: {e}")
+
+# Quick Enrichment Router (Perplexity - fast lookup)
+try:
+    from app.enrichment_v3.enrich_router import router as enrich_router
+    ENRICH_ROUTER_AVAILABLE = True
+    print("✅ Quick Enrichment router imported")
+except ImportError as e:
+    enrich_router = None
+    ENRICH_ROUTER_AVAILABLE = False
+    print(f"❌ Quick Enrichment router import failed: {e}")
+
+# Scoring Router (MDCP/BANT/SPICE)
+try:
+    from app.scoring.router import router as scoring_router
+    SCORING_AVAILABLE = True
+    print("✅ Scoring router imported")
+except ImportError as e:
+    scoring_router = None
+    SCORING_AVAILABLE = False
+    print(f"❌ Scoring router import failed: {e}")
+
+# ICP Router
+try:
+    from domains.icp.router import router as icp_router
+    ICP_AVAILABLE = True
+    print("✅ ICP router imported")
+except ImportError as e:
+    icp_router = None
+    ICP_AVAILABLE = False
+    print(f"❌ ICP router import failed: {e}")
 
 # ============================================================================
 # REGISTER ALL ROUTERS (after app creation)
 # ============================================================================
-    
+
 if CONTACTS_ROUTER_AVAILABLE:
     app.include_router(contacts_router, prefix="/api/v3")
     print("✅ Contacts router registered at /api/v3/contacts")
-    
+
 if SETTINGS_ROUTER_AVAILABLE:
     app.include_router(settings_router, prefix="/api/v3")
     print("✅ Settings router registered at /api/v3/settings")
-    
+
 if CRM_ROUTER_AVAILABLE:
     app.include_router(crm_router, prefix="/api/v3")
     print("✅ CRM router registered at /api/v3/import")
-    
+
 if ENRICH_ROUTER_AVAILABLE:
     app.include_router(enrich_router, prefix="/api/v3")
     print("✅ Quick Enrichment router registered at /api/v3/enrich")
-    
+
 if SCORING_AVAILABLE:
     app.include_router(scoring_router, prefix="/api/v3")
     print("✅ Scoring router registered at /api/v3/score")
-    
+
 if ICP_AVAILABLE:
     app.include_router(icp_router, prefix="/api/v3")
     print("✅ ICP router registered at /api/v3/icp")
+
 
 # ============================================================================
 # HEALTH CHECK ENDPOINT
@@ -378,9 +449,10 @@ async def root():
         "endpoints": {
             "health": "/health",
             "docs": "/api/docs",
+            "contacts": "/api/v3/contacts",
             "crm_settings": "/api/v3/settings/crm",
             "crm_import": "/api/v3/import",
-            "enrich": "/api/v3/enrich",
+            "quick_enrich": "/api/v3/enrich",
             "scoring": "/api/v3/score",
         },
     }
