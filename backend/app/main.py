@@ -279,26 +279,45 @@ except ImportError as e:
     scoring_router = None
     SCORING_AVAILABLE = False
     print(f"❌ Scoring router import failed: {e}")
+    
+# ICP Router
+try:
+    from domains.icp.router import router as icp_router
+    ICP_AVAILABLE = True
+    print("✅ ICP router imported")
+except ImportError as e:
+    icp_router = None
+    ICP_AVAILABLE = False
+    print(f"❌ ICP router import failed: {e}")
+    
 
 # ============================================================================
 # REGISTER ALL ROUTERS (after app creation)
 # ============================================================================
-
+    
+if CONTACTS_ROUTER_AVAILABLE:
+    app.include_router(contacts_router, prefix="/api/v3")
+    print("✅ Contacts router registered at /api/v3/contacts")
+    
 if SETTINGS_ROUTER_AVAILABLE:
     app.include_router(settings_router, prefix="/api/v3")
-    print("✅ Settings router registered at /api/v3")
-
+    print("✅ Settings router registered at /api/v3/settings")
+    
 if CRM_ROUTER_AVAILABLE:
     app.include_router(crm_router, prefix="/api/v3")
-    print("✅ CRM router registered at /api/v3")
-
+    print("✅ CRM router registered at /api/v3/import")
+    
 if ENRICH_ROUTER_AVAILABLE:
     app.include_router(enrich_router, prefix="/api/v3")
-    print("✅ Enrichment router registered at /api/v3")
-
+    print("✅ Quick Enrichment router registered at /api/v3/enrich")
+    
 if SCORING_AVAILABLE:
     app.include_router(scoring_router, prefix="/api/v3")
-    print("✅ Scoring router registered at /api/v3")
+    print("✅ Scoring router registered at /api/v3/score")
+    
+if ICP_AVAILABLE:
+    app.include_router(icp_router, prefix="/api/v3")
+    print("✅ ICP router registered at /api/v3/icp")
 
 # ============================================================================
 # HEALTH CHECK ENDPOINT
@@ -365,3 +384,4 @@ async def root():
             "scoring": "/api/v3/score",
         },
     }
+    
