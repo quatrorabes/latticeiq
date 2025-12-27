@@ -1,50 +1,70 @@
-// frontend/src/App.tsx
-
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { supabase } from './lib/supabaseClient';
-import Layout from './components/Layout';
-import LoginPage from './pages/LoginPage';
-import SignupPage from './pages/SignupPage';
-import Dashboard from './pages/Dashboard';
-import EnrichmentPage from './pages/EnrichmentPage';
-import SettingsPage from './pages/SettingsPage';
-import ProfileConfigPage from './pages/ProfileConfigPage';
+import { useState, useEffect } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { supabase } from './lib/supabase';
+import type { Session } from '@supabase/supabase-js';
+import Login from './pages/Login';
+import Signup from './pages/Signup';
 import ContactsPage from './pages/ContactsPage';
-import ScoringConfigPage from './pages/ScoringConfigPage';
+import ContactDetailPage from './pages/ContactDetailPage';
+import Dashboard from './pages/Dashboard';
+import Sidebar from './components/Sidebar';
 
 function App() {
-  const [session, setSession] = useState<boolean>(false);
+  const [session, setSession] = useState<Session | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(!!session);
+    supabase.auth.getSession().then(({  { session } }) => {
+      setSession(session);
+      setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(!!session);
+    const {  { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+  };
+
+  if (loading) {
+    return <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+      <p className="text-white">Loading...</p>
+    </div>;
+  }
+
+  if (!session) {
+    return (
+      <Router>
+        <div className="min-h-screen bg-gray-950">
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/signup" element={<Signup />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </div>
+      </Router>
+    );
+  }
+
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={session ? <Navigate to="/dashboard" /> : <LoginPage />} />
-        <Route path="/signup" element={session ? <Navigate to="/dashboard" /> : <SignupPage />} />
-        
-        <Route element={session ? <Layout /> : <Navigate to="/login" />}>
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/contacts" element={<ContactsPage />} />
-          <Route path="/enrichment" element={<EnrichmentPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="/scoring" element={<ScoringConfigPage />} />
-          <Route path="/profile" element={<ProfileConfigPage />} />
-          <Route path="/" element={<Navigate to="/dashboard" />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+    <Router>
+      <div className="min-h-screen bg-gray-950 flex">
+        <Sidebar onLogout={handleLogout} />
+        <main className="flex-1 ml-64">
+          <Routes>
+            <Route path="/contacts" element={<ContactsPage />} />
+            <Route path="/contacts/:contactId" element={<ContactDetailPage />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="*" element={<Navigate to="/contacts" replace />} />
+          </Routes>
+        </main>
+      </div>
+    </Router>
   );
 }
 
