@@ -198,7 +198,7 @@ export default function ContactsPage() {
                       </a>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-400">{contact.company || '-'}</td>
-                    <td className="px-4 py-3 text-sm text-gray-400">{contact.job_title || contact.title || '-'}</td>
+                    <td className="px-4 py-3 text-sm">{getStatusBadge(contact.enrichment_status || 'pending')}</td>
                     <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.mdcp_score)}`}>
                       {contact.mdcp_score ?? '-'}
                     </td>
@@ -208,7 +208,7 @@ export default function ContactsPage() {
                     <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.spice_score)}`}>
                       {contact.spice_score ?? '-'}
                     </td>
-                    <td className="px-4 py-3 text-sm">{getStatusBadge(contact.enrichment_status)}</td>
+                    <td className="px-4 py-3 text-sm">{getStatusBadge(contact.enrichment_status || 'pending')}</td>
                   </tr>
                 ))}
               </tbody>
