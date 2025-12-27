@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { createPortal } from 'react-dom';
 import type { Contact } from '../types/contact';
+
 
 interface ContactDetailModalProps {
   contact: Contact | null;
@@ -202,3 +202,4 @@ export default function ContactDetailModal({ contact, isOpen, onClose, onEnrichC
 
   return modalContent;
 }
+        
