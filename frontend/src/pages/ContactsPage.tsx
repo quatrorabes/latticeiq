@@ -1,4 +1,3 @@
-// frontend/src/pages/ContactsPage.tsx
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import ContactDetailModal from '../components/ContactDetailModal';
@@ -6,7 +5,6 @@ import type { Contact } from '../types/contact';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-// Extend the base Contact type with the additional fields we use
 interface ContactWithScores extends Contact {
   job_title?: string;
   mdcp_score?: number;
@@ -26,16 +24,13 @@ export default function ContactsPage() {
     fetchContacts();
   }, []);
 
-  // Filter whenever contacts, search, or status changes
   useEffect(() => {
     let filtered = contacts;
 
-    // Filter by status
     if (selectedStatus !== 'all') {
       filtered = filtered.filter((c) => c.enrichment_status === selectedStatus);
     }
 
-    // Filter by search term
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter((c) =>
@@ -93,7 +88,6 @@ export default function ContactsPage() {
     }
   };
 
-  // Summary stats
   const stats = {
     total: contacts.length,
     enriched: contacts.filter((c) => c.enrichment_status === 'completed').length,
@@ -108,7 +102,6 @@ export default function ContactsPage() {
   return (
     <div className="min-h-screen bg-gray-950 text-white p-6">
       <div className="max-w-7xl mx-auto">
-        {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Contacts</h1>
           <p className="text-gray-400">
@@ -116,7 +109,6 @@ export default function ContactsPage() {
           </p>
         </div>
 
-        {/* Stats Cards */}
         <div className="grid grid-cols-4 gap-4 mb-8">
           <StatCard label="Total Contacts" value={stats.total} />
           <StatCard label="Enriched" value={stats.enriched} accent="text-green-400" />
@@ -124,7 +116,6 @@ export default function ContactsPage() {
           <StatCard label="Avg Score" value={stats.avgScore} accent="text-cyan-400" />
         </div>
 
-        {/* Filters */}
         <div className="flex gap-4 mb-6">
           <input
             type="text"
@@ -146,7 +137,6 @@ export default function ContactsPage() {
           </select>
         </div>
 
-        {/* Table */}
         {loading ? (
           <div className="text-center py-12">
             <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
@@ -178,7 +168,11 @@ export default function ContactsPage() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {filteredContacts.map((contact) => (
-                  <tr key={contact.id} className="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" onClick={() => setSelectedContact(contact)}>
+                  <tr 
+                    key={contact.id} 
+                    className="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" 
+                    onClick={() => setSelectedContact(contact)}
+                  >
                     <td className="px-4 py-3 text-sm whitespace-nowrap">
                       <span className="font-medium">
                         {contact.first_name} {contact.last_name}
@@ -194,7 +188,7 @@ export default function ContactsPage() {
                       </a>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-400">{contact.company || '-'}</td>
-                    <td className="px-4 py-3 text-sm">{getStatusBadge(contact.enrichment_status || 'pending')}</td>
+                    <td className="px-4 py-3 text-sm">{contact.job_title || '-'}</td>
                     <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.mdcp_score)}`}>
                       {contact.mdcp_score ?? '-'}
                     </td>
@@ -212,7 +206,6 @@ export default function ContactsPage() {
           </div>
         )}
 
-        {/* Result count */}
         {!loading && (
           <p className="text-sm text-gray-400 mt-4">
             Showing {filteredContacts.length} of {contacts.length} contacts
@@ -220,11 +213,11 @@ export default function ContactsPage() {
         )}
       </div>
 
-      {/* Contact Detail Modal */}
       <ContactDetailModal
         contact={selectedContact}
         isOpen={selectedContact !== null}
-        onClose={() => { setSelectedContact(null); fetchContacts(); }} onEnrichComplete={() => fetchContacts()}
+        onClose={() => { setSelectedContact(null); fetchContacts(); }}
+        onEnrichComplete={() => fetchContacts()}
       />
     </div>
   );
@@ -238,4 +231,3 @@ function StatCard({ label, value, accent = 'text-cyan-400' }: { label: string; v
     </div>
   );
 }
-        
