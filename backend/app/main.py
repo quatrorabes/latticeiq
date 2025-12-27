@@ -218,6 +218,26 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 # ========================================
+# HEALTH CHECK ENDPOINT (Render compatibility)
+# ========================================
+
+@app.get("/api/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "LatticeIQ Backend API",
+        "version": "3.0.0",
+    }
+    
+# Render health check (short path)
+@app.get("/health")
+async def health_root():
+    return {
+        "status": "healthy",
+    }
+    
+# ========================================
 # STARTUP / SHUTDOWN HOOKS
 # ========================================
 
