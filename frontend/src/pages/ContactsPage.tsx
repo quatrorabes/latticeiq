@@ -228,7 +228,7 @@ export default function ContactsPage() {
       <ContactDetailModal
         contact={selectedContact}
         isOpen={selectedContact !== null}
-        onClose={() => setSelectedContact(null)}
+        onClose={() => { setSelectedContact(null); fetchContacts(); }} onEnrichComplete={() => fetchContacts()}
       />
     </div>
   );
