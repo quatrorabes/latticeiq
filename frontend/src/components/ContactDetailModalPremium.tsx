@@ -139,8 +139,9 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
+      // In handleEnrich function around line 180
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/enrichment/quick-enrich/${contact?.id}`,
+        `${import.meta.env.VITE_API_URL}/api/v3/enrichment/enrich/${contact?.id}`,  // ✅ v3 endpoint
         {
           method: 'POST',
           headers: {

@@ -29,17 +29,18 @@ export default function ContactsPage() {
       if (!session) throw new Error('Not authenticated');
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v2/contacts?limit=100&offset=0`,
+        `${import.meta.env.VITE_API_URL}/api/v3/contacts?limit=100&offset=0`,
         {
           headers: { 'Authorization': `Bearer ${session.access_token}` },
         }
       );
 
-      if (!response.ok) throw new Error('Failed to fetch contacts');
+      if (!response.ok) throw new Error(`Failed to fetch contacts: ${response.status}`);
       const data = await response.json();
-      setContacts(data.contacts || []);
+      setContacts(data.contacts || data || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading contacts');
+      console.error('Fetch error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -82,7 +83,7 @@ export default function ContactsPage() {
       if (!session) throw new Error('Not authenticated');
 
       await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v2/contacts/${contactId}`,
+        `${import.meta.env.VITE_API_URL}/api/v3/contacts/${contactId}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${session.access_token}` },
@@ -149,7 +150,9 @@ export default function ContactsPage() {
           </div>
         ) : filteredContacts.length === 0 ? (
           <div className="p-12 text-center">
-            <p className="text-slate-400">No contacts found</p>
+            <p className="text-slate-400">
+              {contacts.length === 0 ? 'No contacts found. Import contacts from CRM in Settings.' : 'No contacts match your search.'}
+            </p>
           </div>
         ) : (
           <table className="w-full">
@@ -217,7 +220,9 @@ export default function ContactsPage() {
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm uppercase tracking-wide">Avg APEX Score</p>
           <p className="text-3xl font-bold text-blue-500 mt-2">
-            {(contacts.filter(c => c.apex_score).reduce((sum, c) => sum + (c.apex_score || 0), 0) / (contacts.length || 1)).toFixed(0)}
+            {contacts.length > 0
+              ? (contacts.filter(c => c.apex_score).reduce((sum, c) => sum + (c.apex_score || 0), 0) / contacts.length).toFixed(0)
+              : '—'}
           </p>
         </div>
       </div>
