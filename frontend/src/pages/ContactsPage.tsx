@@ -158,7 +158,7 @@ export default function ContactsPage() {
                 <th className="px-6 py-4 text-left text-slate-300 font-semibold">Name</th>
                 <th className="px-6 py-4 text-left text-slate-300 font-semibold">Email</th>
                 <th className="px-6 py-4 text-left text-slate-300 font-semibold">Company</th>
-                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Title</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Job Title</th>
                 <th className="px-6 py-4 text-left text-slate-300 font-semibold">APEX Score</th>
                 <th className="px-6 py-4 text-left text-slate-300 font-semibold">Status</th>
                 <th className="px-6 py-4 text-left text-slate-300 font-semibold">Actions</th>
@@ -176,7 +176,7 @@ export default function ContactsPage() {
                   </td>
                   <td className="px-6 py-4 text-slate-400 text-sm">{contact.email}</td>
                   <td className="px-6 py-4 text-slate-400 text-sm">{contact.company || '—'}</td>
-                  <td className="px-6 py-4 text-slate-400 text-sm">{contact.title || '—'}</td>
+                  <td className="px-6 py-4 text-slate-400 text-sm">{contact.job_title || '—'}</td>
                   <td className={`px-6 py-4 font-bold text-sm ${getScoreColor(contact.apex_score)}`}>
                     {contact.apex_score?.toFixed(0) || '—'}
                   </td>

@@ -152,7 +152,7 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
             last_name: contact?.last_name,
             email: contact?.email,
             company: contact?.company,
-            title: contact?.title,
+            job_title: contact?.job_title,
           }),
         }
       );
@@ -221,7 +221,7 @@ NAME: ${updatedContact.first_name} ${updatedContact.last_name}
 EMAIL: ${updatedContact.email}
 PHONE: ${updatedContact.phone || 'N/A'}
 COMPANY: ${updatedContact.company || 'N/A'}
-TITLE: ${updatedContact.title || 'N/A'}
+JOB TITLE: ${updatedContact.job_title || 'N/A'}
 
 SCORES:
 - APEX: ${updatedContact.apex_score || 'N/A'}
@@ -229,10 +229,10 @@ SCORES:
 - RSS: ${updatedContact.rss_score || 'N/A'}
 
 STATUS: ${updatedContact.enrichment_status}
-LAST ENRICHED: ${updatedContact.enrichment_data?.enrichedat || 'Never'}
+LAST ENRICHED: ${updatedContact.enriched_at || 'Never'}
 
 ENRICHMENT DATA:
-${updatedContact.enrichment_data?.summary || 'No enrichment data'}
+${(updatedContact.enrichment_data as any)?.summary || 'No enrichment data'}
 
 NOTES:
 ${notes.map(n => `- ${n.text}`).join('\n')}
@@ -308,7 +308,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
               {updatedContact.first_name} {updatedContact.last_name}
             </h2>
             <p className="text-slate-300 mt-1">
-              {updatedContact.title || 'No title'} {updatedContact.company && `at ${updatedContact.company}`}
+              {updatedContact.job_title || 'No title'} {updatedContact.company && `at ${updatedContact.company}`}
             </p>
           </div>
           <div className="flex gap-3 items-start">
@@ -381,7 +381,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-white font-mono text-sm truncate">{updatedContact.email}</p>
                 <button
-                  onClick={() => copyToClipboard(updatedContact.email)}
+                  onClick={() => copyToClipboard(updatedContact.email || '')}
                   className="text-slate-400 hover:text-white text-xs"
                   title="Copy email"
                 >
@@ -457,14 +457,14 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <input
                       type="text"
                       placeholder="First Name"
-                      value={(editFormData as any).first_name || ''}
+                      value={editFormData.first_name || ''}
                       onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
                     <input
                       type="text"
                       placeholder="Last Name"
-                      value={(editFormData as any).last_name || ''}
+                      value={editFormData.last_name || ''}
                       onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
@@ -491,9 +491,9 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     />
                     <input
                       type="text"
-                      placeholder="Title"
-                      value={editFormData.title || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, title: e.target.value })}
+                      placeholder="Job Title"
+                      value={editFormData.job_title || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, job_title: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
                     <input
@@ -506,7 +506,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <input
                       type="text"
                       placeholder="Persona Type"
-                      value={(editFormData as any).persona_type || ''}
+                      value={editFormData.persona_type || ''}
                       onChange={(e) => setEditFormData({ ...editFormData, persona_type: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
@@ -536,8 +536,8 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <p className="text-white text-lg">{updatedContact.company || 'Not provided'}</p>
                   </div>
                   <div className="bg-slate-800 rounded-lg p-4">
-                    <p className="text-slate-400 text-xs uppercase tracking-wide mb-2">Title</p>
-                    <p className="text-white text-lg">{updatedContact.title || 'Not provided'}</p>
+                    <p className="text-slate-400 text-xs uppercase tracking-wide mb-2">Job Title</p>
+                    <p className="text-white text-lg">{updatedContact.job_title || 'Not provided'}</p>
                   </div>
                   <div className="bg-slate-800 rounded-lg p-4">
                     <p className="text-slate-400 text-xs uppercase tracking-wide mb-2">Vertical</p>
@@ -545,7 +545,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                   </div>
                   <div className="bg-slate-800 rounded-lg p-4">
                     <p className="text-slate-400 text-xs uppercase tracking-wide mb-2">Persona</p>
-                    <p className="text-white text-lg">{(updatedContact as any).persona_type || 'Not provided'}</p>
+                    <p className="text-white text-lg">{updatedContact.persona_type || 'Not provided'}</p>
                   </div>
                 </div>
               )}
@@ -585,19 +585,19 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
             <div className="space-y-4">
               {updatedContact.enrichment_status === 'completed' && updatedContact.enrichment_data ? (
                 <div className="space-y-4">
-                  {(updatedContact.enrichment_data as any).summary && (
+                  {(updatedContact.enrichment_data as any)?.summary && (
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-white font-semibold mb-2">Professional Summary</h3>
                       <p className="text-slate-300 text-sm leading-relaxed">{(updatedContact.enrichment_data as any).summary}</p>
                     </div>
                   )}
-                  {(updatedContact.enrichment_data as any).openingline && (
+                  {(updatedContact.enrichment_data as any)?.openingline && (
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-white font-semibold mb-2">Recommended Opening</h3>
                       <p className="text-slate-300 text-sm italic font-medium">"{(updatedContact.enrichment_data as any).openingline}"</p>
                     </div>
                   )}
-                  {(updatedContact.enrichment_data as any).talkingpoints && (updatedContact.enrichment_data as any).talkingpoints.length > 0 && (
+                  {(updatedContact.enrichment_data as any)?.talkingpoints && (updatedContact.enrichment_data as any).talkingpoints.length > 0 && (
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-white font-semibold mb-3">Talking Points</h3>
                       <ul className="space-y-2">
@@ -746,16 +746,16 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
               <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                 <h3 className="text-white font-semibold mb-4">Custom Fields</h3>
                 <div className="space-y-3">
-                  {['industry', 'employee_count', 'revenue', 'growth_rate', 'website'].map((field) => (
+                  {['annual_revenue', 'lead_status', 'lifecycle_stage'].map((field) => (
                     <div key={field}>
                       <label className="text-slate-400 text-xs uppercase tracking-wide block mb-1">
-                        {field.replace('_', ' ')}
+                        {field.replace(/_/g, ' ')}
                       </label>
                       <input
                         type="text"
                         value={customFields.find(f => f.name === field)?.value || ''}
                         onChange={(e) => updateCustomField(field, e.target.value)}
-                        placeholder={`Enter ${field.replace('_', ' ')}`}
+                        placeholder={`Enter ${field.replace(/_/g, ' ')}`}
                         className="w-full bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none text-sm"
                       />
                     </div>
