@@ -21,6 +21,10 @@ export default function ContactsPage() {
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
   useEffect(() => {
+    console.log('Selected contact changed:', selectedContact);
+  }, [selectedContact]);
+
+  useEffect(() => {
     fetchContacts();
   }, []);
 
