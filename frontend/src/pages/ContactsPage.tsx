@@ -1,5 +1,5 @@
 // frontend/src/pages/ContactsPage.tsx
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { ContactDetailModalPremium } from '../components/ContactDetailModalPremium';
 import type { Contact } from '../types/contact';
@@ -10,8 +10,6 @@ export default function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // MODAL STATE - THIS IS WHAT YOU NEEDED
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
@@ -42,7 +40,6 @@ export default function ContactsPage() {
       setContacts(data.contacts || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error loading contacts');
-      console.error('Fetch error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -52,15 +49,14 @@ export default function ContactsPage() {
     const term = searchTerm.toLowerCase();
     const filtered = contacts.filter(
       (c) =>
-        c.firstname?.toLowerCase().includes(term) ||
-        c.lastname?.toLowerCase().includes(term) ||
+        c.first_name?.toLowerCase().includes(term) ||
+        c.last_name?.toLowerCase().includes(term) ||
         c.email?.toLowerCase().includes(term) ||
         c.company?.toLowerCase().includes(term)
     );
     setFilteredContacts(filtered);
   };
 
-  // HANDLERS FOR MODAL
   const handleRowClick = (contact: Contact) => {
     setSelectedContact(contact);
     setIsModalOpen(true);
@@ -72,30 +68,26 @@ export default function ContactsPage() {
   };
 
   const handleEnrichComplete = () => {
-    fetchContacts(); // Refresh list after enrichment
+    fetchContacts();
   };
 
   const handleContactUpdate = (updatedContact: Contact) => {
     setContacts(contacts.map(c => c.id === updatedContact.id ? updatedContact : c));
-    setSelectedContact(updatedContact);
   };
 
   const handleDeleteContact = async (contactId: string) => {
-    if (!confirm('Are you sure you want to delete this contact?')) return;
-
+    if (!confirm('Delete this contact?')) return;
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      const response = await fetch(
+      await fetch(
         `${import.meta.env.VITE_API_URL}/api/v2/contacts/${contactId}`,
         {
           method: 'DELETE',
           headers: { 'Authorization': `Bearer ${session.access_token}` },
         }
       );
-
-      if (!response.ok) throw new Error('Failed to delete contact');
       setContacts(contacts.filter(c => c.id !== contactId));
       setIsModalOpen(false);
     } catch (err) {
@@ -105,14 +97,10 @@ export default function ContactsPage() {
 
   const getStatusBadge = (status: string | null | undefined) => {
     switch (status) {
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'processing':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'failed':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'processing': return 'bg-yellow-100 text-yellow-800';
+      case 'failed': return 'bg-red-100 text-red-800';
+      default: return 'bg-gray-100 text-gray-800';
     }
   };
 
@@ -125,13 +113,11 @@ export default function ContactsPage() {
 
   return (
     <div className="p-6 bg-slate-900 min-h-screen">
-      {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-white mb-2">Contacts</h1>
         <p className="text-slate-400">Manage and enrich your sales contacts</p>
       </div>
 
-      {/* Search Bar */}
       <div className="mb-6">
         <input
           type="text"
@@ -142,20 +128,15 @@ export default function ContactsPage() {
         />
       </div>
 
-      {/* Error Message */}
       {error && (
         <div className="mb-6 bg-red-900 text-red-100 p-4 rounded-lg flex justify-between items-center">
           <p>{error}</p>
-          <button
-            onClick={() => setError(null)}
-            className="text-red-300 hover:text-red-100"
-          >
+          <button onClick={() => setError(null)} className="text-red-300 hover:text-red-100">
             ✕
           </button>
         </div>
       )}
 
-      {/* Contacts Table */}
       <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
         {isLoading ? (
           <div className="p-12 text-center">
@@ -191,17 +172,17 @@ export default function ContactsPage() {
                   onClick={() => handleRowClick(contact)}
                 >
                   <td className="px-6 py-4 text-white font-medium">
-                    {contact.firstname} {contact.lastname}
+                    {contact.first_name} {contact.last_name}
                   </td>
                   <td className="px-6 py-4 text-slate-400 text-sm">{contact.email}</td>
                   <td className="px-6 py-4 text-slate-400 text-sm">{contact.company || '—'}</td>
                   <td className="px-6 py-4 text-slate-400 text-sm">{contact.title || '—'}</td>
-                  <td className={`px-6 py-4 font-bold text-sm ${getScoreColor(contact.apexscore)}`}>
-                    {contact.apexscore?.toFixed(0) || '—'}
+                  <td className={`px-6 py-4 font-bold text-sm ${getScoreColor(contact.apex_score)}`}>
+                    {contact.apex_score?.toFixed(0) || '—'}
                   </td>
                   <td className="px-6 py-4">
-                    <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full ${getStatusBadge(contact.enrichmentstatus)}`}>
-                      {contact.enrichmentstatus || 'pending'}
+                    <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full ${getStatusBadge(contact.enrichment_status)}`}>
+                      {contact.enrichment_status || 'pending'}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -222,7 +203,6 @@ export default function ContactsPage() {
         )}
       </div>
 
-      {/* Stats Footer */}
       <div className="mt-6 grid grid-cols-3 gap-4">
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm uppercase tracking-wide">Total Contacts</p>
@@ -231,18 +211,17 @@ export default function ContactsPage() {
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm uppercase tracking-wide">Enriched</p>
           <p className="text-3xl font-bold text-green-500 mt-2">
-            {contacts.filter(c => c.enrichmentstatus === 'completed').length}
+            {contacts.filter(c => c.enrichment_status === 'completed').length}
           </p>
         </div>
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm uppercase tracking-wide">Avg APEX Score</p>
           <p className="text-3xl font-bold text-blue-500 mt-2">
-            {(contacts.filter(c => c.apexscore).reduce((sum, c) => sum + (c.apexscore || 0), 0) / contacts.length || 0).toFixed(0)}
+            {(contacts.filter(c => c.apex_score).reduce((sum, c) => sum + (c.apex_score || 0), 0) / (contacts.length || 1)).toFixed(0)}
           </p>
         </div>
       </div>
 
-      {/* PREMIUM MODAL - THIS IS THE KEY PART YOU ADD */}
       <ContactDetailModalPremium
         contact={selectedContact}
         isOpen={isModalOpen}

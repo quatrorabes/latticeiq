@@ -1,5 +1,6 @@
 // frontend/src/components/ContactDetailModalPremium.tsx
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../lib/supabase';
 import type { Contact } from '../types/contact';
 
@@ -73,7 +74,6 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Load notes from localStorage (in production, use API)
   const loadNotes = (contactId: string) => {
     const stored = localStorage.getItem(`contact_notes_${contactId}`);
     setNotes(stored ? JSON.parse(stored) : []);
@@ -98,7 +98,6 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
     setNewNote('');
   };
 
-  // Load activity from localStorage (in production, use API)
   const loadActivity = (contactId: string) => {
     const stored = localStorage.getItem(`contact_activity_${contactId}`);
     setActivity(stored ? JSON.parse(stored) : []);
@@ -118,7 +117,6 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
     setActivity(updated);
   };
 
-  // Load custom fields from localStorage (in production, use API)
   const loadCustomFields = (contactId: string) => {
     const stored = localStorage.getItem(`contact_custom_${contactId}`);
     setCustomFields(stored ? JSON.parse(stored) : []);
@@ -150,8 +148,8 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            firstname: contact?.firstname,
-            lastname: contact?.lastname,
+            first_name: contact?.first_name,
+            last_name: contact?.last_name,
             email: contact?.email,
             company: contact?.company,
             title: contact?.title,
@@ -164,9 +162,9 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
       const enrichedData = await response.json();
       const updated = {
         ...updatedContact,
-        enrichmentstatus: 'completed',
-        enrichmentdata: enrichedData.result,
-        apexscore: enrichedData.result?.apexscore || updatedContact?.apexscore,
+        enrichment_status: 'completed',
+        enrichment_data: enrichedData.result,
+        apex_score: enrichedData.result?.apex_score || updatedContact?.apex_score,
       } as Contact;
 
       setUpdatedContact(updated);
@@ -219,22 +217,22 @@ export const ContactDetailModalPremium: React.FC<ContactDetailModalPremiumProps>
 CONTACT PROFILE REPORT
 ${new Date().toLocaleDateString()}
 
-NAME: ${updatedContact.firstname} ${updatedContact.lastname}
+NAME: ${updatedContact.first_name} ${updatedContact.last_name}
 EMAIL: ${updatedContact.email}
 PHONE: ${updatedContact.phone || 'N/A'}
 COMPANY: ${updatedContact.company || 'N/A'}
 TITLE: ${updatedContact.title || 'N/A'}
 
 SCORES:
-- APEX: ${updatedContact.apexscore || 'N/A'}
-- MDC: ${updatedContact.mdcscore || 'N/A'}
-- RSS: ${updatedContact.rssscore || 'N/A'}
+- APEX: ${updatedContact.apex_score || 'N/A'}
+- MDC: ${updatedContact.mdc_score || 'N/A'}
+- RSS: ${updatedContact.rss_score || 'N/A'}
 
-STATUS: ${updatedContact.enrichmentstatus}
-LAST ENRICHED: ${updatedContact.enrichmentdata?.enrichedat || 'Never'}
+STATUS: ${updatedContact.enrichment_status}
+LAST ENRICHED: ${updatedContact.enrichment_data?.enrichedat || 'Never'}
 
 ENRICHMENT DATA:
-${updatedContact.enrichmentdata?.summary || 'No enrichment data'}
+${updatedContact.enrichment_data?.summary || 'No enrichment data'}
 
 NOTES:
 ${notes.map(n => `- ${n.text}`).join('\n')}
@@ -244,7 +242,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${updatedContact.firstname}_${updatedContact.lastname}_profile.txt`;
+    a.download = `${updatedContact.first_name}_${updatedContact.last_name}_profile.txt`;
     a.click();
     setShowExportMenu(false);
   };
@@ -262,7 +260,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${updatedContact.firstname}_${updatedContact.lastname}_profile.json`;
+    a.download = `${updatedContact.first_name}_${updatedContact.last_name}_profile.json`;
     a.click();
     setShowExportMenu(false);
   };
@@ -300,14 +298,14 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
 
   if (!isOpen || !updatedContact) return null;
 
-  return (
+  const modalContent = (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-slate-900 rounded-lg shadow-2xl w-full max-w-4xl max-h-[95vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-gradient-to-r from-slate-800 to-slate-700 border-b border-slate-600 p-6 flex justify-between items-start shrink-0">
           <div className="flex-1">
             <h2 className="text-3xl font-bold text-white">
-              {updatedContact.firstname} {updatedContact.lastname}
+              {updatedContact.first_name} {updatedContact.last_name}
             </h2>
             <p className="text-slate-300 mt-1">
               {updatedContact.title || 'No title'} {updatedContact.company && `at ${updatedContact.company}`}
@@ -397,24 +395,24 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                 <p className="text-white text-sm mt-1">{updatedContact.phone}</p>
               </div>
             )}
-            {updatedContact.linkedinurl && (
+            {updatedContact.linkedin_url && (
               <div>
                 <p className="text-slate-400 text-xs uppercase tracking-wide">LinkedIn</p>
-                <a href={updatedContact.linkedinurl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-sm mt-1">
+                <a href={updatedContact.linkedin_url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 text-sm mt-1">
                   View →
                 </a>
               </div>
             )}
             <div>
               <p className="text-slate-400 text-xs uppercase tracking-wide">Status</p>
-              <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full mt-1 ${getStatusColor(updatedContact.enrichmentstatus)}`}>
-                {updatedContact.enrichmentstatus || 'pending'}
+              <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full mt-1 ${getStatusColor(updatedContact.enrichment_status)}`}>
+                {updatedContact.enrichment_status || 'pending'}
               </span>
             </div>
             <div>
               <p className="text-slate-400 text-xs uppercase tracking-wide">APEX Score</p>
-              <p className={`text-xl font-bold mt-1 ${getScoreColor(updatedContact.apexscore)}`}>
-                {updatedContact.apexscore?.toFixed(0) || '—'}
+              <p className={`text-xl font-bold mt-1 ${getScoreColor(updatedContact.apex_score)}`}>
+                {updatedContact.apex_score?.toFixed(0) || '—'}
               </p>
             </div>
           </div>
@@ -459,15 +457,15 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <input
                       type="text"
                       placeholder="First Name"
-                      value={editFormData.firstname || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, firstname: e.target.value })}
+                      value={(editFormData as any).first_name || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, first_name: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
                     <input
                       type="text"
                       placeholder="Last Name"
-                      value={editFormData.lastname || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, lastname: e.target.value })}
+                      value={(editFormData as any).last_name || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, last_name: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
                     <input
@@ -508,8 +506,8 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <input
                       type="text"
                       placeholder="Persona Type"
-                      value={editFormData.personatype || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, personatype: e.target.value })}
+                      value={(editFormData as any).persona_type || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, persona_type: e.target.value })}
                       className="bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none"
                     />
                   </div>
@@ -547,7 +545,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                   </div>
                   <div className="bg-slate-800 rounded-lg p-4">
                     <p className="text-slate-400 text-xs uppercase tracking-wide mb-2">Persona</p>
-                    <p className="text-white text-lg">{updatedContact.personatype || 'Not provided'}</p>
+                    <p className="text-white text-lg">{(updatedContact as any).persona_type || 'Not provided'}</p>
                   </div>
                 </div>
               )}
@@ -558,22 +556,22 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="text-center p-4 bg-slate-700 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase mb-2">APEX Score</p>
-                    <p className={`text-4xl font-bold ${getScoreColor(updatedContact.apexscore)}`}>
-                      {updatedContact.apexscore?.toFixed(0) || '—'}
+                    <p className={`text-4xl font-bold ${getScoreColor(updatedContact.apex_score)}`}>
+                      {updatedContact.apex_score?.toFixed(0) || '—'}
                     </p>
                     <p className="text-slate-400 text-xs mt-2">Decision-making potential</p>
                   </div>
                   <div className="text-center p-4 bg-slate-700 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase mb-2">MDC Score</p>
-                    <p className={`text-4xl font-bold ${getScoreColor(updatedContact.mdcscore)}`}>
-                      {updatedContact.mdcscore?.toFixed(0) || '—'}
+                    <p className={`text-4xl font-bold ${getScoreColor(updatedContact.mdc_score)}`}>
+                      {updatedContact.mdc_score?.toFixed(0) || '—'}
                     </p>
                     <p className="text-slate-400 text-xs mt-2">Company fit assessment</p>
                   </div>
                   <div className="text-center p-4 bg-slate-700 rounded-lg">
                     <p className="text-slate-400 text-xs uppercase mb-2">RSS Score</p>
-                    <p className={`text-4xl font-bold ${getScoreColor(updatedContact.rssscore)}`}>
-                      {updatedContact.rssscore?.toFixed(0) || '—'}
+                    <p className={`text-4xl font-bold ${getScoreColor(updatedContact.rss_score)}`}>
+                      {updatedContact.rss_score?.toFixed(0) || '—'}
                     </p>
                     <p className="text-slate-400 text-xs mt-2">Strategic signals detected</p>
                   </div>
@@ -585,25 +583,25 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
           {/* ENRICHMENT TAB */}
           {activeTab === 'enrichment' && (
             <div className="space-y-4">
-              {updatedContact.enrichmentstatus === 'completed' && updatedContact.enrichmentdata ? (
+              {updatedContact.enrichment_status === 'completed' && updatedContact.enrichment_data ? (
                 <div className="space-y-4">
-                  {updatedContact.enrichmentdata.summary && (
+                  {(updatedContact.enrichment_data as any).summary && (
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-white font-semibold mb-2">Professional Summary</h3>
-                      <p className="text-slate-300 text-sm leading-relaxed">{updatedContact.enrichmentdata.summary}</p>
+                      <p className="text-slate-300 text-sm leading-relaxed">{(updatedContact.enrichment_data as any).summary}</p>
                     </div>
                   )}
-                  {updatedContact.enrichmentdata.openingline && (
+                  {(updatedContact.enrichment_data as any).openingline && (
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-white font-semibold mb-2">Recommended Opening</h3>
-                      <p className="text-slate-300 text-sm italic font-medium">"{updatedContact.enrichmentdata.openingline}"</p>
+                      <p className="text-slate-300 text-sm italic font-medium">"{(updatedContact.enrichment_data as any).openingline}"</p>
                     </div>
                   )}
-                  {updatedContact.enrichmentdata.talkingpoints && updatedContact.enrichmentdata.talkingpoints.length > 0 && (
+                  {(updatedContact.enrichment_data as any).talkingpoints && (updatedContact.enrichment_data as any).talkingpoints.length > 0 && (
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <h3 className="text-white font-semibold mb-3">Talking Points</h3>
                       <ul className="space-y-2">
-                        {updatedContact.enrichmentdata.talkingpoints.map((point: string, idx: number) => (
+                        {(updatedContact.enrichment_data as any).talkingpoints.map((point: string, idx: number) => (
                           <li key={idx} className="flex items-start text-slate-300 text-sm">
                             <span className="mr-3 text-blue-400 font-bold">•</span>
                             <span>{point}</span>
@@ -613,7 +611,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     </div>
                   )}
                 </div>
-              ) : updatedContact.enrichmentstatus === 'processing' ? (
+              ) : updatedContact.enrichment_status === 'processing' ? (
                 <div className="text-center py-12">
                   <div className="animate-spin mb-4 inline-block">
                     <svg className="w-12 h-12 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -646,8 +644,6 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <p className="text-slate-400 text-xs uppercase tracking-wide mb-3">{item}</p>
                     <input
                       type="text"
-                      value={editFormData[item.toLowerCase() as keyof any] || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, [item.toLowerCase()]: e.target.value })}
                       placeholder={`Enter ${item.toLowerCase()}`}
                       className="w-full bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none text-sm"
                     />
@@ -671,8 +667,6 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
                     <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
                       <p className="text-slate-400 text-xs uppercase tracking-wide mb-3">{item}</p>
                       <textarea
-                        value={editFormData[item.toLowerCase() as keyof any] || ''}
-                        onChange={(e) => setEditFormData({ ...editFormData, [item.toLowerCase()]: e.target.value })}
                         placeholder={`Document ${item.toLowerCase()}`}
                         className="w-full bg-slate-700 text-white rounded px-3 py-2 border border-slate-600 focus:border-blue-500 outline-none text-sm h-20 resize-none"
                       />
@@ -774,7 +768,7 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
 
         {/* Footer Actions */}
         <div className="bg-slate-800 border-t border-slate-700 px-6 py-4 flex gap-3 justify-end shrink-0">
-          {updatedContact.enrichmentstatus !== 'processing' && !isEditMode && (
+          {updatedContact.enrichment_status !== 'processing' && !isEditMode && (
             <button
               onClick={handleEnrich}
               disabled={isEnriching}
@@ -800,6 +794,8 @@ ${notes.map(n => `- ${n.text}`).join('\n')}
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };
 
 export default ContactDetailModalPremium;
