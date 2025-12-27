@@ -18,7 +18,7 @@ export default function ContactsPage() {
       if (result.data.session) setIsAuthenticated(true);
       else setIsLoading(false);
     });
-    var sub = supabase.auth.onAuthStateChange(function(ev, sess) {
+    var sub = supabase.auth.onAuthStateChange(function(_event, sess) {
       if (sess) setIsAuthenticated(true);
       else { setIsAuthenticated(false); setIsLoading(false); }
     });
@@ -44,7 +44,7 @@ export default function ContactsPage() {
 
   function filterContacts() {
     var term = searchTerm.toLowerCase();
-    setFilteredContacts(contacts.filter(function(c) {
+    setFilteredContacts(contacts.filter(function(c: Contact) {
       return (c.first_name||'').toLowerCase().includes(term) ||
         (c.last_name||'').toLowerCase().includes(term) ||
         (c.email||'').toLowerCase().includes(term) ||
@@ -52,10 +52,10 @@ export default function ContactsPage() {
     }));
   }
 
-  function handleRowClick(contact) { setSelectedContact(contact); setIsModalOpen(true); }
+  function handleRowClick(contact: Contact) { setSelectedContact(contact); setIsModalOpen(true); }
   function handleCloseModal() { setIsModalOpen(false); setSelectedContact(null); }
 
-  function handleDeleteContact(id, e) {
+  function handleDeleteContact(id: string, e: React.MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     if (!confirm('Delete?')) return;
     supabase.auth.getSession().then(function(r) {
@@ -63,18 +63,18 @@ export default function ContactsPage() {
       if (!sess) return;
       fetch(import.meta.env.VITE_API_URL + '/api/v3/contacts/' + id, {
         method: 'DELETE', headers: { 'Authorization': 'Bearer ' + sess.access_token }
-      }).then(function() { setContacts(contacts.filter(function(c) { return c.id !== id; })); });
+      }).then(function() { setContacts(contacts.filter(function(c: Contact) { return c.id !== id; })); });
     });
   }
 
-  function getStatusBadge(s) {
+  function getStatusBadge(s: string | null | undefined): string {
     if (s === 'completed') return 'bg-green-100 text-green-800';
     if (s === 'processing') return 'bg-yellow-100 text-yellow-800';
     if (s === 'failed') return 'bg-red-100 text-red-800';
     return 'bg-gray-100 text-gray-800';
   }
 
-  function getScoreColor(sc) {
+  function getScoreColor(sc: number | null | undefined): string {
     if (!sc) return 'text-gray-500';
     if (sc >= 75) return 'text-green-600';
     if (sc >= 50) return 'text-yellow-600';
@@ -116,7 +116,7 @@ export default function ContactsPage() {
               <th className="px-6 py-4 text-left">Actions</th>
             </tr></thead>
             <tbody>
-              {filteredContacts.map(function(c) {
+              {filteredContacts.map(function(c: Contact) {
                 return (<tr key={c.id} className="border-b border-slate-700 hover:bg-slate-700 cursor-pointer"
                   onClick={function() { handleRowClick(c); }}>
                   <td className="px-6 py-4 text-white">{c.first_name} {c.last_name}</td>
@@ -149,20 +149,20 @@ export default function ContactsPage() {
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm">Enriched</p>
           <p className="text-3xl font-bold text-green-500 mt-2">
-            {contacts.filter(function(c) { return c.enrichment_status === 'completed'; }).length}
+            {contacts.filter(function(c: Contact) { return c.enrichment_status === 'completed'; }).length}
           </p>
         </div>
         <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
           <p className="text-slate-400 text-sm">Avg Score</p>
           <p className="text-3xl font-bold text-blue-500 mt-2">
-            {contacts.length > 0 ? (contacts.reduce(function(s,c) { return s + (c.apex_score||0); }, 0) / contacts.length).toFixed(0) : 'N/A'}
+            {contacts.length > 0 ? (contacts.reduce(function(s: number, c: Contact) { return s + (c.apex_score||0); }, 0) / contacts.length).toFixed(0) : 'N/A'}
           </p>
         </div>
       </div>
       {isModalOpen && selectedContact && (
         <ContactDetailModalPremium contact={selectedContact} isOpen={isModalOpen}
           onClose={handleCloseModal} onEnrichComplete={fetchContacts}
-          onContactUpdate={function(c) { setContacts(contacts.map(function(x) { return x.id === c.id ? c : x; })); }} />
+          onContactUpdate={function(c: Contact) { setContacts(contacts.map(function(x: Contact) { return x.id === c.id ? c : x; })); }} />
       )}
     </div>
   );
