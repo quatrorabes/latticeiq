@@ -1,7 +1,0 @@
-#!/usr/bin/env python3
-
-pat-na2-0b991637-c3d3-479a-a125-2279e5838752
-
-curl "https://latticeiq-backend.onrender.com/api/v3/contacts" \
-	-H "Authorization: pat-na2-0b991637-c3d3-479a-a125-2279e5838752" \
-	2>/dev/null | jq '.contacts[0]' | head -50
