@@ -178,11 +178,7 @@ export default function ContactsPage() {
               </thead>
               <tbody className="divide-y divide-gray-800">
                 {filteredContacts.map((contact) => (
-                  <tr
-                    key={contact.id}
-                    onClick={() => setSelectedContact(contact)}
-                    className="hover:bg-gray-900 cursor-pointer transition"
-                  >
+                  <tr key={contact.id} className="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" onClick={() => setSelectedContact(contact)}>
                     <td className="px-4 py-3 text-sm whitespace-nowrap">
                       <span className="font-medium">
                         {contact.first_name} {contact.last_name}
