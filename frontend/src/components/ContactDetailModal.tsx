@@ -200,5 +200,5 @@ export default function ContactDetailModal({ contact, isOpen, onClose, onEnrichC
     </>
   );
 
-  return createPortal(modalContent, document.body);
+  return modalContent;
 }
