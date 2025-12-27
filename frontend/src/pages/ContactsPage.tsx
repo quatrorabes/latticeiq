@@ -1,237 +1,255 @@
-import { useEffect, useState } from 'react';
-import { supabase } from '../lib/supabaseClient';
-import ContactDetailModal from '../components/ContactDetailModal';
+// frontend/src/pages/ContactsPage.tsx
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { ContactDetailModalPremium } from '../components/ContactDetailModalPremium';
 import type { Contact } from '../types/contact';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-
-interface ContactWithScores extends Contact {
-  job_title?: string;
-  mdcp_score?: number;
-  bant_score?: number;
-  spice_score?: number;
-}
-
 export default function ContactsPage() {
-  const [contacts, setContacts] = useState<ContactWithScores[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<ContactWithScores[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    console.log('Selected contact changed:', selectedContact);
-  }, [selectedContact]);
+  // MODAL STATE - THIS IS WHAT YOU NEEDED
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
     fetchContacts();
   }, []);
 
   useEffect(() => {
-    let filtered = contacts;
-
-    if (selectedStatus !== 'all') {
-      filtered = filtered.filter((c) => c.enrichment_status === selectedStatus);
-    }
-
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter((c) =>
-        c.first_name.toLowerCase().includes(term) ||
-        c.last_name.toLowerCase().includes(term) ||
-        c.email.toLowerCase().includes(term) ||
-        (c.company && c.company.toLowerCase().includes(term))
-      );
-    }
-
-    setFilteredContacts(filtered);
-  }, [contacts, searchTerm, selectedStatus]);
+    filterContacts();
+  }, [contacts, searchTerm]);
 
   const fetchContacts = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      setLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+      if (!session) throw new Error('Not authenticated');
 
-      const response = await fetch(`${API_URL}/api/v3/contacts`, {
-        headers: {
-          'Authorization': token ? `Bearer ${token}` : '',
-        },
-      });
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v2/contacts?limit=100&offset=0`,
+        {
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }
+      );
 
       if (!response.ok) throw new Error('Failed to fetch contacts');
       const data = await response.json();
       setContacts(data.contacts || []);
     } catch (err) {
-      console.error('Error fetching contacts:', err);
+      setError(err instanceof Error ? err.message : 'Error loading contacts');
+      console.error('Fetch error:', err);
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  const getScoreColor = (score: number | undefined) => {
-    if (!score) return 'text-gray-400';
-    if (score >= 75) return 'text-green-400';
-    if (score >= 50) return 'text-yellow-400';
-    return 'text-red-400';
+  const filterContacts = () => {
+    const term = searchTerm.toLowerCase();
+    const filtered = contacts.filter(
+      (c) =>
+        c.firstname?.toLowerCase().includes(term) ||
+        c.lastname?.toLowerCase().includes(term) ||
+        c.email?.toLowerCase().includes(term) ||
+        c.company?.toLowerCase().includes(term)
+    );
+    setFilteredContacts(filtered);
   };
 
-  const getStatusBadge = (status: string) => {
+  // HANDLERS FOR MODAL
+  const handleRowClick = (contact: Contact) => {
+    setSelectedContact(contact);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedContact(null);
+  };
+
+  const handleEnrichComplete = () => {
+    fetchContacts(); // Refresh list after enrichment
+  };
+
+  const handleContactUpdate = (updatedContact: Contact) => {
+    setContacts(contacts.map(c => c.id === updatedContact.id ? updatedContact : c));
+    setSelectedContact(updatedContact);
+  };
+
+  const handleDeleteContact = async (contactId: string) => {
+    if (!confirm('Are you sure you want to delete this contact?')) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Not authenticated');
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v2/contacts/${contactId}`,
+        {
+          method: 'DELETE',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+        }
+      );
+
+      if (!response.ok) throw new Error('Failed to delete contact');
+      setContacts(contacts.filter(c => c.id !== contactId));
+      setIsModalOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  };
+
+  const getStatusBadge = (status: string | null | undefined) => {
     switch (status) {
       case 'completed':
-        return <span className="px-2 py-1 text-xs bg-green-900 text-green-300 rounded">Enriched</span>;
-      case 'pending':
-        return <span className="px-2 py-1 text-xs bg-yellow-900 text-yellow-300 rounded">Pending</span>;
+        return 'bg-green-100 text-green-800';
       case 'processing':
-        return <span className="px-2 py-1 text-xs bg-blue-900 text-blue-300 rounded">Processing</span>;
+        return 'bg-yellow-100 text-yellow-800';
       case 'failed':
-        return <span className="px-2 py-1 text-xs bg-red-900 text-red-300 rounded">Failed</span>;
+        return 'bg-red-100 text-red-800';
       default:
-        return <span className="px-2 py-1 text-xs bg-gray-700 text-gray-300 rounded">Not Enriched</span>;
+        return 'bg-gray-100 text-gray-800';
     }
   };
 
-  const stats = {
-    total: contacts.length,
-    enriched: contacts.filter((c) => c.enrichment_status === 'completed').length,
-    pending: contacts.filter((c) => c.enrichment_status === 'pending').length,
-    avgScore: contacts.length > 0
-      ? Math.round(
-          contacts.reduce((sum, c) => sum + (c.mdcp_score || 0), 0) / contacts.length
-        )
-      : 0,
+  const getScoreColor = (score: number | null | undefined) => {
+    if (!score) return 'text-gray-500';
+    if (score >= 75) return 'text-green-600';
+    if (score >= 50) return 'text-yellow-600';
+    return 'text-red-600';
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Contacts</h1>
-          <p className="text-gray-400">
-            Import from CSV, HubSpot, Salesforce, or Pipedrive, then enrich and score.
-          </p>
-        </div>
+    <div className="p-6 bg-slate-900 min-h-screen">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold text-white mb-2">Contacts</h1>
+        <p className="text-slate-400">Manage and enrich your sales contacts</p>
+      </div>
 
-        <div className="grid grid-cols-4 gap-4 mb-8">
-          <StatCard label="Total Contacts" value={stats.total} />
-          <StatCard label="Enriched" value={stats.enriched} accent="text-green-400" />
-          <StatCard label="Pending" value={stats.pending} accent="text-yellow-400" />
-          <StatCard label="Avg Score" value={stats.avgScore} accent="text-cyan-400" />
-        </div>
+      {/* Search Bar */}
+      <div className="mb-6">
+        <input
+          type="text"
+          placeholder="Search by name, email, or company..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full bg-slate-800 text-white rounded-lg px-4 py-3 border border-slate-700 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
 
-        <div className="flex gap-4 mb-6">
-          <input
-            type="text"
-            placeholder="Search by name, email, or company..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="flex-1 px-4 py-2 bg-gray-900 border border-gray-800 rounded text-white placeholder-gray-500 focus:outline-none focus:border-cyan-600"
-          />
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-4 py-2 bg-gray-900 border border-gray-800 rounded text-white focus:outline-none focus:border-cyan-600"
+      {/* Error Message */}
+      {error && (
+        <div className="mb-6 bg-red-900 text-red-100 p-4 rounded-lg flex justify-between items-center">
+          <p>{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="text-red-300 hover:text-red-100"
           >
-            <option value="all">All Status</option>
-            <option value="completed">Enriched</option>
-            <option value="pending">Pending</option>
-            <option value="processing">Processing</option>
-            <option value="failed">Failed</option>
-          </select>
+            ✕
+          </button>
         </div>
+      )}
 
-        {loading ? (
-          <div className="text-center py-12">
-            <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-400"></div>
-            <p className="text-gray-400 mt-4">Loading contacts...</p>
+      {/* Contacts Table */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
+        {isLoading ? (
+          <div className="p-12 text-center">
+            <div className="animate-spin mb-4 inline-block">
+              <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
+            <p className="text-slate-400">Loading contacts...</p>
           </div>
         ) : filteredContacts.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-400 mb-4">No contacts found.</p>
-            <p className="text-sm text-gray-500">
-              {contacts.length === 0
-                ? 'Import contacts from your CRM to get started.'
-                : 'Try adjusting your search or filters.'}
-            </p>
+          <div className="p-12 text-center">
+            <p className="text-slate-400">No contacts found</p>
           </div>
         ) : (
-          <div className="overflow-x-auto border border-gray-800 rounded-lg">
-            <table className="w-full">
-              <thead className="bg-gray-900 border-b border-gray-800">
-                <tr>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Name</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Email</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Company</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Title</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-300">MDCP</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-300">BANT</th>
-                  <th className="px-4 py-3 text-center text-sm font-semibold text-gray-300">SPICE</th>
-                  <th className="px-4 py-3 text-left text-sm font-semibold text-gray-300">Status</th>
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-700 bg-slate-700">
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Name</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Email</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Company</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Title</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">APEX Score</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Status</th>
+                <th className="px-6 py-4 text-left text-slate-300 font-semibold">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredContacts.map((contact) => (
+                <tr
+                  key={contact.id}
+                  className="border-b border-slate-700 hover:bg-slate-700 transition-colors cursor-pointer"
+                  onClick={() => handleRowClick(contact)}
+                >
+                  <td className="px-6 py-4 text-white font-medium">
+                    {contact.firstname} {contact.lastname}
+                  </td>
+                  <td className="px-6 py-4 text-slate-400 text-sm">{contact.email}</td>
+                  <td className="px-6 py-4 text-slate-400 text-sm">{contact.company || '—'}</td>
+                  <td className="px-6 py-4 text-slate-400 text-sm">{contact.title || '—'}</td>
+                  <td className={`px-6 py-4 font-bold text-sm ${getScoreColor(contact.apexscore)}`}>
+                    {contact.apexscore?.toFixed(0) || '—'}
+                  </td>
+                  <td className="px-6 py-4">
+                    <span className={`inline-block text-xs font-semibold px-3 py-1 rounded-full ${getStatusBadge(contact.enrichmentstatus)}`}>
+                      {contact.enrichmentstatus || 'pending'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteContact(contact.id);
+                      }}
+                      className="text-red-400 hover:text-red-300 text-sm font-medium"
+                    >
+                      Delete
+                    </button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-800">
-                {filteredContacts.map((contact) => (
-                  <tr 
-                    key={contact.id} 
-                    className="border-b border-gray-700 hover:bg-gray-800 cursor-pointer" 
-                    onClick={() => setSelectedContact(contact)}
-                  >
-                    <td className="px-4 py-3 text-sm whitespace-nowrap">
-                      <span className="font-medium">
-                        {contact.first_name} {contact.last_name}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-400">
-                      <a
-                        href={`mailto:${contact.email}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="hover:text-cyan-400 transition"
-                      >
-                        {contact.email}
-                      </a>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-400">{contact.company || '-'}</td>
-                    <td className="px-4 py-3 text-sm">{contact.job_title || '-'}</td>
-                    <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.mdcp_score)}`}>
-                      {contact.mdcp_score ?? '-'}
-                    </td>
-                    <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.bant_score)}`}>
-                      {contact.bant_score ?? '-'}
-                    </td>
-                    <td className={`px-4 py-3 text-sm text-center font-semibold ${getScoreColor(contact.spice_score)}`}>
-                      {contact.spice_score ?? '-'}
-                    </td>
-                    <td className="px-4 py-3 text-sm">{getStatusBadge(contact.enrichment_status || 'pending')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {!loading && (
-          <p className="text-sm text-gray-400 mt-4">
-            Showing {filteredContacts.length} of {contacts.length} contacts
-          </p>
+              ))}
+            </tbody>
+          </table>
         )}
       </div>
 
-      <ContactDetailModal
-        contact={selectedContact}
-        isOpen={selectedContact !== null}
-        onClose={() => { setSelectedContact(null); fetchContacts(); }}
-        onEnrichComplete={() => fetchContacts()}
-      />
-    </div>
-  );
-}
+      {/* Stats Footer */}
+      <div className="mt-6 grid grid-cols-3 gap-4">
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <p className="text-slate-400 text-sm uppercase tracking-wide">Total Contacts</p>
+          <p className="text-3xl font-bold text-white mt-2">{contacts.length}</p>
+        </div>
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <p className="text-slate-400 text-sm uppercase tracking-wide">Enriched</p>
+          <p className="text-3xl font-bold text-green-500 mt-2">
+            {contacts.filter(c => c.enrichmentstatus === 'completed').length}
+          </p>
+        </div>
+        <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+          <p className="text-slate-400 text-sm uppercase tracking-wide">Avg APEX Score</p>
+          <p className="text-3xl font-bold text-blue-500 mt-2">
+            {(contacts.filter(c => c.apexscore).reduce((sum, c) => sum + (c.apexscore || 0), 0) / contacts.length || 0).toFixed(0)}
+          </p>
+        </div>
+      </div>
 
-function StatCard({ label, value, accent = 'text-cyan-400' }: { label: string; value: number; accent?: string }) {
-  return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
-      <p className="text-xs text-gray-400 mb-1">{label}</p>
-      <p className={`text-2xl font-bold ${accent}`}>{value}</p>
+      {/* PREMIUM MODAL - THIS IS THE KEY PART YOU ADD */}
+      <ContactDetailModalPremium
+        contact={selectedContact}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+        onEnrichComplete={handleEnrichComplete}
+        onContactUpdate={handleContactUpdate}
+      />
     </div>
   );
 }
