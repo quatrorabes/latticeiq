@@ -7,6 +7,7 @@ import Signup from './pages/Signup';
 import ContactsPage from './pages/ContactsPage';
 import ContactDetailPage from './pages/ContactDetailPage';
 import Dashboard from './pages/Dashboard';
+import SetupPage from './pages/SetupPage';
 import Sidebar from './components/Sidebar';
 
 function App() {
@@ -57,10 +58,11 @@ function App() {
         <Sidebar onLogout={handleLogout} />
         <main className="flex-1 ml-64">
           <Routes>
+            <Route path="/setup" element={<SetupPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
             <Route path="/contacts/:contactId" element={<ContactDetailPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="*" element={<Navigate to="/contacts" replace />} />
+            <Route path="*" element={<Navigate to="/setup" replace />} />
           </Routes>
         </main>
       </div>
