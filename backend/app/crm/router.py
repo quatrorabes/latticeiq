@@ -22,7 +22,7 @@ from .csv_parser import CSVParser
 from .hubspot_client import HubSpotClient
 from .salesforce_client import SalesforceClient
 from .pipedrive_client import PipedriveClient
-from crm.settings_router import supabase_service
+from app.crm.settings_router import supabase_service
 
 SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")

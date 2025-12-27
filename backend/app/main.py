@@ -1,36 +1,39 @@
-# ============================================================================
-# FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
-# ============================================================================
-"""
-Enterprise-grade FastAPI application for LatticeIQ
-
-Handles authentication, CRM imports, contact management, and scoring
-"""
-
 import os
 import sys
 from pathlib import Path
-
-# ========================================
-# CRITICAL: FIX PYTHON PATH FIRST
-# Must be at the very top before any local imports
-# ========================================
-
-backend_dir = Path(__file__).parent.resolve()
-
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
-
-# Also add legacy support (if needed)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# ========================================
-
+from typing import Optional
+from datetime import datetime
 import uuid
 import logging
-from datetime import datetime
-from typing import Optional
-from functools import lru_cache
+
+# ========================================
+# CRITICAL: PYTHON PATH SETUP FOR MONOREPO
+# ========================================
+
+app_dir = Path(__file__).parent.resolve()          # .../backend/app
+backend_root = app_dir.parent                      # .../backend
+project_root = backend_root.parent                 # .../projects/latticeiq
+
+# Ensure backend root is on path (for app.* imports)
+if str(backend_root) not in sys.path:
+    sys.path.insert(0, str(backend_root))
+
+# Ensure project root is on path (for domains.*, frontend.*, etc.)
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
+# ========================================
+# LOAD ENVIRONMENT VARIABLES
+# ========================================
+
+from dotenv import load_dotenv
+
+ENV_PATH = backend_root / ".env"
+load_dotenv(dotenv_path=ENV_PATH, override=False)
+
+# ========================================
+# IMPORTS (AFTER PATH SETUP & ENV LOAD)
+# ========================================
 
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -42,9 +45,21 @@ from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
 
-# ============================================================================
-# CREATE APP FIRST (before importing routers)
-# ============================================================================
+# ========================================
+# LOGGING SETUP
+# ========================================
+
+logHandler = logging.StreamHandler()
+formatter = jsonlogger.JsonFormatter()
+logHandler.setFormatter(formatter)
+
+logger = logging.getLogger("latticeiq")
+logger.addHandler(logHandler)
+logger.setLevel(logging.INFO)
+
+# ========================================
+# FASTAPI APP INITIALIZATION
+# ========================================
 
 app = FastAPI(
     title="LatticeIQ Sales Intelligence API",
@@ -56,10 +71,11 @@ app = FastAPI(
 )
 
 # ========================================
-# Add middleware
+# MIDDLEWARE
 # ========================================
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -68,357 +84,118 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ============================================================================
-# CONFIGURATION & SETTINGS
-# ============================================================================
+# ========================================
+# SUPABASE INITIALIZATION
+# ========================================
 
-class Settings(BaseModel):
-    """Application configuration"""
-    SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
-    SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
-    LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
-    ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_ANON_KEY")
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+if not SUPABASE_URL or not SUPABASE_KEY:
+    logger.error("❌ Missing SUPABASE_URL or SUPABASE_ANON_KEY in environment")
+    sys.exit(1)
 
-    @classmethod
-    def from_env(cls):
-        return cls(
-            SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
-            SUPABASE_ANON_KEY=os.getenv("SUPABASE_ANON_KEY", ""),
-            LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
-            ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
-        )
+supabase_client: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+logger.info("✅ Supabase initialized successfully")
 
-@lru_cache
-def get_settings() -> Settings:
-    return Settings.from_env()
+# ========================================
+# DEPENDENCY INJECTION
+# ========================================
 
-settings = get_settings()
+def get_supabase() -> Client:
+    return supabase_client
 
-# ============================================================================
-# LOGGING SETUP
-# ============================================================================
+# ========================================
+# ROUTER IMPORTS (CORRECTED PATHS)
+# ========================================
 
-def setup_logging(log_level: str = "INFO") -> logging.Logger:
-    logger = logging.getLogger("latticeiq")
-    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-    handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter(
-        "%(timestamp)s %(level)s %(name)s %(message)s %(request_id)s"
-    )
-    handler.setFormatter(formatter)
-    logger.handlers.clear()
-    logger.addHandler(handler)
-    return logger
+routers_to_register = []
 
-logger = setup_logging(settings.LOG_LEVEL)
-
-# ============================================================================
-# DATABASE INITIALIZATION
-# ============================================================================
-
-def initialize_supabase() -> Optional[Client]:
-    if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
-        logger.warning("⚠️ SUPABASE_URL or SUPABASE_ANON_KEY not configured")
-        return None
-
-    try:
-        client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
-        logger.info("✅ Supabase initialized successfully")
-        return client
-    except Exception as e:
-        logger.error(
-            f"❌ Supabase initialization failed: {str(e)}", extra={"error": str(e)}
-        )
-        return None
-
-supabase = initialize_supabase()
-
-async def validate_database_schema():
-    if not supabase:
-        logger.warning("Supabase not initialized, skipping schema validation")
-        return
-
-    required_tables = ["contacts", "import_jobs", "import_logs", "dnc_list", "crm_integrations"]
-    for table in required_tables:
-        try:
-            supabase.table(table).select("count", count="exact").execute()
-            logger.info(f"✅ Table validated: {table}")
-        except Exception as e:
-            logger.error(f"❌ Table validation failed for {table}: {str(e)}")
-
-# ============================================================================
-# PYDANTIC MODELS
-# ============================================================================
-
-class CurrentUser(BaseModel):
-    id: str
-    email: str = ""
-
-class ContactCreate(BaseModel):
-    first_name: str = Field(..., min_length=1, max_length=100)
-    last_name: str = Field(..., min_length=1, max_length=100)
-    email: str = Field(..., pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
-    job_title: Optional[str] = Field(None, max_length=100)
-    company: Optional[str] = Field(None, max_length=200)
-    phone: Optional[str] = Field(None, max_length=20)
-    linkedin_url: Optional[str] = Field(None, max_length=500)
-    website: Optional[str] = Field(None, max_length=500)
-
-class ContactUpdate(BaseModel):
-    first_name: Optional[str] = Field(None, max_length=100)
-    last_name: Optional[str] = Field(None, max_length=100)
-    email: Optional[str] = Field(None, pattern=r"^[\w\.-]+@[\w\.-]+\.\w+$")
-    job_title: Optional[str] = Field(None, max_length=100)
-    company: Optional[str] = Field(None, max_length=200)
-    phone: Optional[str] = Field(None, max_length=20)
-    linkedin_url: Optional[str] = Field(None, max_length=500)
-    website: Optional[str] = Field(None, max_length=500)
-    enrichment_data: Optional[dict] = None
-    mdcp_score: Optional[int] = Field(None, ge=0, le=100)
-    bant_score: Optional[int] = Field(None, ge=0, le=100)
-    spice_score: Optional[int] = Field(None, ge=0, le=100)
-
-# ============================================================================
-# AUTHENTICATION (Supabase-validated)
-# ============================================================================
-
-async def get_current_user(
-    authorization: str = Header(None),
-) -> CurrentUser:
-    """
-    Correct Supabase flow:
-    - Frontend sends Supabase access_token (JWT) in Authorization header
-    - Backend validates token by calling supabase.auth.get_user(token)
-    """
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-    if not authorization:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing authorization header",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise ValueError("Invalid scheme")
-
-        user_resp = supabase.auth.get_user(token)
-        user_obj = getattr(user_resp, "user", None) or (
-            user_resp.get("user") if isinstance(user_resp, dict) else None
-        )
-
-        if not user_obj:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-        user_id = getattr(user_obj, "id", None) or user_obj.get("id")
-        email = getattr(user_obj, "email", None) or user_obj.get("email") or ""
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token (missing user id)")
-
-        return CurrentUser(id=str(user_id), email=str(email))
-
-    except HTTPException:
-        raise
-    except ValueError as e:
-        raise HTTPException(
-            status_code=401, detail=f"Invalid authorization header format: {str(e)}"
-        )
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
-# ============================================================================
-# ROUTER IMPORTS (with error handling)
-# ============================================================================
-
-# Contacts Router (CRUD)
+# Contacts Router
 try:
     from app.contacts_router import router as contacts_router
-    CONTACTS_ROUTER_AVAILABLE = True
-    print("✅ Contacts router imported")
+    routers_to_register.append(("contacts", contacts_router, "/api/v3/contacts"))
+    logger.info("✅ Contacts router imported")
 except ImportError as e:
-    contacts_router = None
-    CONTACTS_ROUTER_AVAILABLE = False
-    print(f"❌ Contacts router import failed: {e}")
+    logger.error(f"❌ Contacts router import failed: {e}")
 
 # CRM Settings Router
 try:
     from app.crm.settings_router import router as settings_router
-    SETTINGS_ROUTER_AVAILABLE = True
-    print("✅ CRM Settings router imported")
+    routers_to_register.append(("settings", settings_router, "/api/v3/settings"))
+    logger.info("✅ CRM Settings router imported")
 except ImportError as e:
-    settings_router = None
-    SETTINGS_ROUTER_AVAILABLE = False
-    print(f"❌ CRM Settings router import failed: {e}")
-
-# CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
+    logger.error(f"❌ CRM Settings router import failed: {e}")
+    
+# CRM Import Router
 try:
     from app.crm.router import router as crm_router
-    CRM_ROUTER_AVAILABLE = True
-    print("✅ CRM router imported")
+    routers_to_register.append(("crm", crm_router, "/api/v3/import"))
+    logger.info("✅ CRM router imported")
 except ImportError as e:
-    crm_router = None
-    CRM_ROUTER_AVAILABLE = False
-    print(f"❌ CRM router import failed: {e}")
+    logger.error(f"❌ CRM router import failed: {e}")
+    
 
-# Quick Enrichment Router (Perplexity - fast lookup)
+# Quick Enrichment Router
 try:
-    from app.enrichment_v3.enrich_router import router as enrich_router
-    ENRICH_ROUTER_AVAILABLE = True
-    print("✅ Quick Enrichment router imported")
+    from app.enrichment_v3.enrich_router import router as enrichment_router
+    routers_to_register.append(("enrichment", enrichment_router, "/api/v3/enrich"))
+    logger.info("✅ Quick Enrichment router imported")
 except ImportError as e:
-    enrich_router = None
-    ENRICH_ROUTER_AVAILABLE = False
-    print(f"❌ Quick Enrichment router import failed: {e}")
+    logger.error(f"❌ Quick Enrichment router import failed: {e}")
 
-# Scoring Router (MDCP/BANT/SPICE)
+# Scoring Router
 try:
     from app.scoring.router import router as scoring_router
-    SCORING_AVAILABLE = True
-    print("✅ Scoring router imported")
+    routers_to_register.append(("scoring", scoring_router, "/api/v3/score"))
+    logger.info("✅ Scoring router imported")
 except ImportError as e:
-    scoring_router = None
-    SCORING_AVAILABLE = False
-    print(f"❌ Scoring router import failed: {e}")
-    
-# ICP Router
+    logger.error(f"❌ Scoring router import failed: {e}")
+
+# ICP Router (domains/ doesn't exist yet, so this will fail gracefully)
 try:
     from domains.icp.router import router as icp_router
-    ICP_AVAILABLE = True
-    print("✅ ICP router imported")
+    routers_to_register.append(("icp", icp_router, "/api/v3/icp"))
+    logger.info("✅ ICP router imported")
 except ImportError as e:
-    icp_router = None
-    ICP_AVAILABLE = False
-    print(f"❌ ICP router import failed: {e}")
-    
-# ============================================================================
-# ROUTER IMPORTS (with error handling)
-# ============================================================================
+    logger.warning(f"⏭️  ICP router not available (domains/ not deployed yet): {e}")
 
-# Contacts Router (CRUD)
-try:
-    from app.contacts_router import router as contacts_router
-    CONTACTS_ROUTER_AVAILABLE = True
-    print("✅ Contacts router imported")
-except ImportError as e:
-    contacts_router = None
-    CONTACTS_ROUTER_AVAILABLE = False
-    print(f"❌ Contacts router import failed: {e}")
+# ========================================
+# REGISTER ROUTERS
+# ========================================
 
-# CRM Settings Router
-try:
-    from app.crm.settings_router import router as settings_router
-    SETTINGS_ROUTER_AVAILABLE = True
-    print("✅ CRM Settings router imported")
-except ImportError as e:
-    settings_router = None
-    SETTINGS_ROUTER_AVAILABLE = False
-    print(f"❌ CRM Settings router import failed: {e}")
+for router_name, router, prefix in routers_to_register:
+    app.include_router(router, prefix=prefix)
+    logger.info(f"✅ {router_name.capitalize()} router registered at {prefix}")
 
-# CRM Import Router (HubSpot, Salesforce, Pipedrive, CSV)
-try:
-    from app.crm.router import router as crm_router
-    CRM_ROUTER_AVAILABLE = True
-    print("✅ CRM router imported")
-except ImportError as e:
-    crm_router = None
-    CRM_ROUTER_AVAILABLE = False
-    print(f"❌ CRM router import failed: {e}")
-
-# Quick Enrichment Router (Perplexity - fast lookup)
-try:
-    from app.enrichment_v3.enrich_router import router as enrich_router
-    ENRICH_ROUTER_AVAILABLE = True
-    print("✅ Quick Enrichment router imported")
-except ImportError as e:
-    enrich_router = None
-    ENRICH_ROUTER_AVAILABLE = False
-    print(f"❌ Quick Enrichment router import failed: {e}")
-
-# Scoring Router (MDCP/BANT/SPICE)
-try:
-    from app.scoring.router import router as scoring_router
-    SCORING_AVAILABLE = True
-    print("✅ Scoring router imported")
-except ImportError as e:
-    scoring_router = None
-    SCORING_AVAILABLE = False
-    print(f"❌ Scoring router import failed: {e}")
-
-# ICP Router
-try:
-    from domains.icp.router import router as icp_router
-    ICP_AVAILABLE = True
-    print("✅ ICP router imported")
-except ImportError as e:
-    icp_router = None
-    ICP_AVAILABLE = False
-    print(f"❌ ICP router import failed: {e}")
-
-# ============================================================================
-# REGISTER ALL ROUTERS (after app creation)
-# ============================================================================
-
-if CONTACTS_ROUTER_AVAILABLE:
-    app.include_router(contacts_router, prefix="/api/v3")
-    print("✅ Contacts router registered at /api/v3/contacts")
-
-if SETTINGS_ROUTER_AVAILABLE:
-    app.include_router(settings_router, prefix="/api/v3")
-    print("✅ Settings router registered at /api/v3/settings")
-
-if CRM_ROUTER_AVAILABLE:
-    app.include_router(crm_router, prefix="/api/v3")
-    print("✅ CRM router registered at /api/v3/import")
-
-if ENRICH_ROUTER_AVAILABLE:
-    app.include_router(enrich_router, prefix="/api/v3")
-    print("✅ Quick Enrichment router registered at /api/v3/enrich")
-
-if SCORING_AVAILABLE:
-    app.include_router(scoring_router, prefix="/api/v3")
-    print("✅ Scoring router registered at /api/v3/score")
-
-if ICP_AVAILABLE:
-    app.include_router(icp_router, prefix="/api/v3")
-    print("✅ ICP router registered at /api/v3/icp")
-
-
-# ============================================================================
+# ========================================
 # HEALTH CHECK ENDPOINT
-# ============================================================================
+# ========================================
 
-@app.get("/health")
-async def health():
+@app.get("/api/health")
+async def health_check():
     return {
-        "status": "ok",
+        "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "database": "connected" if supabase else "disconnected",
+        "service": "LatticeIQ Backend API",
+        "version": "3.0.0",
     }
 
-# ============================================================================
-# STARTUP/SHUTDOWN EVENTS
-# ============================================================================
+# ========================================
+# ROOT ENDPOINT
+# ========================================
 
-@app.on_event("startup")
-async def startup_event():
-    logger.info("🚀 LatticeIQ API starting up...")
-    await validate_database_schema()
-    logger.info("✅ Application startup complete")
+@app.get("/")
+async def root():
+    return {
+        "message": "LatticeIQ Sales Intelligence API",
+        "docs": "/api/docs",
+        "version": "3.0.0",
+    }
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("🛑 LatticeIQ API shutting down...")
-
-# ============================================================================
-# ERROR HANDLERS
-# ============================================================================
+# ========================================
+# EXCEPTION HANDLERS
+# ========================================
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -430,30 +207,39 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         },
     )
 
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception: {str(exc)}")
     return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "detail": "Internal server error",
+        },
     )
 
-# ============================================================================
-# ROOT ENDPOINT
-# ============================================================================
+# ========================================
+# STARTUP / SHUTDOWN HOOKS
+# ========================================
 
-@app.get("/")
-async def root():
-    return {
-        "name": "LatticeIQ Sales Intelligence API",
-        "version": "3.0.0",
-        "endpoints": {
-            "health": "/health",
-            "docs": "/api/docs",
-            "contacts": "/api/v3/contacts",
-            "crm_settings": "/api/v3/settings/crm",
-            "crm_import": "/api/v3/import",
-            "quick_enrich": "/api/v3/enrich",
-            "scoring": "/api/v3/score",
-        },
-    }
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 LatticeIQ Backend API starting up...")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("🛑 LatticeIQ Backend API shutting down...")
+
+# ========================================
+# RUN (for local development only)
+# ========================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "app.main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+    )
     
