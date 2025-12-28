@@ -25,49 +25,78 @@ def get_supabase():
     global supabase
     if supabase is None:
         url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_ANON_KEY")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
         if not url or not key:
             return None
         supabase = create_client(url, key)
     return supabase
 
 # ============================================================================
-# AUTH DEPENDENCY
+# AUTH DEPENDENCY - FIXED VERSION
 # ============================================================================
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
-    """Validate Supabase JWT"""
-    client = get_supabase()
-    if not client:
-        raise HTTPException(status_code=503, detail="Database not configured")
-
+    """Validate Supabase JWT and return user info"""
+    
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
-
+    
     try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise ValueError("Invalid scheme")
-
-        anon_client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
-        user_resp = anon_client.auth.get_user(token)
-        user = getattr(user_resp, "user", None) or user_resp.get("user") if isinstance(user_resp, dict) else None
-
+        # Parse Bearer token
+        parts = authorization.split(" ", 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(status_code=401, detail="Invalid authorization format")
+        
+        token = parts[1]
+        
+        # Create a fresh client for token validation
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_ANON_KEY")
+        
+        if not url or not key:
+            raise HTTPException(status_code=503, detail="Database not configured")
+        
+        auth_client = create_client(url, key)
+        
+        # Validate token with Supabase
+        try:
+            user_resp = auth_client.auth.get_user(token)
+        except Exception as auth_error:
+            logger.error(f"Supabase auth.get_user failed: {str(auth_error)}")
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        
+        # Extract user from response - handle different response formats
+        user = None
+        
+        # Try attribute access first (newer supabase-py versions)
+        if hasattr(user_resp, 'user') and user_resp.user is not None:
+            user = user_resp.user
+        # Try dict access
+        elif isinstance(user_resp, dict) and user_resp.get('user'):
+            user = user_resp['user']
+        # Direct user object
+        elif hasattr(user_resp, 'id'):
+            user = user_resp
+        
         if not user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        user_id = getattr(user, "id", None) or user.get("id")
-        email = getattr(user, "email", None) or user.get("email") or ""
-
+            logger.error(f"No user in response: {type(user_resp)} - {user_resp}")
+            raise HTTPException(status_code=401, detail="Invalid token: no user found")
+        
+        # Extract user_id and email
+        user_id = getattr(user, 'id', None) or (user.get('id') if isinstance(user, dict) else None)
+        email = getattr(user, 'email', None) or (user.get('email') if isinstance(user, dict) else "") or ""
+        
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
-
+        
+        logger.info(f"Authenticated user: {email} ({user_id})")
         return {"id": str(user_id), "email": str(email)}
-
+        
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        logger.error(f"Auth error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {str(e)}")
 
 # ============================================================================
 # MODELS
@@ -115,24 +144,24 @@ async def list_contacts(
 
     try:
         user_id = user["id"]
-        
         query = client.table("contacts").select("*").eq("userid", user_id)
-        
+
         if status and status != "all":
             query = query.eq("enrichmentstatus", status)
-        
+
         if search:
             query = query.or_(f"firstname.ilike.%{search}%,lastname.ilike.%{search}%,email.ilike.%{search}%,company.ilike.%{search}%")
-        
+
         query = query.order("createdat", desc=True).range(offset, offset + limit - 1)
         result = query.execute()
-        
+
         return {
             "contacts": result.data or [],
-            "total": result.count or 0,
+            "total": len(result.data) if result.data else 0,
             "limit": limit,
             "offset": offset,
         }
+
     except Exception as e:
         logger.error(f"Error listing contacts: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -148,11 +177,12 @@ async def get_contact(contact_id: str, user: dict = Depends(get_current_user)) -
     try:
         user_id = user["id"]
         result = client.table("contacts").select("*").eq("id", contact_id).eq("userid", user_id).single().execute()
-        
+
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
-        
+
         return result.data
+
     except HTTPException:
         raise
     except Exception as e:
@@ -174,13 +204,14 @@ async def create_contact(contact: ContactCreate, user: dict = Depends(get_curren
         data["enrichmentstatus"] = "pending"
         data["createdat"] = datetime.utcnow().isoformat()
         data["updatedat"] = datetime.utcnow().isoformat()
-        
+
         result = client.table("contacts").insert(data).execute()
-        
+
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create contact")
-        
+
         return result.data[0]
+
     except HTTPException:
         raise
     except Exception as e:
@@ -197,19 +228,19 @@ async def update_contact(contact_id: str, contact: ContactUpdate, user: dict = D
 
     try:
         user_id = user["id"]
-        
+
         # Verify ownership
         existing = client.table("contacts").select("id").eq("id", contact_id).eq("userid", user_id).single().execute()
         if not existing.data:
             raise HTTPException(status_code=404, detail="Contact not found")
-        
+
         # Only update provided fields
         update_data = {k: v for k, v in contact.dict().items() if v is not None}
         update_data["updatedat"] = datetime.utcnow().isoformat()
-        
+
         result = client.table("contacts").update(update_data).eq("id", contact_id).eq("userid", user_id).execute()
-        
         return result.data[0] if result.data else {}
+
     except HTTPException:
         raise
     except Exception as e:
@@ -228,6 +259,7 @@ async def delete_contact(contact_id: str, user: dict = Depends(get_current_user)
         user_id = user["id"]
         result = client.table("contacts").delete().eq("id", contact_id).eq("userid", user_id).execute()
         return {"status": "deleted", "contact_id": contact_id}
+
     except Exception as e:
         logger.error(f"Error deleting contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -242,16 +274,17 @@ async def get_contact_stats(user: dict = Depends(get_current_user)) -> Dict[str,
 
     try:
         user_id = user["id"]
-        
+
         total = client.table("contacts").select("id", count="exact").eq("userid", user_id).execute()
         enriched = client.table("contacts").select("id", count="exact").eq("userid", user_id).eq("enrichmentstatus", "completed").execute()
         pending = client.table("contacts").select("id", count="exact").eq("userid", user_id).eq("enrichmentstatus", "pending").execute()
-        
+
         return {
             "total": total.count or 0,
             "enriched": enriched.count or 0,
             "pending": pending.count or 0,
         }
+
     except Exception as e:
         logger.error(f"Error getting contact stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
