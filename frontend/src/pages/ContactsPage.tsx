@@ -1,6 +1,4 @@
 import React, { useState, useEffect } from "react";
-import { useSession } from "@supabase/auth-helpers-react";
-import { supabase } from "../../lib/supabase";
 
 interface Contact {
   id: string;
@@ -14,37 +12,33 @@ interface Contact {
 }
 
 const ContactsPage: React.FC = () => {
-  const session = useSession();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (session?.user?.id) {
-      fetchContacts();
-    }
-  }, [session]);
+    fetchContacts();
+  }, []);
 
   const fetchContacts = async () => {
     try {
       setLoading(true);
       setError(null);
 
-      // Get JWT token from Supabase session
-      const { data, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !data?.session?.access_token) {
-        setError("Not authenticated");
+      // Get JWT token from localStorage (set by your auth flow)
+      const token = localStorage.getItem("sb-auth-token");
+
+      if (!token) {
+        setError("Not authenticated - please log in");
         return;
       }
 
-      const token = data.session.access_token;
-
-      // Fetch from backend with Authorization header
+      // Fetch from backend with JWT token
       const response = await fetch(
-        "https://latticeiq-backend.onrender.com/api/v3/contacts", // Use production URL
+        "https://latticeiq-backend.onrender.com/api/v3/contacts",
         {
           headers: {
-            "Authorization": `Bearer ${token}`,
+            Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
         }
@@ -52,29 +46,26 @@ const ContactsPage: React.FC = () => {
 
       if (!response.ok) {
         if (response.status === 401) {
-          setError("Unauthorized - please log in again");
-        } else if (response.status === 404) {
-          setError("Contacts endpoint not found");
+          setError("Unauthorized - token expired, please log in again");
         } else {
-          setError(`Error: ${response.status} ${response.statusText}`);
+          setError(`API error: ${response.status}`);
         }
         return;
       }
 
-      const data_response = await response.json();
+      const data = await response.json();
 
-      // Handle both array and object responses
-      if (Array.isArray(data_response)) {
-        setContacts(data_response);
-      } else if (data_response.contacts && Array.isArray(data_response.contacts)) {
-        setContacts(data_response.contacts);
-      } else {
-        console.warn("Unexpected API response format:", data_response);
-        setContacts([]);
-      }
+      // Handle both formats
+      const contactList = Array.isArray(data)
+        ? data
+        : data.contacts || [];
+
+      setContacts(contactList);
     } catch (err) {
       console.error("Error fetching contacts:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch contacts");
+      setError(
+        err instanceof Error ? err.message : "Failed to fetch contacts"
+      );
     } finally {
       setLoading(false);
     }
