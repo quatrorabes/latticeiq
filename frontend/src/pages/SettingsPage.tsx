@@ -1,350 +1,276 @@
-import React, { useEffect, useMemo, useState } from "react";
-
-import { supabase } from "../lib/supabaseClient";
-
-interface Integration {
-  id: string;
-  user_id: string;
-  crm_type: string;
-  api_key: string;
-  is_active: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-type NullableString = string | null;
+import { useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 export default function SettingsPage() {
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [crmType, setCrmType] = useState("hubspot");
-  const [apiKey, setApiKey] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<NullableString>(null);
-  const [success, setSuccess] = useState<NullableString>(null);
-  const [testingCRM, setTestingCRM] = useState<NullableString>(null);
-  const [importingCRM, setImportingCRM] = useState<NullableString>(null);
-
-  const apiUrl = import.meta.env.VITE_API_URL as string | undefined;
-  const isConfigured = useMemo(() => !!apiUrl, [apiUrl]);
-
-  const getAuthToken = async (): Promise<string> => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    const token = session?.access_token;
-    if (!token) throw new Error("Not logged in (missing access token).");
-    return token;
-  };
-
-  const fetchIntegrations = async () => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    try {
-      setError(null);
-      const token = await getAuthToken();
-      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Failed to fetch integrations (${res.status}): ${txt}`);
-      }
-
-      const data = await res.json();
-      setIntegrations(data.integrations || []);
-    } catch (err: any) {
-      setError(err?.message || String(err));
-    }
-  };
+  const [crms, setCrms] = useState({
+    hubspot: { api_key: '', is_configured: false },
+    salesforce: { api_key: '', is_configured: false },
+    pipedrive: { api_key: '', is_configured: false },
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
 
   useEffect(() => {
-    fetchIntegrations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadSettings();
   }, []);
 
-  const handleSave = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
+  async function loadSettings() {
     try {
-      const token = await getAuthToken();
-      const res = await fetch(`${apiUrl}/api/v3/settings/crm/integrations`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          crm_type: crmType,
-          api_key: apiKey,
-          is_active: true,
-        }),
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data, error } = await supabase
+        .from('crm_credentials')
+        .select('*')
+        .eq('user_id', session.user.id);
+
+      if (error) throw error;
+
+      const newCrms = { ...crms };
+      data?.forEach((cred: any) => {
+        if (newCrms[cred.crm_type as keyof typeof crms]) {
+          newCrms[cred.crm_type as keyof typeof crms] = {
+            api_key: cred.api_key || '',
+            is_configured: !!cred.api_key,
+          };
+        }
       });
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.detail || data?.error || "Failed to save integration.");
-        return;
-      }
-
-      setSuccess(data?.message || `${crmType.toUpperCase()} saved!`);
-      setApiKey("");
-      await fetchIntegrations();
-    } catch (err: any) {
-      setError(err?.message || String(err));
+      setCrms(newCrms);
+    } catch (err) {
+      console.error('Error loading settings:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const handleTest = async (type: string) => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    setTestingCRM(type);
-    setError(null);
-    setSuccess(null);
+  async function saveSettings(crmType: keyof typeof crms) {
+    setSaving(true);
+    setMessage('');
 
     try {
-      const token = await getAuthToken();
-      const res = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${type}/test`,
-        {
-          method: "POST",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.detail || data?.error || "Test failed");
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setMessage('Not authenticated');
+        setMessageType('error');
         return;
       }
 
-      setSuccess(data?.message || "Connection successful!");
-    } catch (err: any) {
-      setError(err?.message || String(err));
-    } finally {
-      setTestingCRM(null);
-    }
-  };
+      const { error } = await supabase.from('crm_credentials').upsert(
+        {
+          user_id: session.user.id,
+          crm_type: crmType,
+          api_key: crms[crmType].api_key,
+        },
+        { onConflict: 'user_id,crm_type' }
+      );
 
-  const handleImportContacts = async (type: string) => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
+      if (error) throw error;
 
-    setImportingCRM(type);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const token = await getAuthToken();
-
-      // IMPORTANT: No request body — backend reads api_key from crm_integrations table.
-      const res = await fetch(`${apiUrl}/api/v3/crm/import/${type}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+      setCrms({
+        ...crms,
+        [crmType]: { ...crms[crmType], is_configured: !!crms[crmType].api_key },
       });
 
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.detail || data?.error || "Import failed");
-        return;
-      }
-
-      const jobId = data?.job_id || data?.jobId || data?.id || "unknown";
-      setSuccess(data?.message || `Import started! Job ID: ${jobId}`);
-    } catch (err: any) {
-      setError(err?.message || String(err));
+      setMessage(`✅ ${crmType.toUpperCase()} credentials saved!`);
+      setMessageType('success');
+    } catch (err) {
+      setMessage(`Error saving credentials: ${(err as Error).message}`);
+      setMessageType('error');
     } finally {
-      setImportingCRM(null);
+      setSaving(false);
     }
-  };
+  }
 
-  const handleDelete = async (type: string) => {
-    if (!apiUrl) {
-      setError("Missing VITE_API_URL in frontend environment.");
-      return;
-    }
-
-    if (!confirm(`Delete ${type}?`)) return;
-
-    setError(null);
-    setSuccess(null);
-
+  async function deleteCredentials(crmType: keyof typeof crms) {
     try {
-      const token = await getAuthToken();
-      const res = await fetch(
-        `${apiUrl}/api/v3/settings/crm/integrations/${type}`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return;
 
-      if (!res.ok) {
-        const txt = await res.text();
-        throw new Error(`Delete failed (${res.status}): ${txt}`);
-      }
+      await supabase
+        .from('crm_credentials')
+        .delete()
+        .eq('user_id', session.user.id)
+        .eq('crm_type', crmType);
 
-      setSuccess(`${type.toUpperCase()} deleted!`);
-      await fetchIntegrations();
-    } catch (err: any) {
-      setError(err?.message || String(err));
+      setCrms({
+        ...crms,
+        [crmType]: { api_key: '', is_configured: false },
+      });
+
+      setMessage(`✅ ${crmType.toUpperCase()} credentials deleted`);
+      setMessageType('success');
+    } catch (err) {
+      setMessage(`Error deleting credentials: ${(err as Error).message}`);
+      setMessageType('error');
     }
-  };
+  }
 
-  const hubspotIntegration = useMemo(
-    () => integrations.find((i) => i.crm_type === "hubspot" && i.is_active),
-    [integrations]
-  );
-
-  if (!isConfigured) {
-    return (
-      <div className="p-6">
-        <h1 className="text-2xl font-bold mb-4">CRM Settings</h1>
-        <p className="text-red-600">
-          Missing VITE_API_URL. Set it to your Render base URL (no trailing slash).
-        </p>
-      </div>
-    );
+  if (loading) {
+    return <div style={{ padding: '20px' }}>Loading settings...</div>;
   }
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">CRM Settings</h1>
+    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
+      <h1>⚙️ Settings</h1>
 
-      {error && <div className="bg-red-100 p-4 mb-4 rounded text-red-700">{error}</div>}
-
-      {success && (
-        <div className="bg-green-100 p-4 mb-4 rounded text-green-700">
-          {success}
+      {message && (
+        <div
+          style={{
+            padding: '12px',
+            borderRadius: '4px',
+            marginBottom: '20px',
+            background: messageType === 'success' ? '#003300' : '#330000',
+            color: messageType === 'success' ? '#00ff00' : '#ff0000',
+            border: `1px solid ${messageType === 'success' ? '#00ff00' : '#ff0000'}`,
+          }}
+        >
+          {message}
         </div>
       )}
 
-      {/* Optional quick action (visible only if HubSpot is saved & active) */}
-      {hubspotIntegration && (
-        <div className="bg-blue-50 p-4 mb-6 rounded border border-blue-200">
-          <h3 className="font-bold text-blue-900 mb-2">Quick actions</h3>
-          <p className="text-sm text-blue-800 mb-3">
-            Import uses the saved key from Settings (no API key sent in the request).
-          </p>
-          <button
-            onClick={() => handleImportContacts("hubspot")}
-            disabled={!hubspotIntegration || importingCRM === "hubspot"}
-            className="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 disabled:opacity-50"
-            title={!hubspotIntegration ? "Save and activate HubSpot first" : "Start HubSpot import"}
+      {/* CRM INTEGRATIONS */}
+      <div style={{ marginBottom: '30px' }}>
+        <h2 style={{ color: '#0066cc', marginBottom: '20px' }}>🔗 CRM Integrations</h2>
+
+        {[
+          {
+            key: 'hubspot',
+            label: 'HubSpot',
+            icon: '🔵',
+            docs: 'https://developers.hubspot.com/docs/api/private-apps',
+          },
+          {
+            key: 'salesforce',
+            label: 'Salesforce',
+            icon: '☁️',
+            docs: 'https://help.salesforce.com/s/articleView?id=sf.connected_app_overview.htm',
+          },
+          {
+            key: 'pipedrive',
+            label: 'Pipedrive',
+            icon: '📊',
+            docs: 'https://developers.pipedrive.com/docs/basics/authentication',
+          },
+        ].map((crm) => (
+          <div
+            key={crm.key}
+            style={{
+              padding: '20px',
+              background: '#1a1a1a',
+              borderRadius: '8px',
+              marginBottom: '15px',
+              border: crms[crm.key as keyof typeof crms].is_configured
+                ? '2px solid #00ff00'
+                : '1px solid #444',
+            }}
           >
-            {importingCRM === "hubspot" ? "Importing..." : "Import HubSpot"}
-          </button>
-        </div>
-      )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ margin: '0', color: '#0066cc' }}>
+                {crm.icon} {crm.label}
+              </h3>
+              <div
+                style={{
+                  padding: '4px 8px',
+                  borderRadius: '4px',
+                  fontSize: '12px',
+                  fontWeight: 'bold',
+                  background: crms[crm.key as keyof typeof crms].is_configured ? '#003300' : '#663300',
+                  color: crms[crm.key as keyof typeof crms].is_configured ? '#00ff00' : '#ffcc00',
+                }}
+              >
+                {crms[crm.key as keyof typeof crms].is_configured ? '✅ Configured' : '⚠️ Not Configured'}
+              </div>
+            </div>
 
-      {/* Add Integration Form */}
-      <div className="bg-white p-6 rounded shadow mb-6">
-        <h2 className="text-lg font-bold mb-4">Add Integration</h2>
-        <form onSubmit={handleSave} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">CRM Type</label>
-            <select
-              value={crmType}
-              onChange={(e) => setCrmType(e.target.value)}
-              className="w-full p-2 border rounded"
-            >
-              <option value="hubspot">HubSpot</option>
-              <option value="salesforce">Salesforce</option>
-              <option value="pipedrive">Pipedrive</option>
-            </select>
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '12px' }}>
+                API Key / Token
+              </label>
+              <input
+                type="password"
+                placeholder={`Enter ${crm.label} API Key`}
+                value={crms[crm.key as keyof typeof crms].api_key}
+                onChange={(e) =>
+                  setCrms({
+                    ...crms,
+                    [crm.key]: { ...crms[crm.key as keyof typeof crms], api_key: e.target.value },
+                  })
+                }
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  border: '1px solid #444',
+                  borderRadius: '4px',
+                  background: '#0a0a0a',
+                  color: '#fff',
+                  fontFamily: 'monospace',
+                }}
+              />
+              <a
+                href={crm.docs}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  fontSize: '11px',
+                  color: '#0099ff',
+                  marginTop: '5px',
+                  display: 'block',
+                }}
+              >
+                📖 {crm.label} API Documentation
+              </a>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => saveSettings(crm.key as keyof typeof crms)}
+                disabled={saving || !crms[crm.key as keyof typeof crms].api_key}
+                style={{
+                  padding: '10px 15px',
+                  background:
+                    saving || !crms[crm.key as keyof typeof crms].api_key ? '#666' : '#00cc00',
+                  color: saving || !crms[crm.key as keyof typeof crms].api_key ? '#999' : '#000',
+                  fontWeight: 'bold',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: saving || !crms[crm.key as keyof typeof crms].api_key ? 'not-allowed' : 'pointer',
+                }}
+              >
+                {saving ? '⏳ Saving...' : '💾 Save'}
+              </button>
+
+              {crms[crm.key as keyof typeof crms].is_configured && (
+                <button
+                  onClick={() => deleteCredentials(crm.key as keyof typeof crms)}
+                  style={{
+                    padding: '10px 15px',
+                    background: '#cc0000',
+                    color: 'white',
+                    fontWeight: 'bold',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  🗑️ Remove
+                </button>
+              )}
+            </div>
           </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1">API Key</label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="Enter API key"
-              className="w-full p-2 border rounded"
-              required
-            />
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-teal-600 text-white px-4 py-2 rounded hover:bg-teal-700 disabled:opacity-50"
-          >
-            {loading ? "Saving..." : "Save"}
-          </button>
-        </form>
+        ))}
       </div>
 
-      {/* Saved Integrations */}
-      <div className="bg-white p-6 rounded shadow">
-        <h2 className="text-lg font-bold mb-4">Saved Integrations</h2>
-        {integrations.length === 0 ? (
-          <p className="text-gray-500">No integrations yet</p>
-        ) : (
-          <div className="space-y-4">
-            {integrations.map((int) => (
-              <div
-                key={int.id}
-                className="flex items-center justify-between p-4 border rounded"
-              >
-                <div>
-                  <h3 className="font-bold">{int.crm_type.toUpperCase()}</h3>
-                  <p className="text-sm text-gray-500">
-                    {int.is_active ? "Active" : "Inactive"}
-                  </p>
-                </div>
-
-                <div className="space-x-2">
-                  <button
-                    onClick={() => handleTest(int.crm_type)}
-                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                    disabled={testingCRM === int.crm_type}
-                  >
-                    {testingCRM === int.crm_type ? "Testing..." : "Test"}
-                  </button>
-
-                  {/* THIS IS THE IMPORT BUTTON */}
-                  <button
-                    onClick={() => handleImportContacts(int.crm_type)}
-                    className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 disabled:opacity-50"
-                    disabled={importingCRM === int.crm_type}
-                  >
-                    {importingCRM === int.crm_type ? "Importing..." : "Import"}
-                  </button>
-
-                  <button
-                    onClick={() => handleDelete(int.crm_type)}
-                    className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      {/* DATABASE SCHEMA INFO */}
+      <div style={{ marginBottom: '30px', padding: '15px', background: '#1a1a1a', borderRadius: '8px' }}>
+        <h3 style={{ color: '#0066cc', marginTop: '0' }}>📝 Notes</h3>
+        <ul style={{ fontSize: '12px', color: '#999' }}>
+          <li>Your API keys are encrypted and stored securely in Supabase</li>
+          <li>We only use these keys to import contacts with your permission</li>
+          <li>You can remove any integration at any time</li>
+          <li>After adding credentials, go to Import to start syncing contacts</li>
+        </ul>
       </div>
     </div>
   );
