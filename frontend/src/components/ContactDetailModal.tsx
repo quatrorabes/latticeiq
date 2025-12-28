@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { supabase } from '../lib/supabaseClient';
+
 
 interface Contact {
   id: string;
@@ -31,11 +33,23 @@ export default function ContactDetailModal({
   async function handleEnrich() {
     setEnriching(true);
     try {
-      const { data: sessionData } = await (window as any).__supabase?.auth?.getSession?.();
-      const token = sessionData?.session?.access_token;
-
+      // Get token from Supabase directly
+      const { data: { session }, error: authError } = await supabase.auth.getSession();
+      
+      
+      if (authError || !session) {
+        alert('Not authenticated. Please login first.');
+        setEnriching(false);
+        return;
+      }
+      
+      const token = session.access_token;
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      
+      console.log('Enriching contact:', contact?.id, 'Token:', token.slice(0, 20) + '...');
+      
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/enrich/${contact?.id}`,
+        `${apiUrl}/api/v3/enrich/${contact?.id}`,
         {
           method: 'POST',
           headers: {
@@ -44,14 +58,25 @@ export default function ContactDetailModal({
           },
         }
       );
-
-      if (!response.ok) throw new Error('Enrichment failed');
-
+  
+      console.log('Enrich response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Enrich error:', errorText);
+        alert(`Enrichment failed: ${response.status}`);
+        setEnriching(false);
+        return;
+      }
+  
+      const result = await response.json();
+      console.log('Enrichment result:', result);
+      
       onEnrichComplete();
       alert('Enrichment complete!');
     } catch (err) {
       console.error('Error enriching:', err);
-      alert('Error enriching contact');
+      alert('Error enriching contact: ' + (err as Error).message);
     } finally {
       setEnriching(false);
     }
