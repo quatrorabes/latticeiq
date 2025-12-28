@@ -1,22 +1,31 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
+interface CRMCredential {
+  crm_type: string;
+  api_key: string;
+  api_url?: string;
+  workspace_id?: string;
+  instance_url?: string;
+}
+
 export default function SettingsPage() {
-  const [crms, setCrms] = useState({
-    hubspot: { api_key: '', is_configured: false },
-    salesforce: { api_key: '', is_configured: false },
-    pipedrive: { api_key: '', is_configured: false },
+  const [credentials, setCredentials] = useState<Record<string, CRMCredential>>({
+    hubspot: { crm_type: 'hubspot', api_key: '', api_url: 'https://api.hubapi.com' },
+    salesforce: { crm_type: 'salesforce', api_key: '', instance_url: '' },
+    pipedrive: { crm_type: 'pipedrive', api_key: '', api_url: 'https://api.pipedrive.com/v1' },
   });
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [messageType, setMessageType] = useState<'success' | 'error'>('success');
 
   useEffect(() => {
-    loadSettings();
+    loadCredentials();
   }, []);
 
-  async function loadSettings() {
+  async function loadCredentials() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
@@ -26,26 +35,29 @@ export default function SettingsPage() {
         .select('*')
         .eq('user_id', session.user.id);
 
-      if (error) throw error;
+      if (error && error.code !== 'PGRST116') throw error;
 
-      const newCrms = { ...crms };
-      data?.forEach((cred: any) => {
-        if (newCrms[cred.crm_type as keyof typeof crms]) {
-          newCrms[cred.crm_type as keyof typeof crms] = {
-            api_key: cred.api_key || '',
-            is_configured: !!cred.api_key,
+      if (data && data.length > 0) {
+        const credsMap: Record<string, CRMCredential> = { ...credentials };
+        data.forEach((cred: any) => {
+          credsMap[cred.crm_type] = {
+            crm_type: cred.crm_type,
+            api_key: cred.api_key,
+            api_url: cred.api_url,
+            workspace_id: cred.workspace_id,
+            instance_url: cred.instance_url,
           };
-        }
-      });
-      setCrms(newCrms);
+        });
+        setCredentials(credsMap);
+      }
     } catch (err) {
-      console.error('Error loading settings:', err);
+      console.error('Error loading credentials:', err);
     } finally {
       setLoading(false);
     }
   }
 
-  async function saveSettings(crmType: keyof typeof crms) {
+  async function saveCredentials() {
     setSaving(true);
     setMessage('');
 
@@ -57,23 +69,27 @@ export default function SettingsPage() {
         return;
       }
 
-      const { error } = await supabase.from('crm_credentials').upsert(
-        {
-          user_id: session.user.id,
-          crm_type: crmType,
-          api_key: crms[crmType].api_key,
-        },
-        { onConflict: 'user_id,crm_type' }
-      );
+      // Save each CRM credential
+      for (const [crmType, cred] of Object.entries(credentials)) {
+        if (!cred.api_key) continue; // Skip if no API key entered
 
-      if (error) throw error;
+        const { error } = await supabase.from('crm_credentials').upsert(
+          {
+            user_id: session.user.id,
+            crm_type: crmType,
+            api_key: cred.api_key,
+            api_url: cred.api_url || null,
+            workspace_id: cred.workspace_id || null,
+            instance_url: cred.instance_url || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'user_id,crm_type' }
+        );
 
-      setCrms({
-        ...crms,
-        [crmType]: { ...crms[crmType], is_configured: !!crms[crmType].api_key },
-      });
+        if (error) throw error;
+      }
 
-      setMessage(`✅ ${crmType.toUpperCase()} credentials saved!`);
+      setMessage('✅ CRM credentials saved successfully!');
       setMessageType('success');
     } catch (err) {
       setMessage(`Error saving credentials: ${(err as Error).message}`);
@@ -83,37 +99,21 @@ export default function SettingsPage() {
     }
   }
 
-  async function deleteCredentials(crmType: keyof typeof crms) {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
+  const updateCredential = (crmType: string, field: string, value: string) => {
+    setCredentials({
+      ...credentials,
+      [crmType]: {
+        ...credentials[crmType],
+        [field]: value,
+      },
+    });
+  };
 
-      await supabase
-        .from('crm_credentials')
-        .delete()
-        .eq('user_id', session.user.id)
-        .eq('crm_type', crmType);
-
-      setCrms({
-        ...crms,
-        [crmType]: { api_key: '', is_configured: false },
-      });
-
-      setMessage(`✅ ${crmType.toUpperCase()} credentials deleted`);
-      setMessageType('success');
-    } catch (err) {
-      setMessage(`Error deleting credentials: ${(err as Error).message}`);
-      setMessageType('error');
-    }
-  }
-
-  if (loading) {
-    return <div style={{ padding: '20px' }}>Loading settings...</div>;
-  }
+  if (loading) return <div style={{ padding: '20px' }}>Loading settings...</div>;
 
   return (
-    <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto' }}>
-      <h1>⚙️ Settings</h1>
+    <div style={{ padding: '20px', maxWidth: '1000px', margin: '0 auto' }}>
+      <h1>⚙️ API & CRM Settings</h1>
 
       {message && (
         <div
@@ -130,147 +130,184 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {/* CRM INTEGRATIONS */}
-      <div style={{ marginBottom: '30px' }}>
-        <h2 style={{ color: '#0066cc', marginBottom: '20px' }}>🔗 CRM Integrations</h2>
+      {/* HUBSPOT */}
+      <div style={{ marginBottom: '30px', padding: '20px', background: '#1a1a1a', borderRadius: '8px' }}>
+        <h2 style={{ color: '#0066cc', marginTop: '0' }}>🔵 HubSpot</h2>
+        <p style={{ color: '#999', fontSize: '12px' }}>
+          <a href="https://app.hubspot.com/l/api-key/" target="_blank" rel="noopener noreferrer" style={{ color: '#0099ff' }}>
+            Get HubSpot API Key →
+          </a>
+        </p>
 
-        {[
-          {
-            key: 'hubspot',
-            label: 'HubSpot',
-            icon: '🔵',
-            docs: 'https://developers.hubspot.com/docs/api/private-apps',
-          },
-          {
-            key: 'salesforce',
-            label: 'Salesforce',
-            icon: '☁️',
-            docs: 'https://help.salesforce.com/s/articleView?id=sf.connected_app_overview.htm',
-          },
-          {
-            key: 'pipedrive',
-            label: 'Pipedrive',
-            icon: '📊',
-            docs: 'https://developers.pipedrive.com/docs/basics/authentication',
-          },
-        ].map((crm) => (
-          <div
-            key={crm.key}
-            style={{
-              padding: '20px',
-              background: '#1a1a1a',
-              borderRadius: '8px',
-              marginBottom: '15px',
-              border: crms[crm.key as keyof typeof crms].is_configured
-                ? '2px solid #00ff00'
-                : '1px solid #444',
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <h3 style={{ margin: '0', color: '#0066cc' }}>
-                {crm.icon} {crm.label}
-              </h3>
-              <div
-                style={{
-                  padding: '4px 8px',
-                  borderRadius: '4px',
-                  fontSize: '12px',
-                  fontWeight: 'bold',
-                  background: crms[crm.key as keyof typeof crms].is_configured ? '#003300' : '#663300',
-                  color: crms[crm.key as keyof typeof crms].is_configured ? '#00ff00' : '#ffcc00',
-                }}
-              >
-                {crms[crm.key as keyof typeof crms].is_configured ? '✅ Configured' : '⚠️ Not Configured'}
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 'bold', fontSize: '12px' }}>
-                API Key / Token
-              </label>
-              <input
-                type="password"
-                placeholder={`Enter ${crm.label} API Key`}
-                value={crms[crm.key as keyof typeof crms].api_key}
-                onChange={(e) =>
-                  setCrms({
-                    ...crms,
-                    [crm.key]: { ...crms[crm.key as keyof typeof crms], api_key: e.target.value },
-                  })
-                }
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  border: '1px solid #444',
-                  borderRadius: '4px',
-                  background: '#0a0a0a',
-                  color: '#fff',
-                  fontFamily: 'monospace',
-                }}
-              />
-              <a
-                href={crm.docs}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{
-                  fontSize: '11px',
-                  color: '#0099ff',
-                  marginTop: '5px',
-                  display: 'block',
-                }}
-              >
-                📖 {crm.label} API Documentation
-              </a>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => saveSettings(crm.key as keyof typeof crms)}
-                disabled={saving || !crms[crm.key as keyof typeof crms].api_key}
-                style={{
-                  padding: '10px 15px',
-                  background:
-                    saving || !crms[crm.key as keyof typeof crms].api_key ? '#666' : '#00cc00',
-                  color: saving || !crms[crm.key as keyof typeof crms].api_key ? '#999' : '#000',
-                  fontWeight: 'bold',
-                  border: 'none',
-                  borderRadius: '4px',
-                  cursor: saving || !crms[crm.key as keyof typeof crms].api_key ? 'not-allowed' : 'pointer',
-                }}
-              >
-                {saving ? '⏳ Saving...' : '💾 Save'}
-              </button>
-
-              {crms[crm.key as keyof typeof crms].is_configured && (
-                <button
-                  onClick={() => deleteCredentials(crm.key as keyof typeof crms)}
-                  style={{
-                    padding: '10px 15px',
-                    background: '#cc0000',
-                    color: 'white',
-                    fontWeight: 'bold',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  🗑️ Remove
-                </button>
-              )}
-            </div>
+        <div style={{ display: 'grid', gap: '15px' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '12px' }}>
+              API Key
+            </label>
+            <input
+              type="password"
+              placeholder="Enter your HubSpot API key"
+              value={credentials.hubspot?.api_key || ''}
+              onChange={(e) => updateCredential('hubspot', 'api_key', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: '#0a0a0a',
+                color: '#fff',
+              }}
+            />
           </div>
-        ))}
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '12px' }}>
+              API URL
+            </label>
+            <input
+              type="text"
+              placeholder="https://api.hubapi.com"
+              value={credentials.hubspot?.api_url || ''}
+              onChange={(e) => updateCredential('hubspot', 'api_url', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: '#0a0a0a',
+                color: '#fff',
+              }}
+            />
+          </div>
+        </div>
       </div>
 
-      {/* DATABASE SCHEMA INFO */}
-      <div style={{ marginBottom: '30px', padding: '15px', background: '#1a1a1a', borderRadius: '8px' }}>
-        <h3 style={{ color: '#0066cc', marginTop: '0' }}>📝 Notes</h3>
-        <ul style={{ fontSize: '12px', color: '#999' }}>
-          <li>Your API keys are encrypted and stored securely in Supabase</li>
-          <li>We only use these keys to import contacts with your permission</li>
-          <li>You can remove any integration at any time</li>
-          <li>After adding credentials, go to Import to start syncing contacts</li>
-        </ul>
+      {/* SALESFORCE */}
+      <div style={{ marginBottom: '30px', padding: '20px', background: '#1a1a1a', borderRadius: '8px' }}>
+        <h2 style={{ color: '#0066cc', marginTop: '0' }}>☁️ Salesforce</h2>
+        <p style={{ color: '#999', fontSize: '12px' }}>
+          <a href="https://help.salesforce.com/s/articleView?id=sf.remoteaccess_authenticate_oauth_web_server_flow.htm" target="_blank" rel="noopener noreferrer" style={{ color: '#0099ff' }}>
+            Get Salesforce OAuth Token →
+          </a>
+        </p>
+
+        <div style={{ display: 'grid', gap: '15px' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '12px' }}>
+              Access Token
+            </label>
+            <input
+              type="password"
+              placeholder="Enter your Salesforce access token"
+              value={credentials.salesforce?.api_key || ''}
+              onChange={(e) => updateCredential('salesforce', 'api_key', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: '#0a0a0a',
+                color: '#fff',
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '12px' }}>
+              Instance URL
+            </label>
+            <input
+              type="text"
+              placeholder="https://your-instance.salesforce.com"
+              value={credentials.salesforce?.instance_url || ''}
+              onChange={(e) => updateCredential('salesforce', 'instance_url', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: '#0a0a0a',
+                color: '#fff',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* PIPEDRIVE */}
+      <div style={{ marginBottom: '30px', padding: '20px', background: '#1a1a1a', borderRadius: '8px' }}>
+        <h2 style={{ color: '#0066cc', marginTop: '0' }}>📈 Pipedrive</h2>
+        <p style={{ color: '#999', fontSize: '12px' }}>
+          <a href="https://app.pipedrive.com/settings/personal/api" target="_blank" rel="noopener noreferrer" style={{ color: '#0099ff' }}>
+            Get Pipedrive API Token →
+          </a>
+        </p>
+
+        <div style={{ display: 'grid', gap: '15px' }}>
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '12px' }}>
+              API Token
+            </label>
+            <input
+              type="password"
+              placeholder="Enter your Pipedrive API token"
+              value={credentials.pipedrive?.api_key || ''}
+              onChange={(e) => updateCredential('pipedrive', 'api_key', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: '#0a0a0a',
+                color: '#fff',
+              }}
+            />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', fontSize: '12px' }}>
+              API URL
+            </label>
+            <input
+              type="text"
+              placeholder="https://api.pipedrive.com/v1"
+              value={credentials.pipedrive?.api_url || ''}
+              onChange={(e) => updateCredential('pipedrive', 'api_url', e.target.value)}
+              style={{
+                width: '100%',
+                padding: '8px',
+                border: '1px solid #444',
+                borderRadius: '4px',
+                background: '#0a0a0a',
+                color: '#fff',
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* SAVE BUTTON */}
+      <button
+        onClick={saveCredentials}
+        disabled={saving}
+        style={{
+          width: '100%',
+          padding: '12px',
+          background: saving ? '#666' : '#00cc00',
+          color: saving ? '#999' : '#000',
+          fontWeight: 'bold',
+          fontSize: '16px',
+          border: 'none',
+          borderRadius: '4px',
+          cursor: saving ? 'not-allowed' : 'pointer',
+        }}
+      >
+        {saving ? '⏳ Saving...' : '💾 Save CRM Credentials'}
+      </button>
+
+      <div style={{ marginTop: '20px', padding: '15px', background: '#0a0a0a', borderRadius: '4px', fontSize: '12px', color: '#999' }}>
+        <p style={{ marginTop: '0' }}>🔒 Your API credentials are encrypted and stored securely.</p>
+        <p>Only enter API keys for CRMs you want to import from.</p>
       </div>
     </div>
   );
