@@ -61,6 +61,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
           onClick={onLogout}
           className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-red-900 hover:bg-red-800 text-red-400 rounded transition-colors"
         >
+        <button onClick={() => navigate('/import')}>📤 Import</button>
           <span>🚪</span>
           {!isCollapsed && <span className="text-sm font-medium">Logout</span>}
         </button>
