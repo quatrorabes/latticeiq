@@ -25,14 +25,10 @@ export default function ContactsPage() {
       }
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((_event: any, sess: any) => {
+    supabase.auth.onAuthStateChange((_event: any, sess: any) => {
       setIsAuthenticated(!!sess);
       if (!sess) setIsLoading(false);
     });
-
-    return () => {
-      subscription?.unsubscribe();
-    };
   }, []);
 
   // Fetch contacts when authenticated
