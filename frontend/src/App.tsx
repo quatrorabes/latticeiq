@@ -9,6 +9,7 @@ import ImportPage from './pages/ImportPage';
 import SettingsPage from './pages/SettingsPage';
 import Dashboard from './pages/Dashboard';
 import Sidebar from './components/Sidebar';
+import ScoringPage from './pages/ScoringPage';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
@@ -62,6 +63,7 @@ function App() {
             <Route path="/import" element={<ImportPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/scoring" element={<ScoringPage />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
           </Routes>
         </main>
