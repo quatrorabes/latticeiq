@@ -36,11 +36,12 @@ export default function App() {
         } as AuthSession);
         // ✅ SAVE TOKEN TO LOCALSTORAGE
         localStorage.setItem("sb-auth-token", session.access_token);
+        localStorage.setItem("sb-refresh-token", session.refresh_token || "");
       }
       setLoading(false);
     });
 
-    // ✅ LISTEN FOR AUTH CHANGES
+    // ✅ LISTEN FOR AUTH CHANGES & AUTO-REFRESH
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
@@ -50,16 +51,25 @@ export default function App() {
           user: session.user,
         } as AuthSession);
 
-        // Save token when user logs in
-        if (event === "SIGNED_IN") {
-          localStorage.setItem("sb-auth-token", session.access_token);
+        // Always save fresh tokens
+        localStorage.setItem("sb-auth-token", session.access_token);
+        localStorage.setItem("sb-refresh-token", session.refresh_token || "");
+
+        // Auto-refresh token 5 minutes before expiry
+        if (session.expires_at) {
+          const expiresIn = session.expires_at * 1000 - Date.now();
+          const refreshIn = expiresIn - 5 * 60 * 1000; // 5 min before expiry
+
+          if (refreshIn > 0) {
+            setTimeout(() => {
+              supabase.auth.refreshSession();
+            }, refreshIn);
+          }
         }
       } else {
         setSession(null);
-        // Clear token when user logs out
-        if (event === "SIGNED_OUT") {
-          localStorage.removeItem("sb-auth-token");
-        }
+        localStorage.removeItem("sb-auth-token");
+        localStorage.removeItem("sb-refresh-token");
       }
 
       setLoading(false);
@@ -85,6 +95,7 @@ export default function App() {
 
       if (data?.session?.access_token) {
         localStorage.setItem("sb-auth-token", data.session.access_token);
+        localStorage.setItem("sb-refresh-token", data.session.refresh_token || "");
         setEmail("");
         setPassword("");
       }

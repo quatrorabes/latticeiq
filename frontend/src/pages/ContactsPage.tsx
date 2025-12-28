@@ -11,10 +11,20 @@ interface Contact {
   enrichmentstatus: string;
 }
 
+interface EnrichmentResult {
+  phone?: string;
+  company?: string;
+  jobtitle?: string;
+  linkedin_url?: string;
+}
+
 const ContactsPage: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [enriching, setEnriching] = useState(false);
+  const [enrichmentResult, setEnrichmentResult] = useState<EnrichmentResult | null>(null);
 
   useEffect(() => {
     fetchContacts();
@@ -25,15 +35,12 @@ const ContactsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Get token from localStorage (set by App.tsx auth handler)
       const token = localStorage.getItem("sb-auth-token");
-
       if (!token) {
         setError("Not authenticated - please log in");
         return;
       }
 
-      // Fetch from backend with JWT token
       const response = await fetch(
         "https://latticeiq-backend.onrender.com/api/v3/contacts",
         {
@@ -63,6 +70,59 @@ const ContactsPage: React.FC = () => {
     }
   };
 
+  const handleEnrich = async (contact: Contact) => {
+    setSelectedContact(contact);
+    setEnriching(true);
+    setEnrichmentResult(null);
+
+    try {
+      const token = localStorage.getItem("sb-auth-token");
+      if (!token) {
+        setError("Not authenticated");
+        setEnriching(false);
+        return;
+      }
+
+      const response = await fetch(
+        `https://latticeiq-backend.onrender.com/api/v3/enrichment?email=${encodeURIComponent(
+          contact.email
+        )}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Enrichment failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      setEnrichmentResult(data);
+
+      // Update contact in list
+      const updatedContacts = contacts.map((c) =>
+        c.id === contact.id
+          ? {
+              ...c,
+              phone: data.phone || c.phone,
+              company: data.company || c.company,
+              jobtitle: data.jobtitle || c.jobtitle,
+              enrichmentstatus: "completed",
+            }
+          : c
+      );
+      setContacts(updatedContacts);
+    } catch (err) {
+      console.error("Error enriching contact:", err);
+      setError(err instanceof Error ? err.message : "Enrichment failed");
+    } finally {
+      setEnriching(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -88,7 +148,15 @@ const ContactsPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-3xl font-bold">Contacts ({contacts.length})</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Contacts ({contacts.length})</h1>
+        <button
+          onClick={fetchContacts}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+        >
+          Refresh
+        </button>
+      </div>
 
       {contacts.length === 0 ? (
         <div className="text-center py-12">
@@ -103,7 +171,9 @@ const ContactsPage: React.FC = () => {
                 <th className="border border-gray-300 p-3 text-left">Email</th>
                 <th className="border border-gray-300 p-3 text-left">Company</th>
                 <th className="border border-gray-300 p-3 text-left">Title</th>
+                <th className="border border-gray-300 p-3 text-left">Phone</th>
                 <th className="border border-gray-300 p-3 text-left">Status</th>
+                <th className="border border-gray-300 p-3 text-center">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -112,9 +182,16 @@ const ContactsPage: React.FC = () => {
                   <td className="border border-gray-300 p-3">
                     {contact.firstname} {contact.lastname}
                   </td>
-                  <td className="border border-gray-300 p-3">{contact.email}</td>
-                  <td className="border border-gray-300 p-3">{contact.company || "-"}</td>
-                  <td className="border border-gray-300 p-3">{contact.jobtitle || "-"}</td>
+                  <td className="border border-gray-300 p-3 text-sm">{contact.email}</td>
+                  <td className="border border-gray-300 p-3">
+                    {contact.company || "-"}
+                  </td>
+                  <td className="border border-gray-300 p-3">
+                    {contact.jobtitle || "-"}
+                  </td>
+                  <td className="border border-gray-300 p-3">
+                    {contact.phone || "-"}
+                  </td>
                   <td className="border border-gray-300 p-3">
                     <span
                       className={`inline-block px-2 py-1 rounded text-sm font-medium ${
@@ -128,10 +205,85 @@ const ContactsPage: React.FC = () => {
                       {contact.enrichmentstatus}
                     </span>
                   </td>
+                  <td className="border border-gray-300 p-3 text-center">
+                    <button
+                      onClick={() => handleEnrich(contact)}
+                      disabled={enriching && selectedContact?.id === contact.id}
+                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {enriching && selectedContact?.id === contact.id
+                        ? "Enriching..."
+                        : "Enrich"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Enrichment Result Modal */}
+      {selectedContact && enrichmentResult && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
+            <h2 className="text-xl font-bold mb-4">
+              Enrichment Results: {selectedContact.firstname}{" "}
+              {selectedContact.lastname}
+            </h2>
+
+            <div className="space-y-3 mb-6">
+              <div>
+                <p className="text-sm text-gray-600">Email</p>
+                <p className="font-medium">{selectedContact.email}</p>
+              </div>
+
+              {enrichmentResult.company && (
+                <div>
+                  <p className="text-sm text-gray-600">Company</p>
+                  <p className="font-medium">{enrichmentResult.company}</p>
+                </div>
+              )}
+
+              {enrichmentResult.jobtitle && (
+                <div>
+                  <p className="text-sm text-gray-600">Job Title</p>
+                  <p className="font-medium">{enrichmentResult.jobtitle}</p>
+                </div>
+              )}
+
+              {enrichmentResult.phone && (
+                <div>
+                  <p className="text-sm text-gray-600">Phone</p>
+                  <p className="font-medium">{enrichmentResult.phone}</p>
+                </div>
+              )}
+
+              {enrichmentResult.linkedin_url && (
+                <div>
+                  <p className="text-sm text-gray-600">LinkedIn</p>
+                  <a
+                    href={enrichmentResult.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:underline"
+                  >
+                    View Profile
+                  </a>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={() => {
+                setSelectedContact(null);
+                setEnrichmentResult(null);
+              }}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Close
+            </button>
+          </div>
         </div>
       )}
     </div>
