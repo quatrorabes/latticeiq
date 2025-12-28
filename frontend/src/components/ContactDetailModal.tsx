@@ -89,7 +89,7 @@ export default function ContactDetailModal({
     border: '2px solid #0066cc',
     borderRadius: '8px',
     padding: '20px',
-    maxWidth: '800px',
+    maxWidth: '900px',
     width: '95%',
     maxHeight: '90vh',
     overflowY: 'auto',
@@ -131,6 +131,7 @@ export default function ContactDetailModal({
     fontSize: '14px',
     fontFamily: 'monospace',
     wordBreak: 'break-all',
+    lineHeight: '1.6',
   };
 
   const jsonStyle: React.CSSProperties = {
@@ -146,16 +147,20 @@ export default function ContactDetailModal({
     color: '#0f0',
   };
 
-  // Get all contact fields
-  const getFieldValue = (key: string) => {
-    const val = contact[key];
-    if (val === null) return '(null)';
-    if (val === undefined) return '(undefined)';
-    if (typeof val === 'object') return JSON.stringify(val);
-    return String(val);
-  };
-
-  const contactKeys = Object.keys(contact).sort();
+  // Extract enrichment data
+  const enrichmentData = contact.enrichment_data || {};
+  const {
+    summary = '',
+    company_overview = '',
+    talking_points = [],
+    inferred_title = '',
+    inferred_seniority = '',
+    persona_type = '',
+    vertical = '',
+    company_size = '',
+    recent_news = '',
+    recommended_approach = '',
+  } = enrichmentData;
 
   return createPortal(
     <>
@@ -172,10 +177,10 @@ export default function ContactDetailModal({
           </p>
         </div>
 
-        {/* CONTACT BASICS */}
+        {/* BASIC CONTACT INFO */}
         <div style={sectionStyle}>
           <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-            📋 Contact Details
+            📋 Contact Information
           </h3>
           
           <div>
@@ -200,22 +205,15 @@ export default function ContactDetailModal({
 
           <div>
             <div style={labelStyle}>LinkedIn URL</div>
-            <div style={valueStyle}>{contact.linkedin_url || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>Website</div>
-            <div style={valueStyle}>{contact.website || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>Vertical</div>
-            <div style={valueStyle}>{contact.vertical || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>Persona Type</div>
-            <div style={valueStyle}>{contact.persona_type || '(empty)'}</div>
+            <div style={valueStyle}>
+              {contact.linkedin_url ? (
+                <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ color: '#0099ff' }}>
+                  {contact.linkedin_url}
+                </a>
+              ) : (
+                '(empty)'
+              )}
+            </div>
           </div>
         </div>
 
@@ -232,90 +230,136 @@ export default function ContactDetailModal({
               borderRadius: '4px',
               background: contact.enrichment_status === 'completed' ? '#003300' : '#663300',
               color: contact.enrichment_status === 'completed' ? '#00ff00' : '#ffcc00',
+              display: 'inline-block',
             }}>
               {contact.enrichment_status || 'pending'}
             </div>
           </div>
-
-          <div style={{ marginTop: '15px' }}>
-            <div style={labelStyle}>Last Enriched</div>
-            <div style={valueStyle}>{contact.enriched_at || '(never)'}</div>
-          </div>
         </div>
 
-        {/* SCORES */}
-        <div style={sectionStyle}>
-          <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-            📊 Scores
-          </h3>
-
-          <div>
-            <div style={labelStyle}>APEX Score</div>
-            <div style={{
-              ...valueStyle,
-              fontSize: '18px',
-              fontWeight: 'bold',
-              color: contact.apex_score ? '#00ff00' : '#666',
-            }}>
-              {contact.apex_score || '(not calculated)'}
-            </div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>MDCP Score</div>
-            <div style={valueStyle}>{contact.mdcp_score || '(not calculated)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>BANT Score</div>
-            <div style={valueStyle}>{contact.bant_score || '(not calculated)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>SPICE Score</div>
-            <div style={valueStyle}>{contact.spice_score || '(not calculated)'}</div>
-          </div>
-        </div>
-
-        {/* ENRICHMENT DATA */}
-        {contact.enrichment_data && (
+        {/* INFERRED PROFILE */}
+        {(inferred_title || inferred_seniority || persona_type || vertical || company_size) && (
           <div style={sectionStyle}>
             <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              ✨ Enrichment Data
+              👤 Inferred Profile
             </h3>
-            <pre style={jsonStyle}>
-              {JSON.stringify(contact.enrichment_data, null, 2)}
-            </pre>
-          </div>
-        )}
 
-        {/* ENRICHMENT RESULT FROM LAST REQUEST */}
-        {enrichmentResult && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: enrichmentResult.error ? '#ff0000' : '#00ff00', fontSize: '16px', margin: '0 0 15px 0' }}>
-              {enrichmentResult.error ? '❌ Last Enrichment Error' : '✅ Last Enrichment Result'}
-            </h3>
-            <pre style={jsonStyle}>
-              {JSON.stringify(enrichmentResult, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* ALL FIELDS (DEBUG) */}
-        <div style={sectionStyle}>
-          <h3 style={{ color: '#666', fontSize: '14px', margin: '0 0 15px 0' }}>
-            🔧 All Fields (Raw)
-          </h3>
-          <div style={jsonStyle}>
-            {contactKeys.map((key) => (
-              <div key={key} style={{ marginBottom: '8px', borderBottom: '1px solid #333', paddingBottom: '8px' }}>
-                <span style={{ color: '#00ff00' }}>{key}</span>
-                <span style={{ color: '#666' }}>: </span>
-                <span style={{ color: '#ffff00' }}>{getFieldValue(key)}</span>
+            {inferred_title && (
+              <div>
+                <div style={labelStyle}>Inferred Title</div>
+                <div style={valueStyle}>{inferred_title}</div>
               </div>
-            ))}
+            )}
+
+            {inferred_seniority && (
+              <div>
+                <div style={labelStyle}>Seniority Level</div>
+                <div style={valueStyle}>{inferred_seniority}</div>
+              </div>
+            )}
+
+            {persona_type && (
+              <div>
+                <div style={labelStyle}>Persona Type</div>
+                <div style={valueStyle}>{persona_type}</div>
+              </div>
+            )}
+
+            {vertical && (
+              <div>
+                <div style={labelStyle}>Vertical / Industry</div>
+                <div style={valueStyle}>{vertical}</div>
+              </div>
+            )}
+
+            {company_size && (
+              <div>
+                <div style={labelStyle}>Company Size</div>
+                <div style={valueStyle}>{company_size}</div>
+              </div>
+            )}
           </div>
-        </div>
+        )}
+
+        {/* PROFESSIONAL SUMMARY */}
+        {summary && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
+              📝 Professional Summary
+            </h3>
+            <div style={valueStyle}>{summary}</div>
+          </div>
+        )}
+
+        {/* COMPANY OVERVIEW */}
+        {company_overview && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
+              🏢 Company Overview
+            </h3>
+            <div style={valueStyle}>{company_overview}</div>
+          </div>
+        )}
+
+        {/* TALKING POINTS */}
+        {talking_points.length > 0 && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
+              💬 Conversation Starters
+            </h3>
+            <ul style={{ margin: '0', paddingLeft: '20px' }}>
+              {talking_points.map((point: string, idx: number) => (
+                <li key={idx} style={{ marginBottom: '12px', lineHeight: '1.6' }}>
+                  <span style={{ color: '#fff' }}>{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* RECENT NEWS */}
+        {recent_news && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
+              📰 Recent News & Activity
+            </h3>
+            <div style={valueStyle}>{recent_news}</div>
+          </div>
+        )}
+
+        {/* RECOMMENDED APPROACH */}
+        {recommended_approach && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
+              🎯 Recommended Sales Approach
+            </h3>
+            <div style={valueStyle}>{recommended_approach}</div>
+          </div>
+        )}
+
+        {/* ENRICHMENT ERROR */}
+        {enrichmentResult?.error && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#ff0000', fontSize: '16px', margin: '0 0 15px 0' }}>
+              ❌ Enrichment Error
+            </h3>
+            <div style={{ ...valueStyle, color: '#ff6666' }}>
+              {enrichmentResult.error}
+            </div>
+          </div>
+        )}
+
+        {/* RAW JSON (DEBUG) */}
+        {enrichmentData && Object.keys(enrichmentData).length > 0 && (
+          <div style={sectionStyle}>
+            <h3 style={{ color: '#666', fontSize: '14px', margin: '0 0 15px 0' }}>
+              🔧 Raw Enrichment JSON
+            </h3>
+            <pre style={jsonStyle}>
+              {JSON.stringify(enrichmentData, null, 2)}
+            </pre>
+          </div>
+        )}
 
         {/* ACTION BUTTONS */}
         <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'space-between' }}>
