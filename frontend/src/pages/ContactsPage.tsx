@@ -1,120 +1,43 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
-import type { Contact } from '../types/contact';
 import ContactDetailModal from '../components/ContactDetailModal';
+
+interface Contact {
+  id: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  company: string;
+  enrichment_status: string;
+  enrichment_data: any;
+}
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  
-  // MODAL STATE
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Check authentication
   useEffect(() => {
-    supabase.auth.getSession().then((result: any) => {
-      if (result.data.session) {
-        setIsAuthenticated(true);
-      } else {
-        setIsLoading(false);
-      }
-    });
-
-    supabase.auth.onAuthStateChange((_event: any, sess: any) => {
-      setIsAuthenticated(!!sess);
-      if (!sess) setIsLoading(false);
-    });
+    loadContacts();
   }, []);
 
-  // Fetch contacts when authenticated
-  useEffect(() => {
-    if (isAuthenticated) {
-      fetchContacts();
-    }
-  }, [isAuthenticated]);
-
-  // Filter contacts when search term or contacts change
-  useEffect(() => {
-    filterContacts();
-  }, [contacts, searchTerm]);
-
-  async function fetchContacts() {
-    setIsLoading(true);
-    setError(null);
-
+  async function loadContacts() {
     try {
-      const result = await supabase.auth.getSession();
-      const session = result.data.session;
+      const { data, error } = await supabase
+        .from('contacts')
+        .select('*')
+        .limit(100);
 
-      if (!session) {
-        setError('Not logged in');
-        setIsLoading(false);
-        return;
-      }
-
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/v3/contacts`, {
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error(`Failed to fetch contacts: ${res.status}`);
-      }
-
-      const data = await res.json();
-      setContacts(data.contacts || []);
+      if (error) throw error;
+      setContacts(data || []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error fetching contacts');
+      console.error('Error loading contacts:', err);
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
   }
 
-  function filterContacts() {
-    const term = searchTerm.toLowerCase();
-    setFilteredContacts(
-      contacts.filter((c: Contact) =>
-        c.first_name?.toLowerCase().includes(term) ||
-        c.last_name?.toLowerCase().includes(term) ||
-        c.email?.toLowerCase().includes(term) ||
-        c.company?.toLowerCase().includes(term)
-      )
-    );
-  }
-
-  async function deleteContact(id: string) {
-    if (!confirm('Delete this contact?')) return;
-
-    try {
-      const result = await supabase.auth.getSession();
-      const session = result.data.session;
-
-      if (!session) return;
-
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/v3/contacts/${id}`, {
-        method: 'DELETE',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-        },
-      });
-
-      if (!res.ok) {
-        throw new Error(`Delete failed: ${res.status}`);
-      }
-
-      setContacts(contacts.filter((c: Contact) => c.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
-    }
-  }
-
-  // MODAL HANDLERS
   function openModal(contact: Contact) {
     setSelectedContact(contact);
     setIsModalOpen(true);
@@ -125,99 +48,83 @@ export default function ContactsPage() {
     setSelectedContact(null);
   }
 
+  async function handleEnrichComplete() {
+    await loadContacts();
+  }
+
+  async function deleteContact(id: string) {
+    const { error } = await supabase.from('contacts').delete().eq('id', id);
+    if (error) {
+      alert('Error deleting contact: ' + error.message);
+    } else {
+      loadContacts();
+    }
+  }
+
+  if (loading) return <div style={{ padding: '20px' }}>Loading...</div>;
+
   return (
-    <div className="p-8 bg-slate-900 min-h-screen">
-      <h1 className="text-3xl font-bold text-white mb-6">Contacts</h1>
-
-      <input
-        type="text"
-        placeholder="Search..."
-        value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="w-full bg-slate-800 text-white rounded px-4 py-2 border border-slate-700 mb-6"
-      />
-
-      {error && <div className="bg-red-900 text-red-100 p-4 rounded mb-6">{error}</div>}
-
-      {isLoading ? (
-        <p className="text-slate-400">Loading...</p>
-      ) : filteredContacts.length === 0 ? (
-        <p className="text-slate-400">No contacts</p>
-      ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-slate-700 bg-slate-800">
-              <th className="text-left p-3 text-white">Name</th>
-              <th className="text-left p-3 text-white">Email</th>
-              <th className="text-left p-3 text-white">Company</th>
-              <th className="text-left p-3 text-white">Score</th>
-              <th className="text-left p-3 text-white">Status</th>
-              <th className="text-left p-3 text-white">Actions</th>
+    <div style={{ padding: '20px' }}>
+      <h1>Contacts</h1>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead>
+          <tr style={{ borderBottom: '1px solid #ccc' }}>
+            <th style={{ textAlign: 'left', padding: '10px' }}>Name</th>
+            <th style={{ textAlign: 'left', padding: '10px' }}>Email</th>
+            <th style={{ textAlign: 'left', padding: '10px' }}>Company</th>
+            <th style={{ textAlign: 'left', padding: '10px' }}>Status</th>
+            <th style={{ textAlign: 'left', padding: '10px' }}>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {contacts.map((contact) => (
+            <tr key={contact.id} style={{ borderBottom: '1px solid #eee' }}>
+              <td style={{ padding: '10px' }}>
+                {contact.first_name} {contact.last_name}
+              </td>
+              <td style={{ padding: '10px' }}>{contact.email}</td>
+              <td style={{ padding: '10px' }}>{contact.company || '-'}</td>
+              <td style={{ padding: '10px' }}>{contact.enrichment_status || 'pending'}</td>
+              <td style={{ padding: '10px' }}>
+                <button
+                  onClick={() => openModal(contact)}
+                  style={{
+                    padding: '5px 10px',
+                    marginRight: '5px',
+                    background: '#0066cc',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  View
+                </button>
+                <button
+                  onClick={() => deleteContact(contact.id)}
+                  style={{
+                    padding: '5px 10px',
+                    background: '#cc0000',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Delete
+                </button>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            {filteredContacts.map((c: Contact) => (
-              <tr key={c.id} className="border-b border-slate-700 hover:bg-slate-800">
-                <td 
-                  className="p-3 text-white cursor-pointer hover:text-blue-400"
-                  onClick={() => openModal(c)}
-                >
-                  {c.first_name} {c.last_name}
-                </td>
-                <td 
-                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400"
-                  onClick={() => openModal(c)}
-                >
-                  {c.email}
-                </td>
-                <td 
-                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400"
-                  onClick={() => openModal(c)}
-                >
-                  {c.company || '-'}
-                </td>
-                <td 
-                  className="p-3 text-white font-bold cursor-pointer hover:text-blue-400"
-                  onClick={() => openModal(c)}
-                >
-                  {c.apex_score?.toFixed(0) || '-'}
-                </td>
-                <td 
-                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400 capitalize"
-                  onClick={() => openModal(c)}
-                >
-                  {c.enrichment_status || 'pending'}
-                </td>
-                <td className="p-3 space-x-2">
-                  <button
-                    onClick={() => openModal(c)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm inline-block"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => deleteContact(c.id)}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm inline-block"
-                  >
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+          ))}
+        </tbody>
+      </table>
 
-      {/* MODAL COMPONENT - PORTAL RENDERS TO BODY */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
           isOpen={isModalOpen}
           onClose={closeModal}
-          onContactUpdate={(updated) => {
-            setContacts(contacts.map((c) => (c.id === updated.id ? updated : c)));
-            setSelectedContact(updated);
-          }}
+          onEnrichComplete={handleEnrichComplete}
         />
       )}
     </div>
