@@ -53,7 +53,7 @@ export default function ScoringPage() {
         .eq('user_id', session.user.id)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error; // 116 = not found
+      if (error && error.code !== 'PGRST116') throw error;
 
       if (data?.settings) {
         setSettings(data.settings);
@@ -147,7 +147,7 @@ export default function ScoringPage() {
                 min="0"
                 max="1"
                 step="0.05"
-                value={settings[field.key]}
+                value={Number(settings[field.key])}
                 onChange={(e) => updateSetting(field.key, parseFloat(e.target.value))}
                 style={{
                   width: '100%',
@@ -179,7 +179,7 @@ export default function ScoringPage() {
               type="number"
               min="0"
               step="1000"
-              value={settings.mdcp_budget_threshold}
+              value={Number(settings.mdcp_budget_threshold)}
               onChange={(e) => updateSetting('mdcp_budget_threshold', parseInt(e.target.value))}
               style={{
                 width: '100%',
@@ -200,7 +200,7 @@ export default function ScoringPage() {
               type="number"
               min="0"
               step="1"
-              value={settings.mdcp_timeline_months}
+              value={Number(settings.mdcp_timeline_months)}
               onChange={(e) => updateSetting('mdcp_timeline_months', parseInt(e.target.value))}
               style={{
                 width: '100%',
@@ -217,7 +217,7 @@ export default function ScoringPage() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '12px' }}>
               <input
                 type="checkbox"
-                checked={settings.mdcp_authority_required as boolean}
+                checked={Boolean(settings.mdcp_authority_required)}
                 onChange={(e) => updateSetting('mdcp_authority_required', e.target.checked)}
               />
               Require Decision Maker Authority
@@ -228,7 +228,7 @@ export default function ScoringPage() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '12px' }}>
               <input
                 type="checkbox"
-                checked={settings.mdcp_need_clearly_defined as boolean}
+                checked={Boolean(settings.mdcp_need_clearly_defined)}
                 onChange={(e) => updateSetting('mdcp_need_clearly_defined', e.target.checked)}
               />
               Require Clearly Defined Need
@@ -249,7 +249,7 @@ export default function ScoringPage() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '12px' }}>
               <input
                 type="checkbox"
-                checked={settings.bant_budget_required as boolean}
+                checked={Boolean(settings.bant_budget_required)}
                 onChange={(e) => updateSetting('bant_budget_required', e.target.checked)}
               />
               Budget Required
@@ -261,7 +261,7 @@ export default function ScoringPage() {
               Authority Confirmation
             </label>
             <select
-              value={settings.bant_authority_confirmation}
+              value={String(settings.bant_authority_confirmation)}
               onChange={(e) => updateSetting('bant_authority_confirmation', e.target.value)}
               style={{
                 width: '100%',
@@ -283,7 +283,7 @@ export default function ScoringPage() {
               Need Qualification
             </label>
             <select
-              value={settings.bant_need_qualification}
+              value={String(settings.bant_need_qualification)}
               onChange={(e) => updateSetting('bant_need_qualification', e.target.value)}
               style={{
                 width: '100%',
@@ -304,7 +304,7 @@ export default function ScoringPage() {
             <label style={{ display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', fontSize: '12px' }}>
               <input
                 type="checkbox"
-                checked={settings.bant_timeline_required as boolean}
+                checked={Boolean(settings.bant_timeline_required)}
                 onChange={(e) => updateSetting('bant_timeline_required', e.target.checked)}
               />
               Timeline Required
@@ -338,7 +338,7 @@ export default function ScoringPage() {
                 min="0"
                 max="1"
                 step="0.05"
-                value={settings[field.key]}
+                value={Number(settings[field.key])}
                 onChange={(e) => updateSetting(field.key, parseFloat(e.target.value))}
                 style={{
                   width: '100%',
