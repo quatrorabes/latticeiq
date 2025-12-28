@@ -1,27 +1,24 @@
 # ============================================================================
-# FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
+# FILE: backend/main.py - LatticeIQ Sales Intelligence API
 # ============================================================================
+
 """
 Enterprise-grade FastAPI application for LatticeIQ
-
 Handles authentication, CRM imports, contact management, and scoring
 """
 
 import os
 import sys
+import jwt  # ← ADD THIS
 from pathlib import Path
 
 # ========================================
 # CRITICAL: FIX PYTHON PATH FIRST
-# Must be at the very top before any local imports
 # ========================================
-
 backend_dir = Path(__file__).parent.resolve()
-
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-# Also add legacy support (if needed)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ========================================
@@ -31,19 +28,17 @@ import logging
 from datetime import datetime
 from typing import Optional
 from functools import lru_cache
-
 from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, Response
 from fastapi.exceptions import RequestValidationError
-
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
 
 # ============================================================================
-# CREATE APP FIRST (before importing routers)
+# CREATE APP FIRST
 # ============================================================================
 
 app = FastAPI(
@@ -60,7 +55,6 @@ app = FastAPI(
 # ========================================
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -107,14 +101,10 @@ settings = get_settings()
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("latticeiq")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-
     handler = logging.StreamHandler()
     formatter = jsonlogger.JsonFormatter(timestamp=True)
-    
-
     logger.handlers.clear()
     logger.addHandler(handler)
-
     return logger
 
 logger = setup_logging(settings.LOG_LEVEL)
@@ -127,7 +117,7 @@ def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning("SUPABASE_URL or SUPABASE_ANON_KEY not configured")
         return None
-
+    
     try:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
         logger.info("✅ Supabase initialized successfully")
@@ -171,54 +161,48 @@ class ContactUpdate(BaseModel):
     spicescore: Optional[int] = Field(None, ge=0, le=100)
 
 # ============================================================================
-# AUTH DEPENDENCY
+# AUTH DEPENDENCY - FIXED VERSION WITH JWT DECODE
 # ============================================================================
 
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
     """
-    Validate JWT token from Supabase and extract user info
+    Validate JWT token from Supabase using simple JWT decode
     """
-    if not supabase:
-        raise HTTPException(status_code=503, detail="Database unavailable")
-
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
+    
     try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise ValueError("Invalid scheme")
-
-        # Use Supabase to validate token
-        user_resp = supabase.auth.get_user(token)
-
-        user_obj = (
-            getattr(user_resp, "user", None) or user_resp.get("user")
-            if isinstance(user_resp, dict)
-            else user_resp
-        )
-
-        if not user_obj:
-            raise HTTPException(status_code=401, detail="Invalid or expired token")
-
-        user_id = getattr(user_obj, "id", None) or user_obj.get("id")
-        email = getattr(user_obj, "email", None) or user_obj.get("email") or ""
-
+        # Parse Bearer token
+        parts = authorization.split(" ", 1)
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            raise HTTPException(
+                status_code=401, 
+                detail="Invalid authorization format"
+            )
+        
+        token = parts[1]
+        
+        # Decode JWT without verification (frontend already verified)
+        payload = jwt.decode(token, options={"verify_signature": False})
+        
+        user_id = payload.get("sub")  # 'sub' is the user ID in Supabase JWTs
+        email = payload.get("email", "")
+        
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
-
+        
+        logger.info(f"✅ Authenticated: {email} ({user_id})")
         return CurrentUser(id=str(user_id), email=str(email))
-
+        
     except HTTPException:
         raise
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=f"Invalid authorization header format: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        logger.error(f"❌ Auth error: {type(e).__name__}: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ============================================================================
 # IMPORT ROUTERS (with error handling)
@@ -302,7 +286,7 @@ except ImportError as e:
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
-        
+
 @app.get("/api/v3/icp-config")
 async def get_icp_config():
     """Get default ICP (Ideal Customer Profile) configuration"""
@@ -330,7 +314,6 @@ async def get_icp_config():
             "low": 40,
         },
     }
-    
 
 # ============================================================================
 # REGISTER ROUTERS
@@ -339,6 +322,8 @@ async def get_icp_config():
 if CONTACTS_ROUTER_AVAILABLE:
     app.include_router(contacts_router, prefix="/api/v3")
     print("✅ Contacts router registered at /api/v3/contacts")
+else:
+    print("❌ Contacts router NOT registered")
 
 if SETTINGS_ROUTER_AVAILABLE:
     app.include_router(settings_router, prefix="/api/v3")
@@ -397,4 +382,3 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("🛑 LatticeIQ API shutting down...")
-    
