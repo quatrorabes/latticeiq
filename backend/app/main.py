@@ -300,6 +300,39 @@ except ImportError as e:
         print(f"❌ Scoring router import failed: {e}")
 
 # ============================================================================
+# ICP CONFIG ENDPOINT
+# ============================================================================
+        
+@app.get("/api/v3/icp-config")
+async def get_icp_config():
+    """Get default ICP (Ideal Customer Profile) configuration"""
+    return {
+        "frameworks": {
+            "mdcp": {
+                "name": "MDCP",
+                "description": "Match-Data-Contact-Profile",
+                "weight": 0.33,
+            },
+            "bant": {
+                "name": "BANT",
+                "description": "Budget-Authority-Need-Timeline",
+                "weight": 0.33,
+            },
+            "spice": {
+                "name": "SPICE",
+                "description": "Situation-Problem-Implication-Critical Event-Decision",
+                "weight": 0.34,
+            },
+        },
+        "scoring_thresholds": {
+            "high": 80,
+            "medium": 60,
+            "low": 40,
+        },
+    }
+    
+
+# ============================================================================
 # REGISTER ROUTERS
 # ============================================================================
 

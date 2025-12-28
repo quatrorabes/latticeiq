@@ -1,138 +1,167 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
-import type { Contact } from '../types/contact';
+import React, { useState, useEffect } from "react";
+import { useSession } from "@supabase/auth-helpers-react";
+import { supabase } from "../../lib/supabase";
 
-export default function ContactsPage() {
-  const navigate = useNavigate();
+interface Contact {
+  id: string;
+  firstname: string;
+  lastname: string;
+  email: string;
+  phone?: string;
+  company?: string;
+  jobtitle?: string;
+  enrichmentstatus: string;
+}
+
+const ContactsPage: React.FC = () => {
+  const session = useSession();
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [isLoading, setIsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then((result) => {
-      if (result.data.session) {
-        setIsAuthenticated(true);
-      } else {
-        setIsLoading(false);
-      }
-    });
-    const sub = supabase.auth.onAuthStateChange((_event, sess) => {
-      setIsAuthenticated(!!sess);
-      if (!sess) setIsLoading(false);
-    });
-    return () => sub.data.subscription.unsubscribe();
-  }, []);
+    if (session?.user?.id) {
+      fetchContacts();
+    }
+  }, [session]);
 
-  useEffect(() => {
-    if (isAuthenticated) fetchContacts();
-  }, [isAuthenticated]);
-
-  useEffect(() => {
-    filterContacts();
-  }, [contacts, searchTerm]);
-
-  async function fetchContacts() {
-    setIsLoading(true);
-    setError(null);
+  const fetchContacts = async () => {
     try {
-      const result = await supabase.auth.getSession();
-      const sess = result.data.session;
-      if (!sess) {
-        setError('Not logged in');
-        setIsLoading(false);
+      setLoading(true);
+      setError(null);
+
+      // Get JWT token from Supabase session
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !data?.session?.access_token) {
+        setError("Not authenticated");
         return;
       }
-      const res = await fetch(import.meta.env.VITE_API_URL + '/api/v3/contacts', {
-        headers: { 'Authorization': 'Bearer ' + sess.access_token }
-      });
-      const data = await res.json();
-      setContacts(data.contacts || data || []);
+
+      const token = data.session.access_token;
+
+      // Fetch from backend with Authorization header
+      const response = await fetch(
+        "https://latticeiq-backend.onrender.com/api/v3/contacts", // Use production URL
+        {
+          headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          setError("Unauthorized - please log in again");
+        } else if (response.status === 404) {
+          setError("Contacts endpoint not found");
+        } else {
+          setError(`Error: ${response.status} ${response.statusText}`);
+        }
+        return;
+      }
+
+      const data_response = await response.json();
+
+      // Handle both array and object responses
+      if (Array.isArray(data_response)) {
+        setContacts(data_response);
+      } else if (data_response.contacts && Array.isArray(data_response.contacts)) {
+        setContacts(data_response.contacts);
+      } else {
+        console.warn("Unexpected API response format:", data_response);
+        setContacts([]);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error');
+      console.error("Error fetching contacts:", err);
+      setError(err instanceof Error ? err.message : "Failed to fetch contacts");
     } finally {
-      setIsLoading(false);
+      setLoading(false);
     }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">Loading contacts...</p>
+      </div>
+    );
   }
 
-  function filterContacts() {
-    const term = searchTerm.toLowerCase();
-    setFilteredContacts(contacts.filter((c: Contact) => 
-      (c.first_name || '').toLowerCase().includes(term) ||
-      (c.last_name || '').toLowerCase().includes(term) ||
-      (c.email || '').toLowerCase().includes(term) ||
-      (c.company || '').toLowerCase().includes(term)
-    ));
-  }
-
-  async function deleteContact(id: string) {
-    if (!confirm('Delete?')) return;
-    try {
-      const result = await supabase.auth.getSession();
-      const sess = result.data.session;
-      if (!sess) return;
-      await fetch(import.meta.env.VITE_API_URL + '/api/v3/contacts/' + id, {
-        method: 'DELETE',
-        headers: { 'Authorization': 'Bearer ' + sess.access_token }
-      });
-      setContacts(contacts.filter((c: Contact) => c.id !== id));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Delete failed');
-    }
+  if (error) {
+    return (
+      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+        <p className="text-red-800 font-semibold">Error</p>
+        <p className="text-red-700">{error}</p>
+        <button
+          onClick={fetchContacts}
+          className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+        >
+          Retry
+        </button>
+      </div>
+    );
   }
 
   return (
-    <div className="p-8 bg-slate-900 min-h-screen">
-      <h1 className="text-3xl font-bold text-white mb-6">Contacts</h1>
+    <div className="space-y-4">
+      <div className="flex justify-between items-center">
+        <h1 className="text-3xl font-bold">Contacts ({contacts.length})</h1>
+        <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+          Add Contact
+        </button>
+      </div>
 
-      <input type="text" placeholder="Search..." value={searchTerm}
-        onChange={(e) => setSearchTerm(e.target.value)}
-        className="w-full bg-slate-800 text-white rounded px-4 py-2 border border-slate-700 mb-6" />
-
-      {error && <div className="bg-red-900 text-red-100 p-4 rounded mb-6">{error}</div>}
-
-      {isLoading ? (
-        <p className="text-slate-400">Loading...</p>
-      ) : filteredContacts.length === 0 ? (
-        <p className="text-slate-400">No contacts</p>
+      {contacts.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-gray-500">No contacts yet</p>
+        </div>
       ) : (
-        <table className="w-full border-collapse">
-          <thead>
-            <tr className="border-b border-slate-700 bg-slate-800">
-              <th className="text-left p-3 text-white">Name</th>
-              <th className="text-left p-3 text-white">Email</th>
-              <th className="text-left p-3 text-white">Company</th>
-              <th className="text-left p-3 text-white">Score</th>
-              <th className="text-left p-3 text-white">Status</th>
-              <th className="text-left p-3 text-white">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredContacts.map((c: Contact) => (
-              <tr key={c.id} className="border-b border-slate-700 hover:bg-slate-800">
-                <td className="p-3 text-white cursor-pointer hover:text-blue-400" onClick={() => navigate(`/contacts/${c.id}`)}>{c.first_name} {c.last_name}</td>
-                <td className="p-3 text-slate-400">{c.email}</td>
-                <td className="p-3 text-slate-400">{c.company || '-'}</td>
-                <td className="p-3 text-white font-bold">{c.apex_score?.toFixed(0) || '-'}</td>
-                <td className="p-3 text-slate-400">{c.enrichment_status || 'pending'}</td>
-                <td className="p-3">
-                  <button onClick={() => navigate(`/contacts/${c.id}`)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm mr-2">
-                    View
-                  </button>
-                  <button onClick={() => deleteContact(c.id)}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm">
-                    Delete
-                  </button>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="min-w-full border-collapse border border-gray-300">
+            <thead className="bg-gray-100">
+              <tr>
+                <th className="border border-gray-300 p-3 text-left">Name</th>
+                <th className="border border-gray-300 p-3 text-left">Email</th>
+                <th className="border border-gray-300 p-3 text-left">Company</th>
+                <th className="border border-gray-300 p-3 text-left">Title</th>
+                <th className="border border-gray-300 p-3 text-left">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {contacts.map((contact) => (
+                <tr key={contact.id} className="hover:bg-gray-50">
+                  <td className="border border-gray-300 p-3">
+                    {contact.firstname} {contact.lastname}
+                  </td>
+                  <td className="border border-gray-300 p-3">{contact.email}</td>
+                  <td className="border border-gray-300 p-3">
+                    {contact.company || "-"}
+                  </td>
+                  <td className="border border-gray-300 p-3">
+                    {contact.jobtitle || "-"}
+                  </td>
+                  <td className="border border-gray-300 p-3">
+                    <span
+                      className={`inline-block px-2 py-1 rounded text-sm font-medium ${
+                        contact.enrichmentstatus === "completed"
+                          ? "bg-green-100 text-green-800"
+                          : contact.enrichmentstatus === "processing"
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      {contact.enrichmentstatus}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
     </div>
   );
-}
+};
+
+export default ContactsPage;
