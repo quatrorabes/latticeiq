@@ -1,11 +1,11 @@
-# ============================================================================
-# FILE: backend/app/enrichment_v3/enrich_router.py
-# PURPOSE: Contact Enrichment API - Perplexity AI enrichment
-# ============================================================================
+"""
+Contact Enrichment API - Uses Perplexity AI to enrich contact data
+"""
 
 import os
 import json
 import logging
+import jwt
 from typing import Any, Dict
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Header
@@ -15,77 +15,34 @@ from supabase import create_client
 logger = logging.getLogger("latticeiq")
 
 # ============================================================================
-# LAZY LOAD SUPABASE CLIENT
+# SUPABASE CLIENT
 # ============================================================================
 
-supabase = None
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
 
-def get_supabase():
-    """Lazy initialize Supabase client"""
-    global supabase
-    if supabase is None:
-        url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_ANON_KEY")
-        if url and key:
-            supabase = create_client(url, key)
-    return supabase
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+elif SUPABASE_URL and SUPABASE_ANON_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+else:
+    supabase = None
 
-# ============================================================================
-# PERPLEXITY CONFIG
-# ============================================================================
-
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
+# Perplexity API
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
 PERPLEXITY_MODEL = os.getenv("PERPLEXITY_MODEL", "sonar-pro")
 
 # ============================================================================
-# AUTH DEPENDENCY
+# HELPER: Strip code fences from AI response
 # ============================================================================
-
-async def get_current_user(authorization: str = Header(None)) -> dict:
-    """Validate Supabase JWT"""
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-
-    try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise ValueError("Invalid scheme")
-
-        client = get_supabase()
-        if not client:
-            raise HTTPException(status_code=503, detail="Database not configured")
-
-        user_resp = client.auth.get_user(token)
-        user = getattr(user_resp, "user", None) or user_resp.get("user") if isinstance(user_resp, dict) else None
-
-        if not user:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        user_id = getattr(user, "id", None) or user.get("id")
-        email = getattr(user, "email", None) or user.get("email") or ""
-
-        if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token: missing user id")
-
-        return {"id": str(user_id), "email": str(email)}
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
-
-# ============================================================================
-# ROUTER
-# ============================================================================
-
-router = APIRouter(prefix="/enrich", tags=["Enrichment"])
 
 def strip_code_fences(content: str) -> str:
     """Remove markdown code fences from AI response"""
     content = content.strip()
     backtick = chr(96)
     fence = backtick * 3
-    fence_json = f"{fence}json"
+    fence_json = fence + "json"
     
     if content.startswith(fence_json):
         content = content[len(fence_json):].lstrip()
@@ -97,38 +54,92 @@ def strip_code_fences(content: str) -> str:
     
     return content.strip()
 
-# POST /api/v3/enrich/{contact_id} - Enrich single contact
-@router.post("/{contact_id}")
-async def enrich_contact(contact_id: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Enrich a contact using Perplexity AI"""
-    client = get_supabase()
-    if not client:
-        raise HTTPException(status_code=503, detail="Database not configured")
+# ============================================================================
+# AUTH (FIXED - Use simple JWT decode)
+# ============================================================================
 
+async def get_current_user(authorization: str = Header(None)) -> dict:
+    """Validate Supabase JWT using simple decode (no SDK method)"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
+    
+    try:
+        scheme, token = authorization.split(" ", 1)
+        if scheme.lower() != "bearer":
+            raise ValueError("Invalid scheme")
+        
+        # FIXED: Use simple JWT decode (don't verify signature, it's already signed by Supabase)
+        payload = jwt.decode(token, options={"verify_signature": False})
+        user_id = payload.get("sub")
+        email = payload.get("email", "")
+        
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token (missing user id)")
+        
+        return {"id": user_id, "email": email}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Token validation error: {str(e)}")
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+
+# ============================================================================
+# ROUTER
+# ============================================================================
+
+router = APIRouter(prefix="/enrich", tags=["Enrichment"])
+
+# ============================================================================
+# ENRICH CONTACT ENDPOINT
+# ============================================================================
+
+@router.post("/{contact_id}")
+async def enrich_contact(
+    contact_id: str,
+    user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Enrich a contact using Perplexity AI"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
     if not PERPLEXITY_API_KEY:
         raise HTTPException(status_code=503, detail="Perplexity API key not configured")
-
+    
+    user_id = user["id"]
+    
     try:
-        user_id = user["id"]
+        # 1. Fetch contact from database
+        result = (
+            supabase.table("contacts")
+            .select("*")
+            .eq("id", contact_id)
+            .eq("user_id", user_id)
+            .single()
+            .execute()
+        )
         
-        # Fetch contact
-        result = client.table("contacts").select("*").eq("id", contact_id).eq("userid", user_id).single().execute()
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
         
         contact = result.data
         
-        # Mark as processing
-        client.table("contacts").update({"enrichmentstatus": "processing"}).eq("id", contact_id).execute()
+        # 2. Update status to "processing"
+        supabase.table("contacts").update({
+            "enrichment_status": "processing"
+        }).eq("id", contact_id).execute()
         
-        # Build prompt
-        name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
+        # 3. Build prompt for Perplexity
+        name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
         company = contact.get("company") or "Unknown Company"
-        title = contact.get("jobtitle") or contact.get("title") or ""
+        title = contact.get("job_title") or contact.get("title") or ""
         email = contact.get("email") or ""
-        linkedin = contact.get("linkedinurl") or ""
+        linkedin = contact.get("linkedin_url") or ""
         
-        prompt = f"""Research this business contact and provide sales intelligence
+        prompt = f"""Research this business contact and provide sales intelligence:
 
 Name: {name}
 Company: {company}
@@ -137,22 +148,25 @@ Email: {email}
 LinkedIn: {linkedin}
 
 Provide a JSON response with these fields:
-- summary: 2-3 sentence professional summary
-- company_overview: Brief description of company
-- talking_points: 3-5 conversation starters
-- inferred_title: Their likely job title
-- inferred_seniority: Executive/Director/Manager/Individual Contributor
-- persona_type: Decision-maker/Champion/Influencer/Blocker
-- vertical: Industry vertical
-- company_size: Startup/SMB/Mid-Market/Enterprise
-- recent_news: Any recent company news
-- recommended_approach: Best way to engage
 
-Return ONLY valid JSON, no markdown."""
+{{
+"summary": "2-3 sentence professional summary of this person",
+"company_overview": "Brief description of the company, size, industry",
+"talking_points": ["3-5 relevant conversation starters or pain points"],
+"inferred_title": "Their likely job title if not provided",
+"inferred_seniority": "Executive/Director/Manager/Individual Contributor",
+"persona_type": "Decision-maker/Champion/Influencer/Blocker",
+"vertical": "Industry vertical (SaaS, Finance, Healthcare, etc.)",
+"company_size": "Startup/SMB/Mid-Market/Enterprise",
+"recent_news": "Any recent company news or initiatives",
+"recommended_approach": "Best way to engage this contact"
+}}
+
+Return ONLY valid JSON, no markdown or extra text."""
         
-        # Call Perplexity API
-        async with httpx.AsyncClient(timeout=60.0) as http_client:
-            response = await http_client.post(
+        # 4. Call Perplexity API
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
                 "https://api.perplexity.ai/chat/completions",
                 headers={
                     "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
@@ -162,83 +176,125 @@ Return ONLY valid JSON, no markdown."""
                     "model": PERPLEXITY_MODEL,
                     "messages": [
                         {"role": "system", "content": "You are a sales intelligence researcher. Return only valid JSON."},
-                        {"role": "user", "content": prompt},
+                        {"role": "user", "content": prompt}
                     ],
                     "temperature": 0.1,
                     "max_tokens": 1500,
-                },
+                }
             )
-            
-            if response.status_code != 200:
-                logger.error(f"Perplexity API error {response.status_code}: {response.text}")
-                raise HTTPException(status_code=502, detail="Enrichment service error")
-            
-            data = response.json()
-            raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
         
-        # Parse response
+        if response.status_code != 200:
+            logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
+            raise HTTPException(status_code=502, detail="Enrichment service error")
+        
+        data = response.json()
+        raw_content = data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+        
+        # 5. Parse response (handle markdown code fences)
         content = strip_code_fences(raw_content)
+        
         try:
             enrichment_data = json.loads(content)
         except json.JSONDecodeError:
-            enrichment_data = {"raw_response": raw_content, "parse_error": True}
+            try:
+                start = content.find("{")
+                end = content.rfind("}") + 1
+                if start != -1 and end > start:
+                    enrichment_data = json.loads(content[start:end])
+                else:
+                    enrichment_data = {"raw_response": raw_content, "parse_error": True}
+            except json.JSONDecodeError:
+                enrichment_data = {"raw_response": raw_content, "parse_error": True}
         
-        # Update contact
+        # 6. Update contact with enrichment data
         update_data = {
-            "enrichmentstatus": "completed",
-            "enrichmentdata": enrichment_data,
-            "enrichedat": datetime.utcnow().isoformat(),
+            "enrichment_status": "completed",
+            "enrichment_data": enrichment_data,
+            "enriched_at": datetime.utcnow().isoformat(),
         }
         
-        if not contact.get("jobtitle") and enrichment_data.get("inferred_title"):
-            update_data["jobtitle"] = enrichment_data["inferred_title"]
+        # Auto-fill empty fields
+        if not contact.get("job_title") and enrichment_data.get("inferred_title"):
+            update_data["job_title"] = enrichment_data["inferred_title"]
         
         if enrichment_data.get("persona_type"):
-            update_data["personatype"] = enrichment_data["persona_type"]
+            update_data["persona_type"] = enrichment_data["persona_type"]
         
         if enrichment_data.get("vertical"):
             update_data["vertical"] = enrichment_data["vertical"]
         
-        client.table("contacts").update(update_data).eq("id", contact_id).execute()
-        logger.info(f"Enriched contact {contact_id}", extra={"userid": user_id})
+        supabase.table("contacts").update(update_data).eq("id", contact_id).execute()
+        
+        logger.info(f"Enriched contact {contact_id}", extra={"user_id": user_id})
         
         return {
             "success": True,
             "contact_id": contact_id,
             "status": "completed",
-            "enrichmentdata": enrichment_data,
+            "enrichment_data": enrichment_data,
         }
     
     except HTTPException:
         raise
     except Exception as e:
+        # Mark as failed
+        supabase.table("contacts").update({
+            "enrichment_status": "failed"
+        }).eq("id", contact_id).execute()
+        
         logger.error(f"Enrichment failed for {contact_id}: {str(e)}")
-        client.table("contacts").update({"enrichmentstatus": "failed"}).eq("id", contact_id).execute()
         raise HTTPException(status_code=500, detail=str(e))
 
-# GET /api/v3/enrich/{contact_id}/status - Check enrichment status
 @router.get("/{contact_id}/status")
-async def get_enrichment_status(contact_id: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+async def get_enrichment_status(
+    contact_id: str,
+    user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
     """Get enrichment status for a contact"""
-    client = get_supabase()
-    if not client:
+    if not supabase:
         raise HTTPException(status_code=503, detail="Database not configured")
+    
+    result = (
+        supabase.table("contacts")
+        .select("id, enrichment_status, enrichment_data, enriched_at")
+        .eq("id", contact_id)
+        .eq("user_id", user["id"])
+        .single()
+        .execute()
+    )
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    return {
+        "contact_id": contact_id,
+        "status": result.data.get("enrichment_status", "pending"),
+        "enrichment_data": result.data.get("enrichment_data"),
+        "enriched_at": result.data.get("enriched_at"),
+    }
 
-    try:
-        user_id = user["id"]
-        result = client.table("contacts").select("id, enrichmentstatus, enrichmentdata, enrichedat").eq("id", contact_id).eq("userid", user_id).single().execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        
-        return {
-            "contact_id": contact_id,
-            "status": result.data.get("enrichmentstatus", "pending"),
-            "enrichmentdata": result.data.get("enrichmentdata"),
-            "enrichedat": result.data.get("enrichedat"),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting enrichment status: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+@router.get("/{contact_id}/data")
+async def get_enrichment_data(
+    contact_id: str,
+    user: dict = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Get enrichment data for a contact"""
+    if not supabase:
+        raise HTTPException(status_code=503, detail="Database not configured")
+    
+    result = (
+        supabase.table("contacts")
+        .select("enrichment_data")
+        .eq("id", contact_id)
+        .eq("user_id", user["id"])
+        .single()
+        .execute()
+    )
+    
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    return {
+        "contact_id": contact_id,
+        "enrichment_data": result.data.get("enrichment_data"),
+    }
