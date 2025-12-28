@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import ContactsPage from './pages/ContactsPage';
-import ImportPage from './pages/ImportPage';
+import { supabase } from '../lib/supabaseClient';
+
 
 export default function App() {
   const [currentPage, setCurrentPage] = useState<'contacts' | 'import'>('contacts');
