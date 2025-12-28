@@ -35,7 +35,7 @@ export default function ContactDetailModal({
       const token = sessionData?.session?.access_token;
 
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/enrich/${contact.id}`,
+        `${import.meta.env.VITE_API_URL}/api/v3/enrich/${contact?.id}`,
         {
           method: 'POST',
           headers: {
