@@ -60,6 +60,13 @@ export default function ContactDetailModal({
         const errorText = await response.text();
         console.error('Enrich error:', errorText);
         setEnrichmentResult({ error: `${response.status}: ${errorText}` });
+        
+        // Mark as failed
+        await supabase
+          .from('contacts')
+          .update({ enrichment_status: 'failed' })
+          .eq('id', contact?.id);
+        
         setEnriching(false);
         return;
       }
@@ -68,9 +75,25 @@ export default function ContactDetailModal({
       console.log('=== ENRICHMENT RESULT ===');
       console.log(result);
       
-      setEnrichmentResult(result);
+      // Mark as enriched and save result
+      const { error: updateError } = await supabase
+        .from('contacts')
+        .update({ 
+          enrichment_status: 'enriched',
+          enrichment_data: result.enrichment_data || result,
+          apex_score: result.apex_score || null,
+        })
+        .eq('id', contact?.id);
+
+      if (updateError) {
+        console.error('Error updating contact status:', updateError);
+        setEnrichmentResult({ error: `Failed to save enrichment: ${updateError.message}` });
+      } else {
+        setEnrichmentResult(result);
+        alert('✅ Enrichment complete!');
+      }
+      
       onEnrichComplete();
-      alert('Enrichment complete!');
     } catch (err) {
       console.error('Error enriching:', err);
       setEnrichmentResult({ error: (err as Error).message });
@@ -228,13 +251,23 @@ export default function ContactDetailModal({
             <div style={{
               padding: '8px',
               borderRadius: '4px',
-              background: contact.enrichment_status === 'completed' ? '#003300' : '#663300',
-              color: contact.enrichment_status === 'completed' ? '#00ff00' : '#ffcc00',
+              background: contact.enrichment_status === 'enriched' ? '#003300' : '#663300',
+              color: contact.enrichment_status === 'enriched' ? '#00ff00' : '#ffcc00',
               display: 'inline-block',
+              fontWeight: 'bold',
             }}>
               {contact.enrichment_status || 'pending'}
             </div>
           </div>
+
+          {contact.apex_score && (
+            <div>
+              <div style={labelStyle}>APEX Score</div>
+              <div style={{ ...valueStyle, color: '#00ff00', fontWeight: 'bold', fontSize: '18px' }}>
+                {Math.round(contact.apex_score)}/100
+              </div>
+            </div>
+          )}
         </div>
 
         {/* INFERRED PROFILE */}
