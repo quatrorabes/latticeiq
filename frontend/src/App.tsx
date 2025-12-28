@@ -1,73 +1,85 @@
-import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { supabase } from './lib/supabase';
-import type { Session } from '@supabase/supabase-js';
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import ContactsPage from './pages/ContactsPage';
-import ContactDetailPage from './pages/ContactDetailPage';
-import Dashboard from './pages/Dashboard';
-import SetupPage from './pages/SetupPage';
-import Sidebar from './components/Sidebar';
+import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import Dashboard from "./pages/Dashboard";
+import ContactsPage from "./pages/ContactsPage";
+import LeadScoring from "./pages/LeadScoring";
+import Enrichment from "./pages/Enrichment";
+import Settings from "./pages/Settings";
+import Auth from "./pages/Auth";
+import Sidebar from "./components/Sidebar";
+import "./App.css";
 
-function App() {
-  const [session, setSession] = useState<Session | null>(null);
+// Initialize Supabase
+const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY
+);
+
+export default function App() {
+  const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
+      // ✅ SAVE TOKEN TO LOCALSTORAGE
+      if (session?.access_token) {
+        localStorage.setItem("sb-auth-token", session.access_token);
+      }
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    // ✅ LISTEN FOR AUTH CHANGES
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
+      
+      // Save token when user logs in
+      if (event === "SIGNED_IN" && session?.access_token) {
+        localStorage.setItem("sb-auth-token", session.access_token);
+      }
+      
+      // Clear token when user logs out
+      if (event === "SIGNED_OUT") {
+        localStorage.removeItem("sb-auth-token");
+      }
+      
+      setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => subscription?.unsubscribe();
   }, []);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-  };
-
   if (loading) {
-    return <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-      <p className="text-white">Loading...</p>
-    </div>;
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-50">
+        <p className="text-gray-600 text-lg">Loading...</p>
+      </div>
+    );
   }
 
   if (!session) {
-    return (
-      <Router>
-        <div className="min-h-screen bg-gray-950">
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </div>
-      </Router>
-    );
+    return <Auth />;
   }
 
   return (
     <Router>
-      <div className="min-h-screen bg-gray-950 flex">
-        <Sidebar onLogout={handleLogout} />
-        <main className="flex-1 ml-64">
+      <div className="flex h-screen bg-gray-50">
+        <Sidebar />
+        <main className="flex-1 overflow-auto p-8">
           <Routes>
-            <Route path="/setup" element={<SetupPage />} />
+            <Route path="/" element={<Dashboard />} />
             <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/contacts/:contactId" element={<ContactDetailPage />} />
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="*" element={<Navigate to="/setup" replace />} />
+            <Route path="/lead-scoring" element={<LeadScoring />} />
+            <Route path="/enrichment" element={<Enrichment />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
     </Router>
   );
 }
-
-export default App;

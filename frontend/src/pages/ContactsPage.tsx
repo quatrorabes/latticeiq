@@ -25,7 +25,7 @@ const ContactsPage: React.FC = () => {
       setLoading(true);
       setError(null);
 
-      // Get JWT token from localStorage (set by your auth flow)
+      // Get token from localStorage (set by App.tsx auth handler)
       const token = localStorage.getItem("sb-auth-token");
 
       if (!token) {
@@ -54,18 +54,10 @@ const ContactsPage: React.FC = () => {
       }
 
       const data = await response.json();
-
-      // Handle both formats
-      const contactList = Array.isArray(data)
-        ? data
-        : data.contacts || [];
-
-      setContacts(contactList);
+      setContacts(Array.isArray(data) ? data : data.contacts || []);
     } catch (err) {
       console.error("Error fetching contacts:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch contacts"
-      );
+      setError(err instanceof Error ? err.message : "Failed to fetch contacts");
     } finally {
       setLoading(false);
     }
@@ -96,16 +88,11 @@ const ContactsPage: React.FC = () => {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Contacts ({contacts.length})</h1>
-        <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-          Add Contact
-        </button>
-      </div>
+      <h1 className="text-3xl font-bold">Contacts ({contacts.length})</h1>
 
       {contacts.length === 0 ? (
         <div className="text-center py-12">
-          <p className="text-gray-500">No contacts yet</p>
+          <p className="text-gray-500">No contacts yet. Import some to get started!</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -126,12 +113,8 @@ const ContactsPage: React.FC = () => {
                     {contact.firstname} {contact.lastname}
                   </td>
                   <td className="border border-gray-300 p-3">{contact.email}</td>
-                  <td className="border border-gray-300 p-3">
-                    {contact.company || "-"}
-                  </td>
-                  <td className="border border-gray-300 p-3">
-                    {contact.jobtitle || "-"}
-                  </td>
+                  <td className="border border-gray-300 p-3">{contact.company || "-"}</td>
+                  <td className="border border-gray-300 p-3">{contact.jobtitle || "-"}</td>
                   <td className="border border-gray-300 p-3">
                     <span
                       className={`inline-block px-2 py-1 rounded text-sm font-medium ${
