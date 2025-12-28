@@ -5,7 +5,6 @@ import Dashboard from "./pages/Dashboard";
 import ContactsPage from "./pages/ContactsPage";
 import "./App.css";
 
-// Initialize Supabase
 const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -27,53 +26,45 @@ export default function App() {
   const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
-    // Check if user is already logged in
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         setSession({
           access_token: session.access_token,
           user: session.user,
         } as AuthSession);
-        // ✅ SAVE TOKEN TO LOCALSTORAGE
         localStorage.setItem("sb-auth-token", session.access_token);
         localStorage.setItem("sb-refresh-token", session.refresh_token || "");
       }
       setLoading(false);
     });
 
-    // ✅ LISTEN FOR AUTH CHANGES & AUTO-REFRESH
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session) {
-        setSession({
-          access_token: session.access_token,
-          user: session.user,
-        } as AuthSession);
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        if (session) {
+          setSession({
+            access_token: session.access_token,
+            user: session.user,
+          } as AuthSession);
+          localStorage.setItem("sb-auth-token", session.access_token);
+          localStorage.setItem("sb-refresh-token", session.refresh_token || "");
 
-        // Always save fresh tokens
-        localStorage.setItem("sb-auth-token", session.access_token);
-        localStorage.setItem("sb-refresh-token", session.refresh_token || "");
-
-        // Auto-refresh token 5 minutes before expiry
-        if (session.expires_at) {
-          const expiresIn = session.expires_at * 1000 - Date.now();
-          const refreshIn = expiresIn - 5 * 60 * 1000; // 5 min before expiry
-
-          if (refreshIn > 0) {
-            setTimeout(() => {
-              supabase.auth.refreshSession();
-            }, refreshIn);
+          if (session.expires_at) {
+            const expiresIn = session.expires_at * 1000 - Date.now();
+            const refreshIn = expiresIn - 5 * 60 * 1000;
+            if (refreshIn > 0) {
+              setTimeout(() => {
+                supabase.auth.refreshSession();
+              }, refreshIn);
+            }
           }
+        } else {
+          setSession(null);
+          localStorage.removeItem("sb-auth-token");
+          localStorage.removeItem("sb-refresh-token");
         }
-      } else {
-        setSession(null);
-        localStorage.removeItem("sb-auth-token");
-        localStorage.removeItem("sb-refresh-token");
+        setLoading(false);
       }
-
-      setLoading(false);
-    });
+    );
 
     return () => subscription?.unsubscribe();
   }, []);
@@ -137,7 +128,6 @@ export default function App() {
     );
   }
 
-  // Login Page
   if (!session) {
     return (
       <div className="flex items-center justify-center h-screen bg-gray-50">
@@ -208,18 +198,13 @@ export default function App() {
     );
   }
 
-  // Logged-in App
   return (
     <Router>
       <div className="flex h-screen bg-gray-50">
-        {/* Sidebar Navigation */}
         <div className="w-64 bg-white shadow-lg p-6">
           <h1 className="text-2xl font-bold mb-8">LatticeIQ</h1>
           <nav className="space-y-4">
-            <a
-              href="/"
-              className="block px-4 py-2 rounded hover:bg-gray-100"
-            >
+            <a href="/" className="block px-4 py-2 rounded hover:bg-gray-100">
               Dashboard
             </a>
             <a
@@ -237,7 +222,6 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Main Content */}
         <main className="flex-1 overflow-auto p-8">
           <Routes>
             <Route path="/" element={<Dashboard />} />
