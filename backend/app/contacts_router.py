@@ -10,34 +10,37 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from pydantic import BaseModel, EmailStr
-
 from supabase import create_client
 
 logger = logging.getLogger("latticeiq")
 
 # ============================================================================
-# SUPABASE CLIENT
+# LAZY LOAD SUPABASE CLIENT
 # ============================================================================
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
-SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+supabase = None
 
-if SUPABASE_URL and SUPABASE_SERVICE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-elif SUPABASE_URL and SUPABASE_ANON_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
-else:
-    supabase = None
+def get_supabase():
+    """Lazy initialize Supabase client on first use"""
+    global supabase
+    if supabase is None:
+        url = os.getenv("SUPABASE_URL")
+        key = os.getenv("SUPABASE_ANON_KEY")
+        if not url or not key:
+            return None
+        supabase = create_client(url, key)
+    return supabase
 
 # ============================================================================
-# AUTH
+# AUTH DEPENDENCY
 # ============================================================================
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
     """Validate Supabase JWT"""
-    if not supabase:
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
+
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
 
@@ -46,20 +49,20 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
         if scheme.lower() != "bearer":
             raise ValueError("Invalid scheme")
 
-        anon_client = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+        anon_client = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
         user_resp = anon_client.auth.get_user(token)
-        user = getattr(user_resp, "user", None) or (user_resp.get("user") if isinstance(user_resp, dict) else None)
+        user = getattr(user_resp, "user", None) or user_resp.get("user") if isinstance(user_resp, dict) else None
 
         if not user:
             raise HTTPException(status_code=401, detail="Invalid token")
 
         user_id = getattr(user, "id", None) or user.get("id")
-        email = getattr(user, "email", None) or user.get("email")
+        email = getattr(user, "email", None) or user.get("email") or ""
 
         if not user_id:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(status_code=401, detail="Invalid token: missing user id")
 
-        return {"id": user_id, "email": email or ""}
+        return {"id": str(user_id), "email": str(email)}
 
     except HTTPException:
         raise
@@ -71,23 +74,23 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
 # ============================================================================
 
 class ContactCreate(BaseModel):
-    first_name: str
-    last_name: str
+    firstname: str
+    lastname: str
     email: EmailStr
     phone: Optional[str] = None
     company: Optional[str] = None
-    job_title: Optional[str] = None
-    linkedin_url: Optional[str] = None
+    jobtitle: Optional[str] = None
+    linkedinurl: Optional[str] = None
     website: Optional[str] = None
 
 class ContactUpdate(BaseModel):
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    firstname: Optional[str] = None
+    lastname: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
     company: Optional[str] = None
-    job_title: Optional[str] = None
-    linkedin_url: Optional[str] = None
+    jobtitle: Optional[str] = None
+    linkedinurl: Optional[str] = None
     website: Optional[str] = None
 
 # ============================================================================
@@ -96,10 +99,7 @@ class ContactUpdate(BaseModel):
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
 
-# ============================================================================
-# LIST CONTACTS
-# ============================================================================
-
+# GET /api/v3/contacts - List all contacts
 @router.get("")
 async def list_contacts(
     user: dict = Depends(get_current_user),
@@ -109,218 +109,149 @@ async def list_contacts(
     search: Optional[str] = Query(None),
 ) -> Dict[str, Any]:
     """List all contacts for the current user"""
-    
-    if not supabase:
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        # Base query
-        query = supabase.table("contacts").select("*", count="exact").eq("user_id", user["id"])
+        user_id = user["id"]
         
-        # Filter by enrichment status
+        query = client.table("contacts").select("*").eq("userid", user_id)
+        
         if status and status != "all":
-            query = query.eq("enrichment_status", status)
+            query = query.eq("enrichmentstatus", status)
         
-        # Search filter
         if search:
-            query = query.or_(f"first_name.ilike.%{search}%,last_name.ilike.%{search}%,email.ilike.%{search}%,company.ilike.%{search}%")
+            query = query.or_(f"firstname.ilike.%{search}%,lastname.ilike.%{search}%,email.ilike.%{search}%,company.ilike.%{search}%")
         
-        # Pagination and ordering
-        query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
-        
+        query = query.order("createdat", desc=True).range(offset, offset + limit - 1)
         result = query.execute()
         
         return {
             "contacts": result.data or [],
             "total": result.count or 0,
             "limit": limit,
-            "offset": offset
+            "offset": offset,
         }
-        
     except Exception as e:
         logger.error(f"Error listing contacts: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================================================
-# GET SINGLE CONTACT
-# ============================================================================
-
+# GET /api/v3/contacts/{id} - Get single contact
 @router.get("/{contact_id}")
-async def get_contact(
-    contact_id: str,
-    user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
-    """Get a single contact by ID with enrichment data"""
-    
-    if not supabase:
+async def get_contact(contact_id: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Get a single contact by ID"""
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        result = (
-            supabase.table("contacts")
-            .select("*")
-            .eq("id", contact_id)
-            .eq("user_id", user["id"])
-            .single()
-            .execute()
-        )
+        user_id = user["id"]
+        result = client.table("contacts").select("*").eq("id", contact_id).eq("userid", user_id).single().execute()
         
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
-            
-        return result.data
         
+        return result.data
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================================================
-# CREATE CONTACT
-# ============================================================================
-
+# POST /api/v3/contacts - Create contact
 @router.post("")
-async def create_contact(
-    contact: ContactCreate,
-    user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def create_contact(contact: ContactCreate, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Create a new contact"""
-    
-    if not supabase:
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
+        user_id = user["id"]
         data = contact.dict()
-        data["user_id"] = user["id"]
-        data["enrichment_status"] = "pending"
-        data["created_at"] = datetime.utcnow().isoformat()
-        data["updated_at"] = datetime.utcnow().isoformat()
+        data["userid"] = user_id
+        data["enrichmentstatus"] = "pending"
+        data["createdat"] = datetime.utcnow().isoformat()
+        data["updatedat"] = datetime.utcnow().isoformat()
         
-        result = supabase.table("contacts").insert(data).execute()
+        result = client.table("contacts").insert(data).execute()
         
         if not result.data:
             raise HTTPException(status_code=500, detail="Failed to create contact")
-            
-        return result.data[0]
         
+        return result.data[0]
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error creating contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================================================
-# UPDATE CONTACT
-# ============================================================================
-
+# PUT /api/v3/contacts/{id} - Update contact
 @router.put("/{contact_id}")
-async def update_contact(
-    contact_id: str,
-    contact: ContactUpdate,
-    user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+async def update_contact(contact_id: str, contact: ContactUpdate, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Update an existing contact"""
-    
-    if not supabase:
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        # Verify ownership
-        existing = (
-            supabase.table("contacts")
-            .select("id")
-            .eq("id", contact_id)
-            .eq("user_id", user["id"])
-            .single()
-            .execute()
-        )
+        user_id = user["id"]
         
+        # Verify ownership
+        existing = client.table("contacts").select("id").eq("id", contact_id).eq("userid", user_id).single().execute()
         if not existing.data:
             raise HTTPException(status_code=404, detail="Contact not found")
         
-        # Update only provided fields
+        # Only update provided fields
         update_data = {k: v for k, v in contact.dict().items() if v is not None}
-        update_data["updated_at"] = datetime.utcnow().isoformat()
+        update_data["updatedat"] = datetime.utcnow().isoformat()
         
-        result = (
-            supabase.table("contacts")
-            .update(update_data)
-            .eq("id", contact_id)
-            .eq("user_id", user["id"])
-            .execute()
-        )
+        result = client.table("contacts").update(update_data).eq("id", contact_id).eq("userid", user_id).execute()
         
         return result.data[0] if result.data else {}
-        
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================================================
-# DELETE CONTACT
-# ============================================================================
-
+# DELETE /api/v3/contacts/{id} - Delete contact
 @router.delete("/{contact_id}")
-async def delete_contact(
-    contact_id: str,
-    user: dict = Depends(get_current_user),
-) -> Dict[str, str]:
+async def delete_contact(contact_id: str, user: dict = Depends(get_current_user)) -> Dict[str, str]:
     """Delete a contact"""
-    
-    if not supabase:
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        result = (
-            supabase.table("contacts")
-            .delete()
-            .eq("id", contact_id)
-            .eq("user_id", user["id"])
-            .execute()
-        )
-        
+        user_id = user["id"]
+        result = client.table("contacts").delete().eq("id", contact_id).eq("userid", user_id).execute()
         return {"status": "deleted", "contact_id": contact_id}
-        
     except Exception as e:
         logger.error(f"Error deleting contact: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# ============================================================================
-# STATS ENDPOINT
-# ============================================================================
-
-@router.get("/stats/summary")
-async def get_contact_stats(
-    user: dict = Depends(get_current_user),
-) -> Dict[str, Any]:
+# GET /api/v3/contacts/stats/summary - Get contact stats
+@router.get("/stats/summary", include_in_schema=False)
+async def get_contact_stats(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
     """Get contact statistics for dashboard"""
-    
-    if not supabase:
+    client = get_supabase()
+    if not client:
         raise HTTPException(status_code=503, detail="Database not configured")
 
     try:
-        # Total contacts
-        total = supabase.table("contacts").select("id", count="exact").eq("user_id", user["id"]).execute()
+        user_id = user["id"]
         
-        # Enriched contacts
-        enriched = supabase.table("contacts").select("id", count="exact").eq("user_id", user["id"]).eq("enrichment_status", "completed").execute()
-        
-        # Pending contacts
-        pending = supabase.table("contacts").select("id", count="exact").eq("user_id", user["id"]).eq("enrichment_status", "pending").execute()
-        
-        # Failed contacts
-        failed = supabase.table("contacts").select("id", count="exact").eq("user_id", user["id"]).eq("enrichment_status", "failed").execute()
+        total = client.table("contacts").select("id", count="exact").eq("userid", user_id).execute()
+        enriched = client.table("contacts").select("id", count="exact").eq("userid", user_id).eq("enrichmentstatus", "completed").execute()
+        pending = client.table("contacts").select("id", count="exact").eq("userid", user_id).eq("enrichmentstatus", "pending").execute()
         
         return {
             "total": total.count or 0,
             "enriched": enriched.count or 0,
             "pending": pending.count or 0,
-            "failed": failed.count or 0,
         }
-        
     except Exception as e:
-        logger.error(f"Error getting stats: {str(e)}")
+        logger.error(f"Error getting contact stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

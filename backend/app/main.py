@@ -109,8 +109,8 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
     handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter(timestamps=True, levels=True, names=True, messages=True, request_ids=True)
-    handler.setFormatter(formatter)
+    formatter = jsonlogger.JsonFormatter(timestamp=True)
+    
 
     logger.handlers.clear()
     logger.addHandler(handler)
@@ -364,3 +364,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("🛑 LatticeIQ API shutting down...")
+    

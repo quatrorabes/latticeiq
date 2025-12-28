@@ -10,14 +10,14 @@ from .hubspot_client import HubSpotClient
 from .salesforce_client import SalesforceClient
 from .pipedrive_client import PipedriveClient
 from .csv_parser import CSVParser
-from .router import router as crm_router
+# from .router import router as crm_router  # ✅ COMMENTED OUT - Import happens in main.py instead
 
 __all__ = [
-	"ImportJob",
-	"ImportLog",
-	"HubSpotClient",
-	"SalesforceClient",
-	"PipedriveClient",
-	"CSVParser",
-	"crm_router",
+    "ImportJob",
+    "ImportLog",
+    "HubSpotClient",
+    "SalesforceClient",
+    "PipedriveClient",
+    "CSVParser",
+    # "crm_router",  # ✅ Also comment this out
 ]

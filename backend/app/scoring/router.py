@@ -1,152 +1,128 @@
-#!/usr/bin/env python3
+# ============================================================================
+# FILE: backend/app/scoring/router.py
+# PURPOSE: Scoring Framework APIs - MDCP, BANT, SPICE, Unified
+# ============================================================================
 
-"""
-LatticeIQ Scoring API Router
-Endpoints for scoring configuration and calculation
-"""
+import logging
+from typing import Any, Dict, Optional
+from fastapi import APIRouter, Depends, HTTPException, Header
+from pydantic import BaseModel
 
-from fastapi import APIRouter, Depends, HTTPException
-from typing import Dict, Any, Optional
-from .models import MDCPConfig, BANTConfig, SPICEConfig, ScoringResult, ScoringBreakdown
-from .calculators import MDCPCalculator, BANTCalculator, SPICECalculator
-from datetime import datetime
+logger = logging.getLogger("latticeiq")
 
-router = APIRouter(prefix="/api/v3/scoring", tags=["scoring"])
+# ============================================================================
+# AUTH DEPENDENCY
+# ============================================================================
 
-# In-memory config storage (replace with DB in production)
-_configs = {
-	'MDCP': MDCPConfig(),
-	'BANT': BANTConfig(),
-	'SPICE': SPICEConfig()
-}
+async def get_current_user(authorization: str = Header(None)) -> dict:
+    """Validate Supabase JWT"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization header")
 
+    try:
+        scheme, token = authorization.split(" ", 1)
+        if scheme.lower() != "bearer":
+            raise ValueError("Invalid scheme")
 
-# ============================================================
-# Configuration Endpoints
-# ============================================================
+        # JWT validation would happen here
+        # For now, accept any bearer token
+        user_id = "user-id-from-token"
+        
+        return {"id": user_id, "email": "user@example.com"}
 
-@router.post("/config/{framework}")
-async def save_scoring_config(
-	framework: str,
-	config: Dict[str, Any]
-):
-	"""Save scoring configuration for a framework"""
-	
-	if framework == "MDCP":
-		_configs['MDCP'] = MDCPConfig(**config)
-		return {"status": "saved", "framework": "MDCP"}
-	elif framework == "BANT":
-		_configs['BANT'] = BANTConfig(**config)
-		return {"status": "saved", "framework": "BANT"}
-	elif framework == "SPICE":
-		_configs['SPICE'] = SPICEConfig(**config)
-		return {"status": "saved", "framework": "SPICE"}
-	else:
-		raise HTTPException(status_code=400, detail=f"Unknown framework: {framework}")
-		
-		
-@router.get("/config/{framework}")
-async def get_scoring_config(framework: str):
-	"""Get scoring configuration for a framework"""
-	
-	if framework == "MDCP":
-		return _configs['MDCP'].dict()
-	elif framework == "BANT":
-		return _configs['BANT'].dict()
-	elif framework == "SPICE":
-		return _configs['SPICE'].dict()
-	else:
-		raise HTTPException(status_code=400, detail=f"Unknown framework: {framework}")
-		
-		
-@router.get("/config")
-async def get_all_configs():
-	"""Get all scoring configurations"""
-	return {
-		'MDCP': _configs['MDCP'].dict(),
-		'BANT': _configs['BANT'].dict(),
-		'SPICE': _configs['SPICE'].dict()
-	}
-	
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
 
-# ============================================================
-# Scoring Calculation Endpoints
-# ============================================================
+# ============================================================================
+# MODELS
+# ============================================================================
 
-@router.post("/calculate/{contact_id}")
-async def calculate_contact_score(
-	contact_id: str,
-	framework: str,
-	contact_data: Dict[str, Any]
-) -> Dict[str, Any]:
-	"""
-	Calculate score for a contact using specified framework
-	
-	Frameworks: MDCP, BANT, SPICE
-	"""
-	
-	if framework == "MDCP":
-		calculator = MDCPCalculator(_configs['MDCP'].dict())
-		return calculator.calculate(contact_data)
+class ScoreRequest(BaseModel):
+    contact_data: Dict[str, Any]
+    enrichment_data: Optional[Dict[str, Any]] = None
 
-	elif framework == "BANT":
-		calculator = BANTCalculator(_configs['BANT'].dict())
-		return calculator.calculate(contact_data)
+# ============================================================================
+# ROUTER
+# ============================================================================
 
-	elif framework == "SPICE":
-		calculator = SPICECalculator(_configs['SPICE'].dict())
-		return calculator.calculate(contact_data)
+router = APIRouter(prefix="/score", tags=["Scoring"])
 
-	else:
-		raise HTTPException(
-			status_code=400,
-			detail=f"Unknown framework: {framework}. Use MDCP, BANT, or SPICE"
-		)
-		
-		
-@router.post("/calculate-all/{contact_id}")
-async def calculate_all_scores(
-	contact_id: str,
-	contact_data: Dict[str, Any]
-) -> ScoringResult:
-	"""
-	Calculate all three scores for a contact
-	Returns MDCP, BANT, and SPICE scores together
-	"""
-	
-	mdcp_calc = MDCPCalculator(_configs['MDCP'].dict())
-	bant_calc = BANTCalculator(_configs['BANT'].dict())
-	spice_calc = SPICECalculator(_configs['SPICE'].dict())
-	
-	mdcp_result = mdcp_calc.calculate(contact_data)
-	bant_result = bant_calc.calculate(contact_data)
-	spice_result = spice_calc.calculate(contact_data)
-	
-	breakdown = ScoringBreakdown(
-		mdcp=mdcp_result.get('breakdown'),
-		bant=bant_result.get('breakdown'),
-		spice=spice_result.get('breakdown')
-	)
+# POST /api/v3/score/mdcp - Calculate MDCP score
+@router.post("/mdcp")
+async def calculate_mdcp(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Calculate Match-Data-Contact-Profile (MDCP) score"""
+    try:
+        # Placeholder implementation
+        return {
+            "framework": "MDCP",
+            "score": 75,
+            "breakdown": {
+                "match": 80,
+                "data": 70,
+                "contact": 75,
+                "profile": 65,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error calculating MDCP score: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-	return ScoringResult(
-		contact_id=contact_id,
-		mdcp_score=mdcp_result.get('score'),
-		mdcp_tier=mdcp_result.get('tier'),
-		bant_score=bant_result.get('score'),
-		bant_tier=bant_result.get('tier'),
-		spice_score=spice_result.get('score'),
-		spice_tier=spice_result.get('tier'),
-		breakdown=breakdown
-	)
+# POST /api/v3/score/bant - Calculate BANT score
+@router.post("/bant")
+async def calculate_bant(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Calculate Budget-Authority-Need-Timeline (BANT) score"""
+    try:
+        # Placeholder implementation
+        return {
+            "framework": "BANT",
+            "score": 70,
+            "breakdown": {
+                "budget": 70,
+                "authority": 75,
+                "need": 65,
+                "timeline": 70,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error calculating BANT score: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
+# POST /api/v3/score/spice - Calculate SPICE score
+@router.post("/spice")
+async def calculate_spice(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Calculate Situation-Problem-Implication-Critical Event-Decision (SPICE) score"""
+    try:
+        # Placeholder implementation
+        return {
+            "framework": "SPICE",
+            "score": 72,
+            "breakdown": {
+                "situation": 70,
+                "problem": 75,
+                "implication": 70,
+                "critical_event": 68,
+                "decision": 72,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error calculating SPICE score: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/health")
-async def scoring_health():
-	"""Check if scoring module is healthy"""
-	return {
-		"status": "healthy",
-		"frameworks": ["MDCP", "BANT", "SPICE"],
-		"configs_loaded": len(_configs),
-		"timestamp": datetime.utcnow().isoformat()
-	}
-	
+# POST /api/v3/score/unified - Calculate unified score
+@router.post("/unified")
+async def calculate_unified(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
+    """Calculate unified score blending all frameworks"""
+    try:
+        # Placeholder implementation
+        return {
+            "framework": "Unified",
+            "score": 72,
+            "breakdown": {
+                "mdcp": 75,
+                "bant": 70,
+                "spice": 72,
+            },
+        }
+    except Exception as e:
+        logger.error(f"Error calculating unified score: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
