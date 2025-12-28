@@ -1,293 +1,224 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import supabase from '../lib/supabaseClient';
+import type { Contact } from '../types/contact';
+import ContactDetailModal from '../components/ContactDetailModal';
 
-interface Contact {
-  id: string;
-  firstname: string;
-  lastname: string;
-  email: string;
-  phone?: string;
-  company?: string;
-  jobtitle?: string;
-  enrichmentstatus: string;
-}
-
-interface EnrichmentResult {
-  phone?: string;
-  company?: string;
-  jobtitle?: string;
-  linkedin_url?: string;
-}
-
-const ContactsPage: React.FC = () => {
+export default function ContactsPage() {
+  const navigate = useNavigate();
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
+  // MODAL STATE
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
-  const [enriching, setEnriching] = useState(false);
-  const [enrichmentResult, setEnrichmentResult] = useState<EnrichmentResult | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
+  // Check authentication
   useEffect(() => {
-    fetchContacts();
+    supabase.auth.getSession().then((result) => {
+      if (result.data.session) {
+        setIsAuthenticated(true);
+      } else {
+        setIsLoading(false);
+      }
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, sess) => {
+      setIsAuthenticated(!!sess);
+      if (!sess) setIsLoading(false);
+    });
+
+    return () => {
+      subscription?.unsubscribe();
+    };
   }, []);
 
-  const fetchContacts = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const token = localStorage.getItem("sb-auth-token");
-      if (!token) {
-        setError("Not authenticated - please log in");
-        return;
-      }
-
-      const response = await fetch(
-        "https://latticeiq-backend.onrender.com/api/v3/contacts",
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      if (!response.ok) {
-        if (response.status === 401) {
-          setError("Unauthorized - token expired, please log in again");
-        } else {
-          setError(`API error: ${response.status}`);
-        }
-        return;
-      }
-
-      const data = await response.json();
-      setContacts(Array.isArray(data) ? data : data.contacts || []);
-    } catch (err) {
-      console.error("Error fetching contacts:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch contacts");
-    } finally {
-      setLoading(false);
+  // Fetch contacts when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchContacts();
     }
-  };
+  }, [isAuthenticated]);
 
-  const handleEnrich = async (contact: Contact) => {
-    setSelectedContact(contact);
-    setEnriching(true);
-    setEnrichmentResult(null);
+  // Filter contacts when search term or contacts change
+  useEffect(() => {
+    filterContacts();
+  }, [contacts, searchTerm]);
+
+  async function fetchContacts() {
+    setIsLoading(true);
+    setError(null);
 
     try {
-      const token = localStorage.getItem("sb-auth-token");
-      if (!token) {
-        setError("Not authenticated");
-        setEnriching(false);
+      const result = await supabase.auth.getSession();
+      const session = result.data.session;
+
+      if (!session) {
+        setError('Not logged in');
+        setIsLoading(false);
         return;
       }
 
-      const response = await fetch(
-        `https://latticeiq-backend.onrender.com/api/v3/enrichment?email=${encodeURIComponent(
-          contact.email
-        )}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/v3/contacts`, {
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
 
-      if (!response.ok) {
-        throw new Error(`Enrichment failed: ${response.status}`);
-      }
-
-      const data = await response.json();
-      setEnrichmentResult(data);
-
-      // Update contact in list
-      const updatedContacts = contacts.map((c) =>
-        c.id === contact.id
-          ? {
-              ...c,
-              phone: data.phone || c.phone,
-              company: data.company || c.company,
-              jobtitle: data.jobtitle || c.jobtitle,
-              enrichmentstatus: "completed",
-            }
-          : c
-      );
-      setContacts(updatedContacts);
+      const data = await res.json();
+      setContacts(data.contacts || []);
     } catch (err) {
-      console.error("Error enriching contact:", err);
-      setError(err instanceof Error ? err.message : "Enrichment failed");
+      setError(err instanceof Error ? err.message : 'Error fetching contacts');
     } finally {
-      setEnriching(false);
+      setIsLoading(false);
     }
-  };
+  }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading contacts...</p>
-      </div>
+  function filterContacts() {
+    const term = searchTerm.toLowerCase();
+    setFilteredContacts(
+      contacts.filter((c: Contact) =>
+        c.first_name?.toLowerCase().includes(term) ||
+        c.last_name?.toLowerCase().includes(term) ||
+        c.email?.toLowerCase().includes(term) ||
+        c.company?.toLowerCase().includes(term)
+      )
     );
   }
 
-  if (error) {
-    return (
-      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-        <p className="text-red-800 font-semibold">Error</p>
-        <p className="text-red-700">{error}</p>
-        <button
-          onClick={fetchContacts}
-          className="mt-3 px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-        >
-          Retry
-        </button>
-      </div>
-    );
+  async function deleteContact(id: string) {
+    if (!confirm('Delete this contact?')) return;
+
+    try {
+      const result = await supabase.auth.getSession();
+      const session = result.data.session;
+
+      if (!session) return;
+
+      await fetch(`${import.meta.env.VITE_API_URL}/api/v3/contacts/${id}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+      });
+
+      setContacts(contacts.filter((c: Contact) => c.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Delete failed');
+    }
+  }
+
+  // MODAL HANDLERS
+  function openModal(contact: Contact) {
+    setSelectedContact(contact);
+    setIsModalOpen(true);
+  }
+
+  function closeModal() {
+    setIsModalOpen(false);
+    setSelectedContact(null);
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-bold">Contacts ({contacts.length})</h1>
-        <button
-          onClick={fetchContacts}
-          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-        >
-          Refresh
-        </button>
-      </div>
+    <div className="p-8 bg-slate-900 min-h-screen">
+      <h1 className="text-3xl font-bold text-white mb-6">Contacts</h1>
 
-      {contacts.length === 0 ? (
-        <div className="text-center py-12">
-          <p className="text-gray-500">No contacts yet. Import some to get started!</p>
-        </div>
+      <input
+        type="text"
+        placeholder="Search..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="w-full bg-slate-800 text-white rounded px-4 py-2 border border-slate-700 mb-6"
+      />
+
+      {error && <div className="bg-red-900 text-red-100 p-4 rounded mb-6">{error}</div>}
+
+      {isLoading ? (
+        <p className="text-slate-400">Loading...</p>
+      ) : filteredContacts.length === 0 ? (
+        <p className="text-slate-400">No contacts</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse border border-gray-300">
-            <thead className="bg-gray-100">
-              <tr>
-                <th className="border border-gray-300 p-3 text-left">Name</th>
-                <th className="border border-gray-300 p-3 text-left">Email</th>
-                <th className="border border-gray-300 p-3 text-left">Company</th>
-                <th className="border border-gray-300 p-3 text-left">Title</th>
-                <th className="border border-gray-300 p-3 text-left">Phone</th>
-                <th className="border border-gray-300 p-3 text-left">Status</th>
-                <th className="border border-gray-300 p-3 text-center">Action</th>
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-slate-700 bg-slate-800">
+              <th className="text-left p-3 text-white">Name</th>
+              <th className="text-left p-3 text-white">Email</th>
+              <th className="text-left p-3 text-white">Company</th>
+              <th className="text-left p-3 text-white">Score</th>
+              <th className="text-left p-3 text-white">Status</th>
+              <th className="text-left p-3 text-white">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredContacts.map((c: Contact) => (
+              <tr key={c.id} className="border-b border-slate-700 hover:bg-slate-800">
+                {/* CLICKABLE ROW TO OPEN MODAL */}
+                <td 
+                  className="p-3 text-white cursor-pointer hover:text-blue-400"
+                  onClick={() => openModal(c)}
+                >
+                  {c.first_name} {c.last_name}
+                </td>
+                <td 
+                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400"
+                  onClick={() => openModal(c)}
+                >
+                  {c.email}
+                </td>
+                <td 
+                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400"
+                  onClick={() => openModal(c)}
+                >
+                  {c.company || '-'}
+                </td>
+                <td 
+                  className="p-3 text-white font-bold cursor-pointer hover:text-blue-400"
+                  onClick={() => openModal(c)}
+                >
+                  {c.apex_score?.toFixed(0) || '-'}
+                </td>
+                <td 
+                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400"
+                  onClick={() => openModal(c)}
+                >
+                  {c.enrichment_status || 'pending'}
+                </td>
+                <td className="p-3">
+                  <button
+                    onClick={() => openModal(c)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm mr-2"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => deleteContact(c.id)}
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
+                  >
+                    Delete
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {contacts.map((contact) => (
-                <tr key={contact.id} className="hover:bg-gray-50">
-                  <td className="border border-gray-300 p-3">
-                    {contact.firstname} {contact.lastname}
-                  </td>
-                  <td className="border border-gray-300 p-3 text-sm">{contact.email}</td>
-                  <td className="border border-gray-300 p-3">
-                    {contact.company || "-"}
-                  </td>
-                  <td className="border border-gray-300 p-3">
-                    {contact.jobtitle || "-"}
-                  </td>
-                  <td className="border border-gray-300 p-3">
-                    {contact.phone || "-"}
-                  </td>
-                  <td className="border border-gray-300 p-3">
-                    <span
-                      className={`inline-block px-2 py-1 rounded text-sm font-medium ${
-                        contact.enrichmentstatus === "completed"
-                          ? "bg-green-100 text-green-800"
-                          : contact.enrichmentstatus === "processing"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      {contact.enrichmentstatus}
-                    </span>
-                  </td>
-                  <td className="border border-gray-300 p-3 text-center">
-                    <button
-                      onClick={() => handleEnrich(contact)}
-                      disabled={enriching && selectedContact?.id === contact.id}
-                      className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {enriching && selectedContact?.id === contact.id
-                        ? "Enriching..."
-                        : "Enrich"}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
 
-      {/* Enrichment Result Modal */}
-      {selectedContact && enrichmentResult && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-lg max-w-md w-full p-6">
-            <h2 className="text-xl font-bold mb-4">
-              Enrichment Results: {selectedContact.firstname}{" "}
-              {selectedContact.lastname}
-            </h2>
-
-            <div className="space-y-3 mb-6">
-              <div>
-                <p className="text-sm text-gray-600">Email</p>
-                <p className="font-medium">{selectedContact.email}</p>
-              </div>
-
-              {enrichmentResult.company && (
-                <div>
-                  <p className="text-sm text-gray-600">Company</p>
-                  <p className="font-medium">{enrichmentResult.company}</p>
-                </div>
-              )}
-
-              {enrichmentResult.jobtitle && (
-                <div>
-                  <p className="text-sm text-gray-600">Job Title</p>
-                  <p className="font-medium">{enrichmentResult.jobtitle}</p>
-                </div>
-              )}
-
-              {enrichmentResult.phone && (
-                <div>
-                  <p className="text-sm text-gray-600">Phone</p>
-                  <p className="font-medium">{enrichmentResult.phone}</p>
-                </div>
-              )}
-
-              {enrichmentResult.linkedin_url && (
-                <div>
-                  <p className="text-sm text-gray-600">LinkedIn</p>
-                  <a
-                    href={enrichmentResult.linkedin_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline"
-                  >
-                    View Profile
-                  </a>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={() => {
-                setSelectedContact(null);
-                setEnrichmentResult(null);
-              }}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+      {/* MODAL COMPONENT */}
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          isOpen={isModalOpen}
+          onClose={closeModal}
+          onContactUpdate={(updated) => {
+            setContacts(contacts.map((c) => (c.id === updated.id ? updated : c)));
+            setSelectedContact(updated);
+          }}
+        />
       )}
     </div>
   );
-};
-
-export default ContactsPage;
+}

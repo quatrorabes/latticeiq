@@ -1,198 +1,245 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
+import supabase from '../lib/supabaseClient';
 import type { Contact } from '../types/contact';
 
-
 interface ContactDetailModalProps {
-  contact: Contact | null;
+  contact: Contact;
   isOpen: boolean;
   onClose: () => void;
-  onEnrichComplete: () => void;
+  onContactUpdate: (contact: Contact) => void;
 }
 
-export default function ContactDetailModal({ contact, isOpen, onClose, onEnrichComplete }: ContactDetailModalProps) {
+export default function ContactDetailModal({
+  contact,
+  isOpen,
+  onClose,
+  onContactUpdate,
+}: ContactDetailModalProps) {
   const [isEnriching, setIsEnriching] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen || !contact) return null;
 
-  const handleEnrich = async () => {
-    if (!contact?.id) return;
+  async function handleEnrich() {
     setIsEnriching(true);
+    setError(null);
+
     try {
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'}/api/v3/enrich/${contact.id}`,
-        { method: 'POST' }
-      );
-      if (response.ok) {
-        onEnrichComplete();
+      const result = await supabase.auth.getSession();
+      const session = result.data.session;
+
+      if (!session) {
+        setError('Not authenticated');
+        setIsEnriching(false);
+        return;
       }
-    } catch (error) {
-      console.error('Enrichment failed:', error);
+
+      // Call enrichment API
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v3/enrich/${contact.id}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!res.ok) {
+        const errorData = await res.json();
+        throw new Error(errorData.detail || 'Enrichment failed');
+      }
+
+      const data = await res.json();
+      
+      // Update contact with enriched data
+      const updatedContact: Contact = {
+        ...contact,
+        enrichment_status: data.status,
+        enrichment_data: data.enrichment_data,
+        enriched_at: new Date().toISOString(),
+      };
+
+      onContactUpdate(updatedContact);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Enrichment failed');
     } finally {
       setIsEnriching(false);
     }
-  };
+  }
 
-  const InfoRow = ({ label, value }: { label: string; value: string | number | null | undefined }) => (
-    <div className="flex justify-between py-2 border-b border-gray-700">
-      <span className="text-gray-400">{label}</span>
-      <span className="text-white">{value || '-'}</span>
-    </div>
-  );
+  const enrichmentData = contact.enrichment_data as Record<string, any> || {};
 
   const modalContent = (
     <>
       {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/70 z-40"
+      <div
+        className="fixed inset-0 bg-black bg-opacity-50 z-40"
         onClick={onClose}
       />
-      
+
       {/* Modal */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-        <div className="bg-gray-900 border border-gray-700 rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+        <div className="bg-slate-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-700">
           {/* Header */}
-          <div className="flex justify-between items-start p-6 border-b border-gray-700 sticky top-0 bg-gray-900">
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                {contact.first_name} {contact.last_name}
-              </h2>
-              <p className="text-gray-400">{contact.email}</p>
-              {contact.enrichment_status === 'completed' && contact.enriched_at && (
-                <p className="text-xs text-green-400 mt-1">
-                  Enriched: {new Date(contact.enriched_at).toLocaleDateString()}
-                </p>
-              )}
-            </div>
+          <div className="sticky top-0 bg-slate-900 p-6 border-b border-slate-700 flex justify-between items-center">
+            <h2 className="text-2xl font-bold text-white">
+              {contact.first_name} {contact.last_name}
+            </h2>
             <button
               onClick={onClose}
-              className="text-gray-400 hover:text-white text-2xl leading-none"
+              className="text-slate-400 hover:text-white text-xl"
             >
-              ×
+              ✕
             </button>
           </div>
 
           {/* Content */}
           <div className="p-6 space-y-6">
-            {/* Basic Info Grid */}
-            <div className="grid grid-cols-2 gap-6">
-              {/* Left Column */}
+            {/* Basic Info */}
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <h3 className="text-sm font-semibold text-cyan-400 mb-3">Contact Info</h3>
-                <InfoRow label="Title" value={contact.job_title} />
-                <InfoRow label="Company" value={contact.company} />
-                <InfoRow label="Phone" value={contact.phone} />
-                <InfoRow label="Website" value={contact.website} />
-                <InfoRow label="LinkedIn" value={contact.linkedin_url ? '✓ Profile' : '-'} />
+                <p className="text-slate-400 text-sm">Email</p>
+                <p className="text-white font-medium">{contact.email}</p>
               </div>
-
-              {/* Right Column - Scoring */}
               <div>
-                <h3 className="text-sm font-semibold text-cyan-400 mb-3">Lead Scores</h3>
-                <InfoRow label="MDCP" value={contact.mdcp_score} />
-                <InfoRow label="BANT" value={contact.bant_score} />
-                <InfoRow label="SPICE" value={contact.spice_score} />
-                <InfoRow label="Apex" value={contact.apex_score} />
-                <InfoRow label="Status" value={contact.enrichment_status} />
+                <p className="text-slate-400 text-sm">Company</p>
+                <p className="text-white font-medium">{contact.company || '-'}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-sm">Job Title</p>
+                <p className="text-white font-medium">{contact.job_title || '-'}</p>
+              </div>
+              <div>
+                <p className="text-slate-400 text-sm">Status</p>
+                <p className="text-white font-medium capitalize">
+                  {contact.enrichment_status || 'pending'}
+                </p>
               </div>
             </div>
 
-            {/* Sales Intelligence Section */}
-            {contact.enrichment_status === 'completed' && contact.enrichment_data && (
-              <div className="space-y-4 border-t border-gray-700 pt-6">
-                <h3 className="text-lg font-semibold text-cyan-400">Sales Intelligence</h3>
+            {/* Scores */}
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-slate-700 p-4 rounded">
+                <p className="text-slate-400 text-sm">MDCP Score</p>
+                <p className="text-2xl font-bold text-cyan-400">
+                  {contact.mdcp_score?.toFixed(0) || '-'}
+                </p>
+              </div>
+              <div className="bg-slate-700 p-4 rounded">
+                <p className="text-slate-400 text-sm">BANT Score</p>
+                <p className="text-2xl font-bold text-green-400">
+                  {contact.bant_score?.toFixed(0) || '-'}
+                </p>
+              </div>
+              <div className="bg-slate-700 p-4 rounded">
+                <p className="text-slate-400 text-sm">SPICE Score</p>
+                <p className="text-2xl font-bold text-purple-400">
+                  {contact.spice_score?.toFixed(0) || '-'}
+                </p>
+              </div>
+            </div>
 
-                {/* Summary */}
-                {contact.enrichment_data.summary && (
+            {/* Enrichment Data */}
+            {contact.enrichment_status === 'completed' && enrichmentData && (
+              <>
+                {enrichmentData.summary && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-300 mb-1">Summary</h4>
-                    <p className="text-gray-400 text-sm leading-relaxed">{contact.enrichment_data.summary}</p>
+                    <h3 className="text-white font-semibold mb-2">Summary</h3>
+                    <p className="text-slate-300">{enrichmentData.summary}</p>
                   </div>
                 )}
 
-                {/* Company Overview */}
-                {contact.enrichment_data.company_overview && (
+                {enrichmentData.company_overview && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-300 mb-1">Company Overview</h4>
-                    <p className="text-gray-400 text-sm leading-relaxed">{contact.enrichment_data.company_overview}</p>
+                    <h3 className="text-white font-semibold mb-2">Company Overview</h3>
+                    <p className="text-slate-300">{enrichmentData.company_overview}</p>
                   </div>
                 )}
 
-                {/* Talking Points */}
-                {contact.enrichment_data.talking_points && contact.enrichment_data.talking_points.length > 0 && (
+                {enrichmentData.talking_points && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-300 mb-2">Talking Points</h4>
-                    <ul className="list-disc list-inside text-gray-400 text-sm space-y-1">
-                      {contact.enrichment_data.talking_points.map((point: string, i: number) => (
-                        <li key={i}>{point}</li>
-                      ))}
+                    <h3 className="text-white font-semibold mb-2">Talking Points</h3>
+                    <ul className="list-disc list-inside space-y-1">
+                      {Array.isArray(enrichmentData.talking_points) ? (
+                        enrichmentData.talking_points.map((point: string, idx: number) => (
+                          <li key={idx} className="text-slate-300">
+                            {point}
+                          </li>
+                        ))
+                      ) : (
+                        <li className="text-slate-300">
+                          {String(enrichmentData.talking_points)}
+                        </li>
+                      )}
                     </ul>
                   </div>
                 )}
 
-                {/* Recommended Approach */}
-                {contact.enrichment_data.recommended_approach && (
+                {enrichmentData.recommended_approach && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-300 mb-1">Recommended Approach</h4>
-                    <p className="text-gray-400 text-sm leading-relaxed">{contact.enrichment_data.recommended_approach}</p>
+                    <h3 className="text-white font-semibold mb-2">Recommended Approach</h3>
+                    <p className="text-slate-300">{enrichmentData.recommended_approach}</p>
                   </div>
                 )}
 
-                {/* Recent News */}
-                {contact.enrichment_data.recent_news && (
+                {enrichmentData.persona_type && (
                   <div>
-                    <h4 className="text-sm font-medium text-gray-300 mb-1">Recent News</h4>
-                    <p className="text-gray-400 text-sm leading-relaxed">{contact.enrichment_data.recent_news}</p>
+                    <h3 className="text-white font-semibold mb-2">Persona Type</h3>
+                    <p className="text-slate-300">{enrichmentData.persona_type}</p>
                   </div>
                 )}
 
-                {/* Tags */}
-                {contact.enrichment_data.tags && contact.enrichment_data.tags.length > 0 && (
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {contact.enrichment_data.tags.map((tag: string, i: number) => (
-                      <span key={i} className="px-3 py-1 bg-gray-800 text-cyan-400 text-xs rounded-full border border-gray-700">
-                        {tag}
-                      </span>
-                    ))}
+                {enrichmentData.vertical && (
+                  <div>
+                    <h3 className="text-white font-semibold mb-2">Vertical</h3>
+                    <p className="text-slate-300">{enrichmentData.vertical}</p>
                   </div>
                 )}
+              </>
+            )}
 
-                {/* Additional Fields */}
-                {contact.enrichment_data.persona_type && (
-                  <InfoRow label="Persona Type" value={contact.enrichment_data.persona_type} />
-                )}
-                {contact.enrichment_data.vertical && (
-                  <InfoRow label="Vertical" value={contact.enrichment_data.vertical} />
-                )}
-                {contact.enrichment_data.company_size && (
-                  <InfoRow label="Company Size" value={contact.enrichment_data.company_size} />
-                )}
+            {contact.enrichment_status === 'processing' && (
+              <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded p-4">
+                <p className="text-blue-300">Enrichment in progress...</p>
               </div>
             )}
 
-            {/* No Enrichment State */}
-            {contact.enrichment_status !== 'completed' && (
-              <div className="border-t border-gray-700 pt-6 text-center">
-                <p className="text-gray-400 text-sm">
-                  {contact.enrichment_status === 'processing' ? 'Enrichment in progress...' : 'Click "Re-Enrich" to generate sales intelligence'}
-                </p>
+            {contact.enrichment_status === 'pending' && (
+              <div className="bg-slate-700 bg-opacity-50 border border-slate-500 rounded p-4">
+                <p className="text-slate-300">No enrichment data yet. Click the button below to start.</p>
+              </div>
+            )}
+
+            {contact.enrichment_status === 'failed' && (
+              <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded p-4">
+                <p className="text-red-300">Enrichment failed. Please try again.</p>
+              </div>
+            )}
+
+            {error && (
+              <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded p-4">
+                <p className="text-red-300">{error}</p>
               </div>
             )}
           </div>
 
           {/* Footer */}
-          <div className="flex justify-end gap-3 p-6 border-t border-gray-700 sticky bottom-0 bg-gray-900">
-            <button
-              onClick={handleEnrich}
-              disabled={isEnriching || contact.enrichment_status === 'processing'}
-              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded transition"
-            >
-              {isEnriching ? 'Enriching...' : 'Re-Enrich'}
-            </button>
+          <div className="sticky bottom-0 bg-slate-900 p-6 border-t border-slate-700 flex gap-3 justify-end">
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-gray-700 hover:bg-gray-600 text-white rounded transition"
+              className="px-4 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded transition"
             >
               Close
+            </button>
+            <button
+              onClick={handleEnrich}
+              disabled={isEnriching}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded transition"
+            >
+              {isEnriching ? 'Enriching...' : 'Re-Enrich'}
             </button>
           </div>
         </div>
@@ -200,6 +247,5 @@ export default function ContactDetailModal({ contact, isOpen, onClose, onEnrichC
     </>
   );
 
-  return modalContent;
+  return createPortal(modalContent, document.body);
 }
-        
