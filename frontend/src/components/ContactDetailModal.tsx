@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import supabase from '../lib/supabaseClient';
+import { supabase } from '../lib/supabaseClient';
 import type { Contact } from '../types/contact';
 
 interface ContactDetailModalProps {

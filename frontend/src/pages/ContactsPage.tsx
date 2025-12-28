@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import supabase from '../lib/supabaseClient';
+import { supabase } from '../lib/supabaseClient';
 import type { Contact } from '../types/contact';
 import ContactDetailModal from '../components/ContactDetailModal';
 
@@ -17,7 +17,7 @@ export default function ContactsPage() {
 
   // Check authentication
   useEffect(() => {
-    supabase.auth.getSession().then((result) => {
+    supabase.auth.getSession().then((result: any) => {
       if (result.data.session) {
         setIsAuthenticated(true);
       } else {
@@ -25,7 +25,7 @@ export default function ContactsPage() {
       }
     });
 
-    const { data: subscription } = supabase.auth.onAuthStateChange((event, sess) => {
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event: any, sess: any) => {
       setIsAuthenticated(!!sess);
       if (!sess) setIsLoading(false);
     });
@@ -162,7 +162,6 @@ export default function ContactsPage() {
           <tbody>
             {filteredContacts.map((c: Contact) => (
               <tr key={c.id} className="border-b border-slate-700 hover:bg-slate-800">
-                {/* CLICKABLE ROW CELLS */}
                 <td 
                   className="p-3 text-white cursor-pointer hover:text-blue-400"
                   onClick={() => openModal(c)}
