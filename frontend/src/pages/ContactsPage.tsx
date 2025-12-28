@@ -1,11 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import supabase from '../lib/supabaseClient';
 import type { Contact } from '../types/contact';
 import ContactDetailModal from '../components/ContactDetailModal';
 
 export default function ContactsPage() {
-  const navigate = useNavigate();
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -69,6 +67,10 @@ export default function ContactsPage() {
         },
       });
 
+      if (!res.ok) {
+        throw new Error(`Failed to fetch contacts: ${res.status}`);
+      }
+
       const data = await res.json();
       setContacts(data.contacts || []);
     } catch (err) {
@@ -99,12 +101,16 @@ export default function ContactsPage() {
 
       if (!session) return;
 
-      await fetch(`${import.meta.env.VITE_API_URL}/api/v3/contacts/${id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/v3/contacts/${id}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
       });
+
+      if (!res.ok) {
+        throw new Error(`Delete failed: ${res.status}`);
+      }
 
       setContacts(contacts.filter((c: Contact) => c.id !== id));
     } catch (err) {
@@ -156,7 +162,7 @@ export default function ContactsPage() {
           <tbody>
             {filteredContacts.map((c: Contact) => (
               <tr key={c.id} className="border-b border-slate-700 hover:bg-slate-800">
-                {/* CLICKABLE ROW TO OPEN MODAL */}
+                {/* CLICKABLE ROW CELLS */}
                 <td 
                   className="p-3 text-white cursor-pointer hover:text-blue-400"
                   onClick={() => openModal(c)}
@@ -182,21 +188,21 @@ export default function ContactsPage() {
                   {c.apex_score?.toFixed(0) || '-'}
                 </td>
                 <td 
-                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400"
+                  className="p-3 text-slate-400 cursor-pointer hover:text-blue-400 capitalize"
                   onClick={() => openModal(c)}
                 >
                   {c.enrichment_status || 'pending'}
                 </td>
-                <td className="p-3">
+                <td className="p-3 space-x-2">
                   <button
                     onClick={() => openModal(c)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm mr-2"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm inline-block"
                   >
                     View
                   </button>
                   <button
                     onClick={() => deleteContact(c.id)}
-                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm"
+                    className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm inline-block"
                   >
                     Delete
                   </button>
@@ -207,7 +213,7 @@ export default function ContactsPage() {
         </table>
       )}
 
-      {/* MODAL COMPONENT */}
+      {/* MODAL COMPONENT - PORTAL RENDERS TO BODY */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}

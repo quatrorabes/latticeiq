@@ -35,7 +35,9 @@ export default function ContactDetailModal({
         return;
       }
 
-      // Call enrichment API
+      console.log(`Calling: POST ${import.meta.env.VITE_API_URL}/api/v3/enrich/${contact.id}`);
+
+      // CORRECT ENDPOINT: POST to /api/v3/enrich/{contact_id}
       const res = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/enrich/${contact.id}`,
         {
@@ -47,14 +49,22 @@ export default function ContactDetailModal({
         }
       );
 
+      console.log(`Response status: ${res.status}`);
+
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.detail || 'Enrichment failed');
+        let errorMsg = `Enrichment failed: ${res.status}`;
+        try {
+          const errorData = await res.json();
+          errorMsg = errorData.detail || errorMsg;
+        } catch (e) {
+          // response not json
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
+      console.log('Enrichment response:', data);
       
-      // Update contact with enriched data
       const updatedContact: Contact = {
         ...contact,
         enrichment_status: data.status,
@@ -64,7 +74,9 @@ export default function ContactDetailModal({
 
       onContactUpdate(updatedContact);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Enrichment failed');
+      const msg = err instanceof Error ? err.message : 'Enrichment failed';
+      console.error('Enrich error:', msg);
+      setError(msg);
     } finally {
       setIsEnriching(false);
     }
@@ -143,7 +155,7 @@ export default function ContactDetailModal({
             </div>
 
             {/* Enrichment Data */}
-            {contact.enrichment_status === 'completed' && enrichmentData && (
+            {contact.enrichment_status === 'completed' && enrichmentData && Object.keys(enrichmentData).length > 0 && (
               <>
                 {enrichmentData.summary && (
                   <div>
@@ -203,25 +215,25 @@ export default function ContactDetailModal({
 
             {contact.enrichment_status === 'processing' && (
               <div className="bg-blue-900 bg-opacity-30 border border-blue-500 rounded p-4">
-                <p className="text-blue-300">Enrichment in progress...</p>
+                <p className="text-blue-300">⏳ Enrichment in progress... (this may take 15-30 seconds)</p>
               </div>
             )}
 
             {contact.enrichment_status === 'pending' && (
               <div className="bg-slate-700 bg-opacity-50 border border-slate-500 rounded p-4">
-                <p className="text-slate-300">No enrichment data yet. Click the button below to start.</p>
+                <p className="text-slate-300">No enrichment data yet. Click the "Re-Enrich" button below to start enriching this contact with AI-powered sales intelligence.</p>
               </div>
             )}
 
             {contact.enrichment_status === 'failed' && (
               <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded p-4">
-                <p className="text-red-300">Enrichment failed. Please try again.</p>
+                <p className="text-red-300">❌ Enrichment failed. Please try again.</p>
               </div>
             )}
 
             {error && (
               <div className="bg-red-900 bg-opacity-30 border border-red-500 rounded p-4">
-                <p className="text-red-300">{error}</p>
+                <p className="text-red-300">Error: {error}</p>
               </div>
             )}
           </div>
@@ -237,9 +249,9 @@ export default function ContactDetailModal({
             <button
               onClick={handleEnrich}
               disabled={isEnriching}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded transition"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded transition"
             >
-              {isEnriching ? 'Enriching...' : 'Re-Enrich'}
+              {isEnriching ? '⏳ Enriching...' : 'Re-Enrich'}
             </button>
           </div>
         </div>
