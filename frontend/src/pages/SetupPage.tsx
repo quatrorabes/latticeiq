@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
@@ -12,18 +12,59 @@ interface StepProps {
 const ICPStep = ({ onNext }: StepProps) => {
   const [icp, setICP] = useState({
     industry: '',
-    company_size: '',
     primary_use_case: '',
-    typical_budget: '',
+    loan_size: '',
     pain_points: ['', '', ''],
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSave = async () => {
+  useEffect(() => {
+    // Load existing ICP config if available
+    loadICPConfig();
+  }, []);
+
+  const loadICPConfig = async () => {
     try {
       const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user?.id) return;
+      if (!session?.session?.access_token) return;
 
-      // POST to backend
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/icp-config`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.session.access_token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data) {
+          setICP({
+            industry: data.data.industry || '',
+            primary_use_case: data.data.primary_use_case || '',
+            loan_size: data.data.loan_size || '',
+            pain_points: data.data.pain_points || ['', '', ''],
+          });
+        }
+      }
+    } catch (err) {
+      console.log('No existing ICP config found');
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) {
+        setError('Not authenticated');
+        return;
+      }
+
       const response = await fetch(
         `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/icp-config`,
         {
@@ -34,9 +75,8 @@ const ICPStep = ({ onNext }: StepProps) => {
           },
           body: JSON.stringify({
             industry: icp.industry,
-            company_size: icp.company_size,
             primary_use_case: icp.primary_use_case,
-            typical_budget: icp.typical_budget,
+            loan_size: icp.loan_size,
             pain_points: icp.pain_points.filter((p) => p.trim()),
           }),
         }
@@ -44,9 +84,15 @@ const ICPStep = ({ onNext }: StepProps) => {
 
       if (response.ok) {
         onNext();
+      } else {
+        const errorData = await response.json();
+        setError(errorData.detail || 'Failed to save ICP config');
       }
-    } catch (error) {
-      console.error('Failed to save ICP config:', error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred');
+      console.error('Failed to save ICP config:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,6 +100,8 @@ const ICPStep = ({ onNext }: StepProps) => {
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-100">Define Your ICP</h2>
       <p className="text-gray-400">Tell us about your ideal customer profile</p>
+
+      {error && <div className="p-4 bg-red-900 text-red-200 rounded-lg text-sm">{error}</div>}
 
       <div className="space-y-4">
         <div>
@@ -68,21 +116,6 @@ const ICPStep = ({ onNext }: StepProps) => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300">Company Size</label>
-          <select
-            value={icp.company_size}
-            onChange={(e) => setICP({ ...icp, company_size: e.target.value })}
-            className="w-full mt-2 px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700"
-          >
-            <option value="">Select...</option>
-            <option value="startup">Startup (1-50)</option>
-            <option value="small">Small (50-250)</option>
-            <option value="mid-market">Mid-Market (250-1000)</option>
-            <option value="enterprise">Enterprise (1000+)</option>
-          </select>
-        </div>
-
-        <div>
           <label className="block text-sm font-medium text-gray-300">Primary Use Case</label>
           <input
             type="text"
@@ -94,12 +127,12 @@ const ICPStep = ({ onNext }: StepProps) => {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-300">Typical Budget</label>
+          <label className="block text-sm font-medium text-gray-300">Loan Size (Why Me)</label>
           <input
             type="text"
-            placeholder="e.g., $50K-$100K/year"
-            value={icp.typical_budget}
-            onChange={(e) => setICP({ ...icp, typical_budget: e.target.value })}
+            placeholder="e.g., $250K-$500K, Enterprise+, Small Business"
+            value={icp.loan_size}
+            onChange={(e) => setICP({ ...icp, loan_size: e.target.value })}
             className="w-full mt-2 px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700"
           />
         </div>
@@ -125,9 +158,10 @@ const ICPStep = ({ onNext }: StepProps) => {
 
       <button
         onClick={handleSave}
-        className="w-full px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg"
+        disabled={loading}
+        className="w-full px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg disabled:opacity-50"
       >
-        Next: Scoring Frameworks
+        {loading ? 'Saving...' : 'Next: Scoring Frameworks'}
       </button>
     </div>
   );
@@ -141,11 +175,43 @@ const MDCPStep = ({ onNext, onBack }: StepProps) => {
     champion: 25,
     process: 25,
   });
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    loadMDCPConfig();
+  }, []);
+
+  const loadMDCPConfig = async () => {
     try {
       const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user?.id) return;
+      if (!session?.session?.access_token) return;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/scoring/mdcp-config`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.session.access_token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data?.weights) {
+          setWeights(data.data.weights);
+        }
+      }
+    } catch (err) {
+      console.log('No existing MDCP config found');
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) return;
 
       await fetch(
         `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/scoring/mdcp-config`,
@@ -165,6 +231,8 @@ const MDCPStep = ({ onNext, onBack }: StepProps) => {
       onNext();
     } catch (error) {
       console.error('Failed to save MDCP config:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -203,9 +271,10 @@ const MDCPStep = ({ onNext, onBack }: StepProps) => {
         </button>
         <button
           onClick={handleSave}
-          className="flex-1 px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg"
+          disabled={loading}
+          className="flex-1 px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg disabled:opacity-50"
         >
-          Next: BANT
+          {loading ? 'Saving...' : 'Next: BANT'}
         </button>
       </div>
     </div>
@@ -220,11 +289,43 @@ const BANTStep = ({ onNext, onBack }: StepProps) => {
     need: 25,
     timeline: 25,
   });
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    loadBANTConfig();
+  }, []);
+
+  const loadBANTConfig = async () => {
     try {
       const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user?.id) return;
+      if (!session?.session?.access_token) return;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/scoring/bant-config`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.session.access_token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data?.weights) {
+          setWeights(data.data.weights);
+        }
+      }
+    } catch (err) {
+      console.log('No existing BANT config found');
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) return;
 
       await fetch(
         `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/scoring/bant-config`,
@@ -244,6 +345,8 @@ const BANTStep = ({ onNext, onBack }: StepProps) => {
       onNext();
     } catch (error) {
       console.error('Failed to save BANT config:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -282,9 +385,10 @@ const BANTStep = ({ onNext, onBack }: StepProps) => {
         </button>
         <button
           onClick={handleSave}
-          className="flex-1 px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg"
+          disabled={loading}
+          className="flex-1 px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white font-semibold rounded-lg disabled:opacity-50"
         >
-          Next: SPICE
+          {loading ? 'Saving...' : 'Next: SPICE'}
         </button>
       </div>
     </div>
@@ -300,11 +404,43 @@ const SPICEStep = ({ onNext, onBack, isLastStep }: StepProps) => {
     consequence: 20,
     economics: 20,
   });
+  const [loading, setLoading] = useState(false);
 
-  const handleSave = async () => {
+  useEffect(() => {
+    loadSPICEConfig();
+  }, []);
+
+  const loadSPICEConfig = async () => {
     try {
       const { data: session } = await supabase.auth.getSession();
-      if (!session?.session?.user?.id) return;
+      if (!session?.session?.access_token) return;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/scoring/spice-config`,
+        {
+          method: 'GET',
+          headers: {
+            Authorization: `Bearer ${session.session.access_token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data?.weights) {
+          setWeights(data.data.weights);
+        }
+      }
+    } catch (err) {
+      console.log('No existing SPICE config found');
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const { data: session } = await supabase.auth.getSession();
+      if (!session?.session?.access_token) return;
 
       await fetch(
         `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v3/scoring/spice-config`,
@@ -324,6 +460,8 @@ const SPICEStep = ({ onNext, onBack, isLastStep }: StepProps) => {
       onNext();
     } catch (error) {
       console.error('Failed to save SPICE config:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -364,9 +502,10 @@ const SPICEStep = ({ onNext, onBack, isLastStep }: StepProps) => {
         </button>
         <button
           onClick={handleSave}
-          className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg"
+          disabled={loading}
+          className="flex-1 px-6 py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg disabled:opacity-50"
         >
-          {isLastStep ? 'Complete Setup' : 'Finish'}
+          {loading ? 'Saving...' : isLastStep ? 'Complete Setup' : 'Finish'}
         </button>
       </div>
     </div>

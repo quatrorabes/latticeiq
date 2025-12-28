@@ -1,4 +1,4 @@
-# START HERE - LatticeIQ CRM Settings UI Session
+ # START HERE - LatticeIQ CRM Settings UI Session
 
 ## Quick Status
 - ✅ Backend: Production ready, 778 HubSpot contacts imported
