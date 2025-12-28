@@ -37,7 +37,7 @@ def get_supabase():
 # ============================================================================
 
 async def get_current_user(authorization: str = Header(None)) -> dict:
-    """Validate Supabase JWT by decoding without verification (frontend already verified)"""
+    """Validate Supabase JWT by decoding without verification"""
     
     if not authorization:
         raise HTTPException(status_code=401, detail="Missing authorization header")
@@ -50,8 +50,7 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
         
         token = parts[1]
         
-        # Decode JWT (without verification - frontend already verified with Supabase)
-        # This is safe because Supabase signed the token
+        # Decode JWT (without verification - frontend already verified)
         payload = jwt.decode(token, options={"verify_signature": False})
         
         user_id = payload.get("sub")  # 'sub' is Supabase user ID claim
@@ -67,7 +66,7 @@ async def get_current_user(authorization: str = Header(None)) -> dict:
         raise
     except Exception as e:
         logger.error(f"❌ Auth error: {type(e).__name__}: {str(e)}")
-        raise HTTPException(status_code=401, detail=f"Invalid token")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ============================================================================
 # MODELS
@@ -114,8 +113,9 @@ async def list_contacts(
     try:
         user_id = user["id"]
         
-        query = client.table("contacts").select("*").eq("userid", user_id)
-        query = query.order("createdat", desc=True).range(offset, offset + limit - 1)
+        # FIXED: Use user_id (with underscore) instead of userid
+        query = client.table("contacts").select("*").eq("user_id", user_id)
+        query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
         
         result = query.execute()
         
@@ -140,7 +140,8 @@ async def get_contact(contact_id: str, user: dict = Depends(get_current_user)) -
 
     try:
         user_id = user["id"]
-        result = client.table("contacts").select("*").eq("id", contact_id).eq("userid", user_id).single().execute()
+        # FIXED: Use user_id (with underscore)
+        result = client.table("contacts").select("*").eq("id", contact_id).eq("user_id", user_id).single().execute()
 
         if not result.data:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -164,10 +165,11 @@ async def create_contact(contact: ContactCreate, user: dict = Depends(get_curren
     try:
         user_id = user["id"]
         data = contact.dict()
-        data["userid"] = user_id
-        data["enrichmentstatus"] = "pending"
-        data["createdat"] = datetime.utcnow().isoformat()
-        data["updatedat"] = datetime.utcnow().isoformat()
+        # FIXED: Use user_id (with underscore)
+        data["user_id"] = user_id
+        data["enrichment_status"] = "pending"
+        data["created_at"] = datetime.utcnow().isoformat()
+        data["updated_at"] = datetime.utcnow().isoformat()
 
         result = client.table("contacts").insert(data).execute()
 
@@ -193,16 +195,17 @@ async def update_contact(contact_id: str, contact: ContactUpdate, user: dict = D
     try:
         user_id = user["id"]
 
-        # Verify ownership
-        existing = client.table("contacts").select("id").eq("id", contact_id).eq("userid", user_id).single().execute()
+        # Verify ownership - FIXED: Use user_id (with underscore)
+        existing = client.table("contacts").select("id").eq("id", contact_id).eq("user_id", user_id).single().execute()
         if not existing.data:
             raise HTTPException(status_code=404, detail="Contact not found")
 
         # Only update provided fields
         update_data = {k: v for k, v in contact.dict().items() if v is not None}
-        update_data["updatedat"] = datetime.utcnow().isoformat()
+        update_data["updated_at"] = datetime.utcnow().isoformat()
 
-        result = client.table("contacts").update(update_data).eq("id", contact_id).eq("userid", user_id).execute()
+        # FIXED: Use user_id (with underscore)
+        result = client.table("contacts").update(update_data).eq("id", contact_id).eq("user_id", user_id).execute()
         return result.data[0] if result.data else {}
 
     except HTTPException:
@@ -221,7 +224,8 @@ async def delete_contact(contact_id: str, user: dict = Depends(get_current_user)
 
     try:
         user_id = user["id"]
-        result = client.table("contacts").delete().eq("id", contact_id).eq("userid", user_id).execute()
+        # FIXED: Use user_id (with underscore)
+        result = client.table("contacts").delete().eq("id", contact_id).eq("user_id", user_id).execute()
         return {"status": "deleted", "contact_id": contact_id}
 
     except Exception as e:
@@ -239,9 +243,10 @@ async def get_contact_stats(user: dict = Depends(get_current_user)) -> Dict[str,
     try:
         user_id = user["id"]
 
-        total = client.table("contacts").select("id", count="exact").eq("userid", user_id).execute()
-        enriched = client.table("contacts").select("id", count="exact").eq("userid", user_id).eq("enrichmentstatus", "completed").execute()
-        pending = client.table("contacts").select("id", count="exact").eq("userid", user_id).eq("enrichmentstatus", "pending").execute()
+        # FIXED: Use user_id (with underscore)
+        total = client.table("contacts").select("id", count="exact").eq("user_id", user_id).execute()
+        enriched = client.table("contacts").select("id", count="exact").eq("user_id", user_id).eq("enrichment_status", "completed").execute()
+        pending = client.table("contacts").select("id", count="exact").eq("user_id", user_id).eq("enrichment_status", "pending").execute()
 
         return {
             "total": total.count or 0,
