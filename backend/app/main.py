@@ -1,46 +1,96 @@
 # ============================================================================
-# FILE: backend/main.py - LatticeIQ Sales Intelligence API
+# FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
+# PURPOSE: FastAPI app entrypoint (Render)
+# FIXES:
+#   - Hard CORS fix for Vercel preflight + Authorization header
+#   - Remove non-breaking-space import/indent landmines
+#   - Keep router import fallbacks
+# UPDATED: Dec 29, 2025
 # ============================================================================
 
-"""
-Enterprise-grade FastAPI application for LatticeIQ
-Handles authentication, CRM imports, contact management, and scoring
-"""
+from __future__ import annotations
 
 import os
 import sys
-import jwt  # ← ADD THIS
+import logging
 from pathlib import Path
+from datetime import datetime
+from typing import Optional
+from functools import lru_cache
 
-# ========================================
+import jwt  # PyJWT
+
+from fastapi import FastAPI, HTTPException, Header, status
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from pydantic import BaseModel, Field
+from supabase import create_client, Client
+from pythonjsonlogger import jsonlogger
+
+# ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
-# ========================================
+# ============================================================================
+
 backend_dir = Path(__file__).parent.resolve()
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# ========================================
+# ============================================================================
+# SETTINGS
+# ============================================================================
 
-import uuid
-import logging
-from datetime import datetime
-from typing import Optional
-from functools import lru_cache
-from fastapi import FastAPI, Depends, HTTPException, Header, status, APIRouter, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import JSONResponse, Response
-from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field
-from supabase import create_client, Client
-from pythonjsonlogger import jsonlogger
-from scoring.router import router as scoring_router
+class Settings(BaseModel):
+    SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
+    SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
+    SUPABASE_SERVICE_KEY: str = Field(default="", alias="SUPABASE_SERVICE_KEY")
+    LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
+    ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
+    CORS_ALLOW_ORIGINS: str = Field(default="", alias="CORS_ALLOW_ORIGINS")  # comma-separated
 
+    class Config:
+        env_file = ".env"
+        case_sensitive = True
+
+    @classmethod
+    def from_env(cls) -> "Settings":
+        return cls(
+            SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
+            SUPABASE_ANON_KEY=os.getenv("SUPABASE_ANON_KEY", ""),
+            SUPABASE_SERVICE_KEY=os.getenv("SUPABASE_SERVICE_KEY", ""),
+            LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
+            ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
+            CORS_ALLOW_ORIGINS=os.getenv("CORS_ALLOW_ORIGINS", ""),
+        )
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings.from_env()
+
+settings = get_settings()
 
 # ============================================================================
-# CREATE APP FIRST
+# LOGGING
+# ============================================================================
+
+def setup_logging(log_level: str = "INFO") -> logging.Logger:
+    logger = logging.getLogger("latticeiq")
+    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
+
+    handler = logging.StreamHandler()
+    formatter = jsonlogger.JsonFormatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    handler.setFormatter(formatter)
+
+    logger.handlers.clear()
+    logger.addHandler(handler)
+    logger.propagate = False
+    return logger
+
+logger = setup_logging(settings.LOG_LEVEL)
+
+# ============================================================================
+# CREATE APP
 # ============================================================================
 
 app = FastAPI(
@@ -52,91 +102,63 @@ app = FastAPI(
     redoc_url="/api/redoc",
 )
 
-# ========================================
-# Add middleware
-# ========================================
+# ============================================================================
+# MIDDLEWARE
+# ============================================================================
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# CORS: do NOT use "*" with allow_credentials=True.
+# Use explicit origins. Also allow Authorization header for Supabase JWT.
+default_origins = [
+    "https://latticeiq.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+if settings.CORS_ALLOW_ORIGINS.strip():
+    allow_origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
+else:
+    allow_origins = default_origins
+
+logger.info({"event": "cors_config", "allow_origins": allow_origins})
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allow_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # ============================================================================
-# LOAD ENVIRONMENT & SUPABASE
-# ============================================================================
-
-class Settings(BaseModel):
-    SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
-    SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
-    SUPABASE_SERVICE_KEY: str = Field(default="", alias="SUPABASE_SERVICE_KEY")
-    LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
-    ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
-
-    @classmethod
-    def from_env(cls):
-        return cls(
-            SUPABASE_URL=os.getenv("SUPABASE_URL", ""),
-            SUPABASE_ANON_KEY=os.getenv("SUPABASE_ANON_KEY", ""),
-            SUPABASE_SERVICE_KEY=os.getenv("SUPABASE_SERVICE_KEY", ""),
-            LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
-            ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
-        )
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings.from_env()
-
-settings = get_settings()
-
-# ============================================================================
-# SETUP LOGGING
-# ============================================================================
-
-def setup_logging(log_level: str = "INFO") -> logging.Logger:
-    logger = logging.getLogger("latticeiq")
-    logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-    handler = logging.StreamHandler()
-    formatter = jsonlogger.JsonFormatter(timestamp=True)
-    logger.handlers.clear()
-    logger.addHandler(handler)
-    return logger
-
-logger = setup_logging(settings.LOG_LEVEL)
-
-# ============================================================================
-# INITIALIZE SUPABASE
+# SUPABASE
 # ============================================================================
 
 def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
-        logger.warning("SUPABASE_URL or SUPABASE_ANON_KEY not configured")
+        logger.warning({"event": "supabase_not_configured"})
         return None
-    
     try:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
-        logger.info("✅ Supabase initialized successfully")
+        logger.info({"event": "supabase_initialized"})
         return client
     except Exception as e:
-        logger.error(f"Supabase initialization failed: {str(e)}", extra={"error": str(e)})
+        logger.error({"event": "supabase_init_failed", "error": str(e)})
         return None
 
 supabase = initialize_supabase()
 
 # ============================================================================
-# DEFINE MODELS
+# MODELS
 # ============================================================================
 
 class CurrentUser(BaseModel):
     id: str
-    email: str
+    email: str = ""
 
 class ContactCreate(BaseModel):
     firstname: str = Field(..., min_length=1, max_length=100)
@@ -163,188 +185,159 @@ class ContactUpdate(BaseModel):
     spicescore: Optional[int] = Field(None, ge=0, le=100)
 
 # ============================================================================
-# AUTH DEPENDENCY - FIXED VERSION WITH JWT DECODE
+# AUTH DEPENDENCY
 # ============================================================================
 
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
-    """
-    Validate JWT token from Supabase using simple JWT decode
-    """
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
-        # Parse Bearer token
         parts = authorization.split(" ", 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
-            raise HTTPException(
-                status_code=401, 
-                detail="Invalid authorization format"
-            )
-        
+            raise HTTPException(status_code=401, detail="Invalid authorization format")
+
         token = parts[1]
-        
-        # Decode JWT without verification (frontend already verified)
         payload = jwt.decode(token, options={"verify_signature": False})
-        
-        user_id = payload.get("sub")  # 'sub' is the user ID in Supabase JWTs
+
+        user_id = payload.get("sub")
         email = payload.get("email", "")
-        
+
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
-        
-        logger.info(f"✅ Authenticated: {email} ({user_id})")
+
         return CurrentUser(id=str(user_id), email=str(email))
-        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Auth error: {type(e).__name__}: {str(e)}")
+        logger.error({"event": "auth_error", "error": str(e), "error_type": type(e).__name__})
         raise HTTPException(status_code=401, detail="Invalid token")
 
 # ============================================================================
-# IMPORT ROUTERS (with error handling)
+# ROUTER IMPORTS (keep your fallback style)
 # ============================================================================
 
 # Contacts Router (CRUD)
 try:
     from contacts_router import router as contacts_router
     CONTACTS_ROUTER_AVAILABLE = True
-    print("✅ Contacts router imported")
-except ImportError as e:
+    logger.info({"event": "router_import", "router": "contacts", "source": "contacts_router"})
+except Exception as e:
     try:
         from app.contacts_router import router as contacts_router
         CONTACTS_ROUTER_AVAILABLE = True
-        print("✅ Contacts router imported (from app.)")
-    except ImportError:
+        logger.info({"event": "router_import", "router": "contacts", "source": "app.contacts_router"})
+    except Exception:
         contacts_router = None
         CONTACTS_ROUTER_AVAILABLE = False
-        print(f"❌ Contacts router import failed: {e}")
+        logger.error({"event": "router_import_failed", "router": "contacts", "error": str(e)})
 
 # CRM Settings Router
 try:
     from crm.settings_router import router as settings_router
     SETTINGS_ROUTER_AVAILABLE = True
-    print("✅ CRM Settings router imported")
-except ImportError as e:
+    logger.info({"event": "router_import", "router": "settings", "source": "crm.settings_router"})
+except Exception as e:
     try:
         from app.crm.settings_router import router as settings_router
         SETTINGS_ROUTER_AVAILABLE = True
-        print("✅ CRM Settings router imported (from app.)")
-    except ImportError:
+        logger.info({"event": "router_import", "router": "settings", "source": "app.crm.settings_router"})
+    except Exception:
         settings_router = None
         SETTINGS_ROUTER_AVAILABLE = False
-        print(f"❌ CRM Settings router import failed: {e}")
+        logger.error({"event": "router_import_failed", "router": "settings", "error": str(e)})
 
 # CRM Import Router
 try:
     from crm.router import router as crm_router
     CRM_ROUTER_AVAILABLE = True
-    print("✅ CRM router imported")
-except ImportError as e:
+    logger.info({"event": "router_import", "router": "crm", "source": "crm.router"})
+except Exception as e:
     try:
         from app.crm.router import router as crm_router
         CRM_ROUTER_AVAILABLE = True
-        print("✅ CRM router imported (from app.)")
-    except ImportError:
+        logger.info({"event": "router_import", "router": "crm", "source": "app.crm.router"})
+    except Exception:
         crm_router = None
         CRM_ROUTER_AVAILABLE = False
-        print(f"❌ CRM router import failed: {e}")
+        logger.error({"event": "router_import_failed", "router": "crm", "error": str(e)})
 
 # Enrichment Router
 try:
     from enrichment_v3.enrich_router import router as enrich_router
     ENRICH_ROUTER_AVAILABLE = True
-    print("✅ Quick Enrichment router imported")
-except ImportError as e:
+    logger.info({"event": "router_import", "router": "enrichment", "source": "enrichment_v3.enrich_router"})
+except Exception as e:
     try:
         from app.enrichment_v3.enrich_router import router as enrich_router
         ENRICH_ROUTER_AVAILABLE = True
-        print("✅ Quick Enrichment router imported (from app.)")
-    except ImportError:
+        logger.info({"event": "router_import", "router": "enrichment", "source": "app.enrichment_v3.enrich_router"})
+    except Exception:
         enrich_router = None
         ENRICH_ROUTER_AVAILABLE = False
-        print(f"❌ Quick Enrichment router import failed: {e}")
+        logger.error({"event": "router_import_failed", "router": "enrichment", "error": str(e)})
 
 # Scoring Router
 try:
     from app.scoring.router import router as scoring_router
     SCORING_AVAILABLE = True
-    print("✅ Scoring router imported")
-except ImportError as e:
+    logger.info({"event": "router_import", "router": "scoring", "source": "app.scoring.router"})
+except Exception as e:
     scoring_router = None
     SCORING_AVAILABLE = False
-    print(f"❌ Scoring router import failed: {e}")
-    
+    logger.error({"event": "router_import_failed", "router": "scoring", "error": str(e)})
+
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
 
 @app.get("/api/v3/icp-config")
 async def get_icp_config():
-    """Get default ICP (Ideal Customer Profile) configuration"""
     return {
         "frameworks": {
-            "mdcp": {
-                "name": "MDCP",
-                "description": "Match-Data-Contact-Profile",
-                "weight": 0.33,
-            },
-            "bant": {
-                "name": "BANT",
-                "description": "Budget-Authority-Need-Timeline",
-                "weight": 0.33,
-            },
-            "spice": {
-                "name": "SPICE",
-                "description": "Situation-Problem-Implication-Critical Event-Decision",
-                "weight": 0.34,
-            },
+            "mdcp": {"name": "MDCP", "description": "Match-Data-Contact-Profile", "weight": 0.33},
+            "bant": {"name": "BANT", "description": "Budget-Authority-Need-Timeline", "weight": 0.33},
+            "spice": {"name": "SPICE", "description": "Situation-Problem-Implication-Critical Event-Decision", "weight": 0.34},
         },
-        "scoring_thresholds": {
-            "high": 80,
-            "medium": 60,
-            "low": 40,
-        },
+        "scoring_thresholds": {"high": 80, "medium": 60, "low": 40},
     }
 
 # ============================================================================
 # REGISTER ROUTERS
 # ============================================================================
 
-if CONTACTS_ROUTER_AVAILABLE:
+if CONTACTS_ROUTER_AVAILABLE and contacts_router is not None:
     app.include_router(contacts_router, prefix="/api/v3")
-    print("✅ Contacts router registered at /api/v3/contacts")
+    logger.info({"event": "router_registered", "router": "contacts", "prefix": "/api/v3"})
 else:
-    print("❌ Contacts router NOT registered")
+    logger.warning({"event": "router_not_registered", "router": "contacts"})
 
-if SETTINGS_ROUTER_AVAILABLE:
+if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
     app.include_router(settings_router, prefix="/api/v3")
-    print("✅ Settings router registered at /api/v3/settings")
+    logger.info({"event": "router_registered", "router": "settings", "prefix": "/api/v3"})
 
-if CRM_ROUTER_AVAILABLE:
+if CRM_ROUTER_AVAILABLE and crm_router is not None:
     app.include_router(crm_router, prefix="/api/v3")
-    print("✅ CRM router registered at /api/v3/import")
+    logger.info({"event": "router_registered", "router": "crm", "prefix": "/api/v3"})
 
-if ENRICH_ROUTER_AVAILABLE:
+if ENRICH_ROUTER_AVAILABLE and enrich_router is not None:
     app.include_router(enrich_router, prefix="/api/v3")
-    print("✅ Quick Enrichment router registered at /api/v3/enrich")
+    logger.info({"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
 
-if SCORING_AVAILABLE:
+if SCORING_AVAILABLE and scoring_router is not None:
     app.include_router(scoring_router, prefix="/api/v3")
-    print("✅ Scoring router registered at /api/v3/score")
+    logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
 
 # ============================================================================
-# HEALTH CHECK ENDPOINTS
+# HEALTH
 # ============================================================================
 
 @app.get("/health")
 async def health():
-    """Simple health check for Render compatibility"""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
@@ -353,12 +346,12 @@ async def health():
 
 @app.get("/api/health")
 async def api_health():
-    """Detailed health check"""
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
         "database": "connected" if supabase else "disconnected",
         "version": "3.0.0",
+        "cors_allow_origins": allow_origins,
         "routers": {
             "contacts": CONTACTS_ROUTER_AVAILABLE,
             "settings": SETTINGS_ROUTER_AVAILABLE,
@@ -369,14 +362,13 @@ async def api_health():
     }
 
 # ============================================================================
-# STARTUP / SHUTDOWN EVENTS
+# STARTUP / SHUTDOWN
 # ============================================================================
 
 @app.on_event("startup")
 async def startup_event():
-    logger.info("🚀 LatticeIQ API starting up...")
+    logger.info({"event": "startup", "message": "LatticeIQ API starting up"})
 
 @app.on_event("shutdown")
 async def shutdown_event():
-    logger.info("🛑 LatticeIQ API shutting down...")
-    
+    logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down"})
