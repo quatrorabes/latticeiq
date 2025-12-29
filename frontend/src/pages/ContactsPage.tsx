@@ -1,7 +1,7 @@
 // ============================================================================
 // FILE: frontend/src/pages/ContactsPage.tsx
-// PURPOSE: Contacts list with scoring display, import, and enrichment
-// UPDATED: Dec 29, 2025 - Added MDCP/BANT/SPICE score columns and Score All
+// PURPOSE: Contacts list with scoring display + modal + enrichment
+// UPDATED: Dec 29, 2025 - Fix "undefined.map" crashes for BANT/SPICE + talking points
 // ============================================================================
 
 import { useState, useEffect, useCallback } from 'react';
@@ -38,30 +38,44 @@ interface Contact {
 }
 
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================================================
+
+const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+
+function safeArray<T = any>(value: any): T[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function asString(value: any): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
 
 const getTierColor = (tier: string | undefined) => {
   if (!tier) return 'bg-gray-100 text-gray-600';
-  const tierLower = tier.toLowerCase();
-  if (tierLower === 'hot') return 'bg-red-500 text-white';
-  if (tierLower === 'warm') return 'bg-yellow-400 text-gray-900';
+  const t = tier.toLowerCase();
+  if (t === 'hot') return 'bg-red-500 text-white';
+  if (t === 'warm') return 'bg-yellow-400 text-gray-900';
   return 'bg-gray-200 text-gray-700';
 };
 
 const getStatusColor = (status: string | undefined) => {
   if (!status) return 'bg-gray-100 text-gray-600';
-  const statusLower = status.toLowerCase();
-  if (statusLower === 'completed') return 'bg-green-100 text-green-800';
-  if (statusLower === 'processing') return 'bg-blue-100 text-blue-800';
-  if (statusLower === 'failed') return 'bg-red-100 text-red-800';
+  const s = status.toLowerCase();
+  if (s === 'completed') return 'bg-green-100 text-green-800';
+  if (s === 'processing') return 'bg-blue-100 text-blue-800';
+  if (s === 'failed') return 'bg-red-100 text-red-800';
   return 'bg-yellow-100 text-yellow-800';
 };
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-
 // ============================================================================
-// CONTACT DETAIL MODAL COMPONENT
+// CONTACT DETAIL MODAL
 // ============================================================================
 
 interface ContactDetailModalProps {
@@ -77,10 +91,24 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
 
   if (!isOpen) return null;
 
+  // Normalize enrichment_data so UI never assumes structure exists
+  const enrichment = contact.enrichment_data || {};
+  const talkingPoints = safeArray<string>(enrichment.talking_points || enrichment.talkingPoints);
+  const objections = safeArray<string>(enrichment.objections);
+  const hooks = safeArray<string>(enrichment.hooks);
+  const nextSteps = safeArray<string>(enrichment.next_steps || enrichment.nextSteps);
+
+  const bant = enrichment.bant || {};
+  const spice = enrichment.spice || {};
+
+  // These often come back as arrays OR missing OR a string. Never map raw.
+  const bantSignals = safeArray<string>(bant.signals || bant.signal_list || bant.points);
+  const spiceSignals = safeArray<string>(spice.signals || spice.signal_list || spice.points);
+
   const handleEnrich = async () => {
     setIsEnriching(true);
     setError(null);
-    
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -88,12 +116,13 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
         return;
       }
 
+      // IMPORTANT: keep endpoint consistent with your backend
       const res = await fetch(`${API_URL}/api/v3/enrich/${contact.id}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!res.ok) {
@@ -101,47 +130,54 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
       }
 
       const data = await res.json();
+
+      // Merge and preserve existing fields; ensure status aligns with DB constraint values
+      const nextStatus =
+        data.enrichment_status === 'completed' ||
+        data.enrichment_status === 'processing' ||
+        data.enrichment_status === 'failed' ||
+        data.enrichment_status === 'pending'
+          ? data.enrichment_status
+          : 'completed';
+
       onContactUpdate({
         ...contact,
-        enrichment_status: data.enrichment_status || 'completed',
-        enrichment_data: data.enrichment_data
+        enrichment_status: nextStatus,
+        enrichment_data: data.enrichment_data ?? data.enrichmentdata ?? enrichment,
       });
     } catch (err: any) {
       console.error('Enrichment error:', err);
-      setError(err.message || 'Enrichment failed');
+      setError(err?.message || 'Enrichment failed');
     } finally {
       setIsEnriching(false);
     }
   };
 
   const modalContent = (
-    <div 
-      className="fixed inset-0 z-[9999] flex items-center justify-center"
-      onClick={onClose}
-    >
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/60" />
-      
-      <div 
-        className="relative bg-gray-900 rounded-lg shadow-2xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-gray-700"
+
+      <div
+        className="relative bg-gray-900 rounded-lg shadow-2xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto border border-gray-700"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Header */}
         <div className="sticky top-0 bg-gray-900 px-6 py-4 border-b border-gray-700 flex justify-between items-center">
           <h2 className="text-xl font-bold text-white">
             {contact.first_name} {contact.last_name}
           </h2>
-          <button 
-            onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl"
-          >
+          <button onClick={onClose} className="text-gray-400 hover:text-white text-2xl">
             ×
           </button>
         </div>
 
+        {/* Body */}
         <div className="p-6 space-y-6">
+          {/* Contact Info */}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-gray-400 text-sm">Email</label>
-              <p className="text-white">{contact.email || '-'}</p>
+              <p className="text-white break-words">{contact.email || '-'}</p>
             </div>
             <div>
               <label className="text-gray-400 text-sm">Phone</label>
@@ -157,38 +193,33 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
             </div>
           </div>
 
+          {/* Scores */}
           <div>
             <h3 className="text-lg font-semibold text-white mb-3">Scores</h3>
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-gray-800 rounded-lg p-4 text-center">
                 <p className="text-gray-400 text-sm mb-1">MDCP</p>
-                <p className="text-2xl font-bold text-white">
-                  {contact.mdcp_score ?? '-'}
-                </p>
+                <p className="text-2xl font-bold text-white">{contact.mdcp_score ?? '-'}</p>
                 {contact.mdcp_tier && (
                   <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${getTierColor(contact.mdcp_tier)}`}>
                     {contact.mdcp_tier.toUpperCase()}
                   </span>
                 )}
               </div>
-              
+
               <div className="bg-gray-800 rounded-lg p-4 text-center">
                 <p className="text-gray-400 text-sm mb-1">BANT</p>
-                <p className="text-2xl font-bold text-white">
-                  {contact.bant_score ?? '-'}
-                </p>
+                <p className="text-2xl font-bold text-white">{contact.bant_score ?? '-'}</p>
                 {contact.bant_tier && (
                   <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${getTierColor(contact.bant_tier)}`}>
                     {contact.bant_tier.toUpperCase()}
                   </span>
                 )}
               </div>
-              
+
               <div className="bg-gray-800 rounded-lg p-4 text-center">
                 <p className="text-gray-400 text-sm mb-1">SPICE</p>
-                <p className="text-2xl font-bold text-white">
-                  {contact.spice_score ?? '-'}
-                </p>
+                <p className="text-2xl font-bold text-white">{contact.spice_score ?? '-'}</p>
                 {contact.spice_tier && (
                   <span className={`inline-block mt-2 px-3 py-1 rounded-full text-xs font-semibold ${getTierColor(contact.spice_tier)}`}>
                     {contact.spice_tier.toUpperCase()}
@@ -198,30 +229,103 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
             </div>
           </div>
 
+          {/* Enrichment */}
           <div>
             <h3 className="text-lg font-semibold text-white mb-3">Enrichment</h3>
+
             <div className="flex items-center gap-3">
               <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(contact.enrichment_status)}`}>
                 {contact.enrichment_status || 'pending'}
               </span>
             </div>
-            
-            {contact.enrichment_status === 'completed' && contact.enrichment_data && (
-              <div className="mt-4 bg-gray-800 rounded-lg p-4">
-                <h4 className="text-white font-medium mb-2">Sales Intelligence</h4>
-                <div className="text-gray-300 text-sm space-y-2">
-                  {contact.enrichment_data.summary && (
-                    <p><strong>Summary:</strong> {contact.enrichment_data.summary}</p>
+
+            {/* Render safely even if fields missing */}
+            {contact.enrichment_status === 'completed' && (
+              <div className="mt-4 bg-gray-800 rounded-lg p-4 space-y-4">
+                <div>
+                  <h4 className="text-white font-medium mb-2">Summary</h4>
+                  <p className="text-gray-300 text-sm">
+                    {enrichment.summary ? asString(enrichment.summary) : 'No summary available.'}
+                  </p>
+                </div>
+
+                <div>
+                  <h4 className="text-white font-medium mb-2">Talking Points</h4>
+                  {talkingPoints.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No talking points found.</p>
+                  ) : (
+                    <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
+                      {talkingPoints.map((point, i) => (
+                        <li key={i}>{point}</li>
+                      ))}
+                    </ul>
                   )}
-                  {contact.enrichment_data.talking_points && (
-                    <div>
-                      <strong>Talking Points:</strong>
-                      <ul className="list-disc list-inside mt-1">
-                        {contact.enrichment_data.talking_points.map((point: string, i: number) => (
-                          <li key={i}>{point}</li>
-                        ))}
-                      </ul>
-                    </div>
+                </div>
+
+                <div>
+                  <h4 className="text-white font-medium mb-2">Hooks</h4>
+                  {hooks.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No hooks found.</p>
+                  ) : (
+                    <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
+                      {hooks.map((h, i) => (
+                        <li key={i}>{h}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-white font-medium mb-2">Objections</h4>
+                  {objections.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No objections found.</p>
+                  ) : (
+                    <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
+                      {objections.map((o, i) => (
+                        <li key={i}>{o}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <h4 className="text-white font-medium mb-2">Next Steps</h4>
+                  {nextSteps.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No next steps found.</p>
+                  ) : (
+                    <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
+                      {nextSteps.map((s, i) => (
+                        <li key={i}>{s}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Optional: BANT block */}
+                <div>
+                  <h4 className="text-white font-medium mb-2">BANT Notes</h4>
+                  {bantSignals.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No BANT details found.</p>
+                  ) : (
+                    <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
+                      {bantSignals.map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Optional: SPICE block */}
+                <div>
+                  <h4 className="text-white font-medium mb-2">SPICE Notes</h4>
+                  {spiceSignals.length === 0 ? (
+                    <p className="text-gray-400 text-sm">No SPICE details found.</p>
+                  ) : (
+                    <ul className="list-disc list-inside text-gray-300 text-sm space-y-1">
+                      {spiceSignals.map((x, i) => (
+                        <li key={i}>{x}</li>
+                      ))}
+                    </ul>
                   )}
                 </div>
               </div>
@@ -235,11 +339,9 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
           )}
         </div>
 
+        {/* Footer */}
         <div className="sticky bottom-0 bg-gray-900 px-6 py-4 border-t border-gray-700 flex justify-end gap-3">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-          >
+          <button onClick={onClose} className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600">
             Close
           </button>
           <button
@@ -258,7 +360,7 @@ function ContactDetailModal({ contact, isOpen, onClose, onContactUpdate }: Conta
 }
 
 // ============================================================================
-// MAIN CONTACTS PAGE COMPONENT
+// CONTACTS PAGE
 // ============================================================================
 
 export default function ContactsPage() {
@@ -268,7 +370,7 @@ export default function ContactsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  
+
   const [isScoring, setIsScoring] = useState(false);
   const [scoringFramework, setScoringFramework] = useState('mdcp');
   const [scoringMessage, setScoringMessage] = useState<string | null>(null);
@@ -276,7 +378,7 @@ export default function ContactsPage() {
   const fetchContacts = useCallback(async () => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -287,20 +389,18 @@ export default function ContactsPage() {
 
       const response = await fetch(`${API_URL}/api/v3/contacts`, {
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch contacts: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Failed to fetch contacts: ${response.status}`);
 
       const data = await response.json();
       setContacts(data.contacts || data || []);
     } catch (err: any) {
       console.error('Error fetching contacts:', err);
-      setError(err.message || 'Failed to load contacts');
+      setError(err?.message || 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
@@ -313,7 +413,7 @@ export default function ContactsPage() {
   const handleScoreAll = async () => {
     setIsScoring(true);
     setScoringMessage(null);
-    
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) {
@@ -324,23 +424,20 @@ export default function ContactsPage() {
       const response = await fetch(`${API_URL}/api/v3/scoring/score-all`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ framework: scoringFramework })
+        body: JSON.stringify({ framework: scoringFramework }),
       });
 
-      if (!response.ok) {
-        throw new Error(`Scoring failed: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`Scoring failed: ${response.status}`);
 
       const result = await response.json();
       setScoringMessage(`✅ ${result.message}`);
-      
       await fetchContacts();
     } catch (err: any) {
       console.error('Scoring error:', err);
-      setScoringMessage(`❌ Error: ${err.message}`);
+      setScoringMessage(`❌ Error: ${err?.message || 'Unknown scoring error'}`);
     } finally {
       setIsScoring(false);
     }
@@ -348,21 +445,17 @@ export default function ContactsPage() {
 
   const handleDelete = async (contactId: string) => {
     if (!confirm('Are you sure you want to delete this contact?')) return;
-    
+
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.access_token) return;
 
       const response = await fetch(`${API_URL}/api/v3/contacts/${contactId}`, {
         method: 'DELETE',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`
-        }
+        headers: { Authorization: `Bearer ${session.access_token}` },
       });
 
-      if (response.ok) {
-        setContacts(contacts.filter(c => c.id !== contactId));
-      }
+      if (response.ok) setContacts((prev) => prev.filter((c) => c.id !== contactId));
     } catch (err) {
       console.error('Delete error:', err);
     }
@@ -379,11 +472,11 @@ export default function ContactsPage() {
   };
 
   const handleContactUpdate = (updated: Contact) => {
-    setContacts(contacts.map(c => c.id === updated.id ? updated : c));
+    setContacts((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     setSelectedContact(updated);
   };
 
-  const filteredContacts = contacts.filter(contact => {
+  const filteredContacts = contacts.filter((contact) => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
     return (
@@ -422,46 +515,30 @@ export default function ContactsPage() {
               <option value="bant">BANT</option>
               <option value="spice">SPICE</option>
             </select>
-            
+
             <button
               onClick={handleScoreAll}
               disabled={isScoring || contacts.length === 0}
               className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              {isScoring ? (
-                <>
-                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                  </svg>
-                  Scoring...
-                </>
-              ) : (
-                <>🎯 Score All ({scoringFramework.toUpperCase()})</>
-              )}
+              {isScoring ? 'Scoring...' : `🎯 Score All (${scoringFramework.toUpperCase()})`}
             </button>
-            
-            <button
-              onClick={fetchContacts}
-              className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-            >
+
+            <button onClick={fetchContacts} className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600">
               🔄 Refresh
             </button>
           </div>
         </div>
 
         {scoringMessage && (
-          <div className={`p-3 rounded-lg ${scoringMessage.startsWith('✅') ? 'bg-green-900/50 text-green-200' : 'bg-red-900/50 text-red-200'}`}>
+          <div
+            className={`p-3 rounded-lg ${
+              scoringMessage.startsWith('✅') ? 'bg-green-900/50 text-green-200' : 'bg-red-900/50 text-red-200'
+            }`}
+          >
             {scoringMessage}
           </div>
         )}
-
-        <div className="flex gap-4 text-sm text-gray-400">
-          <span>Total: <strong className="text-white">{contacts.length}</strong></span>
-          <span>Showing: <strong className="text-white">{filteredContacts.length}</strong></span>
-          <span>Enriched: <strong className="text-green-400">{contacts.filter(c => c.enrichment_status === 'completed').length}</strong></span>
-          <span>Hot: <strong className="text-red-400">{contacts.filter(c => c.mdcp_tier === 'hot' || c.bant_tier === 'hot' || c.spice_tier === 'hot').length}</strong></span>
-        </div>
       </div>
 
       {error && (
@@ -493,18 +570,19 @@ export default function ContactsPage() {
                   <th className="px-4 py-3 text-gray-400 font-medium text-center">ACTIONS</th>
                 </tr>
               </thead>
+
               <tbody className="divide-y divide-gray-800">
                 {filteredContacts.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
-                      {contacts.length === 0 
+                      {contacts.length === 0
                         ? 'No contacts found. Import from CRM or CSV to get started.'
                         : 'No contacts match your search.'}
                     </td>
                   </tr>
                 ) : (
                   filteredContacts.map((contact) => (
-                    <tr 
+                    <tr
                       key={contact.id}
                       onClick={() => openModal(contact)}
                       className="hover:bg-gray-800/50 cursor-pointer transition-colors"
@@ -514,24 +592,14 @@ export default function ContactsPage() {
                           {contact.first_name} {contact.last_name}
                         </span>
                       </td>
-                      
-                      <td className="px-4 py-3 text-gray-300">
-                        {contact.email || '-'}
-                      </td>
-                      
-                      <td className="px-4 py-3 text-gray-300">
-                        {contact.company || '-'}
-                      </td>
-                      
-                      <td className="px-4 py-3 text-gray-300">
-                        {contact.title || contact.job_title || '-'}
-                      </td>
-                      
+
+                      <td className="px-4 py-3 text-gray-300">{contact.email || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300">{contact.company || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300">{contact.title || contact.job_title || '-'}</td>
+
                       <td className="px-4 py-3 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          <span className="text-white font-bold">
-                            {contact.mdcp_score ?? '-'}
-                          </span>
+                          <span className="text-white font-bold">{contact.mdcp_score ?? '-'}</span>
                           {contact.mdcp_tier && (
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getTierColor(contact.mdcp_tier)}`}>
                               {contact.mdcp_tier.toUpperCase()}
@@ -539,12 +607,10 @@ export default function ContactsPage() {
                           )}
                         </div>
                       </td>
-                      
+
                       <td className="px-4 py-3 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          <span className="text-white font-bold">
-                            {contact.bant_score ?? '-'}
-                          </span>
+                          <span className="text-white font-bold">{contact.bant_score ?? '-'}</span>
                           {contact.bant_tier && (
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getTierColor(contact.bant_tier)}`}>
                               {contact.bant_tier.toUpperCase()}
@@ -552,12 +618,10 @@ export default function ContactsPage() {
                           )}
                         </div>
                       </td>
-                      
+
                       <td className="px-4 py-3 text-center">
                         <div className="flex flex-col items-center gap-1">
-                          <span className="text-white font-bold">
-                            {contact.spice_score ?? '-'}
-                          </span>
+                          <span className="text-white font-bold">{contact.spice_score ?? '-'}</span>
                           {contact.spice_tier && (
                             <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${getTierColor(contact.spice_tier)}`}>
                               {contact.spice_tier.toUpperCase()}
@@ -565,13 +629,13 @@ export default function ContactsPage() {
                           )}
                         </div>
                       </td>
-                      
+
                       <td className="px-4 py-3 text-center">
                         <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(contact.enrichment_status)}`}>
                           {contact.enrichment_status || 'pending'}
                         </span>
                       </td>
-                      
+
                       <td className="px-4 py-3 text-center">
                         <button
                           onClick={(e) => {
