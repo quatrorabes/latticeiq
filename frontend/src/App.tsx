@@ -1,29 +1,39 @@
+// frontend/src/App.tsx
+
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { supabase } from './lib/supabaseClient';
 import type { Session } from '@supabase/supabase-js';
+
+// Pages
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import ContactsPage from './pages/ContactsPage';
-import ImportPage from './pages/ImportPage';
-import SettingsPage from './pages/SettingsPage';
 import Dashboard from './pages/Dashboard';
+import ContactsPage from './pages/ContactsPage';
+import ScoringConfigPage from './pages/ScoringConfigPage';
+import SettingsPage from './pages/SettingsPage';
+
+// Components
 import Sidebar from './components/Sidebar';
-import ScoringPage from './pages/ScoringPage';
+import Loader from './components/Loader';
 
 function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.auth.getSession().then((data: any) => {
-      setSession(data.session);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
       setLoading(false);
     });
 
-    supabase.auth.onAuthStateChange((_event: any, session: any) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
     });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleLogout = async () => {
@@ -33,8 +43,8 @@ function App() {
 
   if (loading) {
     return (
-      <div style={{ minHeight: '100vh', background: '#0a0e27', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <p style={{ color: 'white' }}>Loading...</p>
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <Loader />
       </div>
     );
   }
@@ -42,29 +52,27 @@ function App() {
   if (!session) {
     return (
       <Router>
-        <div style={{ minHeight: '100vh', background: '#0a0e27' }}>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </div>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
       </Router>
     );
   }
 
   return (
     <Router>
-      <div style={{ minHeight: '100vh', background: '#0a0e27', display: 'flex' }}>
+      <div className="flex min-h-screen bg-gray-950">
         <Sidebar onLogout={handleLogout} />
-        <main style={{ flex: 1 }}>
+
+        <main className="ml-64 flex-1 p-8">
           <Routes>
-            <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/import" element={<ImportPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
             <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/scoring" element={<ScoringPage />} />
-            <Route path="*" element={<Navigate to="/contacts" replace />} />
+            <Route path="/contacts" element={<ContactsPage />} />
+            <Route path="/scoring-config" element={<ScoringConfigPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </main>
       </div>
