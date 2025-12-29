@@ -36,6 +36,8 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
+from scoring.router import router as scoring_router
+
 
 # ============================================================================
 # CREATE APP FIRST
@@ -270,19 +272,14 @@ except ImportError as e:
 
 # Scoring Router
 try:
-    from scoring.router import router as scoring_router
+    from app.scoring.router import router as scoring_router
     SCORING_AVAILABLE = True
     print("✅ Scoring router imported")
 except ImportError as e:
-    try:
-        from app.scoring.router import router as scoring_router
-        SCORING_AVAILABLE = True
-        print("✅ Scoring router imported (from app.)")
-    except ImportError:
-        scoring_router = None
-        SCORING_AVAILABLE = False
-        print(f"❌ Scoring router import failed: {e}")
-
+    scoring_router = None
+    SCORING_AVAILABLE = False
+    print(f"❌ Scoring router import failed: {e}")
+    
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
@@ -382,3 +379,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info("🛑 LatticeIQ API shutting down...")
+    
