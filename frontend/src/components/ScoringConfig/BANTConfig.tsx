@@ -1,7 +1,7 @@
 // frontend/src/components/ScoringConfig/BANTConfig.tsx
 
 import React, { useState, useEffect } from 'react';
-import WeightSlider from "../../Common/WeightSlider";
+import { WeightSlider } from "./WeightSliderInline";
 import { getScoringConfig, saveScoringConfig } from '../../api/scoring';
 
 interface BANTConfig {
@@ -199,28 +199,28 @@ export const BANTConfig: React.FC = () => {
         <WeightSlider
           label="Budget"
           value={config.weights.budget}
-          onChange={(v) => handleWeightChange('budget', v)}
+          onChange={(v: number) => handleWeightChange('budget', v)}
           description="Has adequate budget allocated for your solution?"
         />
 
         <WeightSlider
           label="Authority"
           value={config.weights.authority}
-          onChange={(v) => handleWeightChange('authority', v)}
+          onChange={(v: number) => handleWeightChange('authority', v)}
           description="Is this person a decision-maker with budget authority?"
         />
 
         <WeightSlider
           label="Need"
           value={config.weights.need}
-          onChange={(v) => handleWeightChange('need', v)}
+        onChange={(v: number)=> handleWeightChange('need', v)}
           description="Have they expressed specific pain points you solve?"
         />
 
         <WeightSlider
           label="Timeline"
           value={config.weights.timeline}
-          onChange={(v) => handleWeightChange('timeline', v)}
+          onChange={(v: number)=> handleWeightChange('timeline', v)}
           description="When do they need to solve their problem?"
         />
       </div>
@@ -353,14 +353,14 @@ export const BANTConfig: React.FC = () => {
         <WeightSlider
           label="Hot Threshold (minimum)"
           value={config.thresholds.hotMin}
-          onChange={(v) => handleThresholdChange('hotMin', v)}
+          onChange={(v: number) => handleThresholdChange('hotMin', v)}
           description="Scores at or above this are marked as Hot"
         />
 
         <WeightSlider
           label="Warm Threshold (minimum)"
           value={config.thresholds.warmMin}
-          onChange={(v) => handleThresholdChange('warmMin', v)}
+          onChange={(v: number) => handleThresholdChange('warmMin', v)}
           description="Scores at or above this are marked as Warm"
         />
 

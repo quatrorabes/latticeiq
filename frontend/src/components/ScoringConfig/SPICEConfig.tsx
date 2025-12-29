@@ -1,7 +1,7 @@
 // frontend/src/components/ScoringConfig/SPICEConfig.tsx
 
 import React, { useState, useEffect } from 'react';
-import WeightSlider from "../../Common/WeightSlider";
+import { WeightSlider } from "./WeightSliderInline";
 import { getScoringConfig, saveScoringConfig } from '../../api/scoring';
 
 interface SPICEConfig {
@@ -200,35 +200,35 @@ export const SPICEConfig: React.FC = () => {
         <WeightSlider
           label="Situation"
           value={config.weights.situation}
-          onChange={(v) => handleWeightChange('situation', v)}
+          onChange={(v: number) => handleWeightChange('situation', v)}
           description="Do they describe their current industry/market situation?"
         />
 
         <WeightSlider
           label="Problem"
           value={config.weights.problem}
-          onChange={(v) => handleWeightChange('problem', v)}
+          onChange={(v: number) => handleWeightChange('problem', v)}
           description="Have they identified a specific problem?"
         />
 
         <WeightSlider
           label="Implication"
           value={config.weights.implication}
-          onChange={(v) => handleWeightChange('implication', v)}
+          onChange={(v: number) => handleWeightChange('implication', v)}
           description="Do they understand the impact of not solving it?"
         />
 
         <WeightSlider
           label="Consequence"
           value={config.weights.consequence}
-          onChange={(v) => handleWeightChange('consequence', v)}
+          onChange={(v: number) => handleWeightChange('consequence', v)}
           description="How urgent/critical is this problem?"
         />
 
         <WeightSlider
           label="Economic"
           value={config.weights.economic}
-          onChange={(v) => handleWeightChange('economic', v)}
+          onChange={(v: number) => handleWeightChange('economic', v)}
           description="Can they justify the economic investment?"
         />
       </div>
@@ -352,14 +352,14 @@ export const SPICEConfig: React.FC = () => {
         <WeightSlider
           label="Hot Threshold (minimum)"
           value={config.thresholds.hotMin}
-          onChange={(v) => handleThresholdChange('hotMin', v)}
+          onChange={(v: number) => handleThresholdChange('hotMin', v)}
           description="Scores at or above this are marked as Hot"
         />
 
         <WeightSlider
           label="Warm Threshold (minimum)"
           value={config.thresholds.warmMin}
-          onChange={(v) => handleThresholdChange('warmMin', v)}
+          onChange={(v: number) => handleThresholdChange('warmMin', v)}
           description="Scores at or above this are marked as Warm"
         />
 

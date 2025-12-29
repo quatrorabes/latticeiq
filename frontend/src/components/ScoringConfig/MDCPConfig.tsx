@@ -1,7 +1,7 @@
 // frontend/src/components/ScoringConfig/MDCPConfig.tsx
 
 import React, { useState, useEffect } from 'react';
-import WeightSlider from "../../Common/WeightSlider";
+import { WeightSlider } from "./WeightSliderInline";
 import { getScoringConfig, saveScoringConfig } from '../../api/scoring';
 
 interface MDCPConfig {
@@ -175,28 +175,28 @@ export const MDCPConfig: React.FC = () => {
         <WeightSlider
           label="Money / Budget Match"
           value={config.weights.money}
-          onChange={(v) => handleWeightChange('money', v)}
+          onChange={(v: number) => handleWeightChange('money', v)}
           description="Does company revenue match your target range?"
         />
 
         <WeightSlider
           label="Decision-Maker"
           value={config.weights.decisionmaker}
-          onChange={(v) => handleWeightChange('decisionmaker', v)}
+          onChange={(v: number) => handleWeightChange('decisionmaker', v)}
           description="Is this person an identified decision-maker?"
         />
 
         <WeightSlider
           label="Champion / Advocate"
           value={config.weights.champion}
-          onChange={(v) => handleWeightChange('champion', v)}
+          onChange={(v: number) => handleWeightChange('champion', v)}
           description="Have they recently engaged with you (last N days)?"
         />
 
         <WeightSlider
           label="Process / Timeline"
           value={config.weights.process}
-          onChange={(v) => handleWeightChange('process', v)}
+          onChange={(v: number) => handleWeightChange('process', v)}
           description="Is there an active deal or buying cycle?"
         />
       </div>
@@ -308,14 +308,14 @@ export const MDCPConfig: React.FC = () => {
         <WeightSlider
           label="Hot Threshold (minimum)"
           value={config.thresholds.hotMin}
-          onChange={(v) => handleThresholdChange('hotMin', v)}
+          onChange={(v: number) => handleThresholdChange('hotMin', v)}
           description="Scores at or above this are marked as Hot"
         />
 
         <WeightSlider
           label="Warm Threshold (minimum)"
           value={config.thresholds.warmMin}
-          onChange={(v) => handleThresholdChange('warmMin', v)}
+          onChange={(v: number) => handleThresholdChange('warmMin', v)}
           description="Scores at or above this are marked as Warm"
         />
 
