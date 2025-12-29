@@ -53,73 +53,67 @@ class ScoringConfig(BaseModel):
 SCORING_CONFIGS = {
     "mdcp": {
         "framework": "MDCP",
-        "name": "Money-Decision-Contact-Profile",
-        "description": "Best for sales qualification",
         "weights": {
-            "money": 0.25,
-            "decision": 0.25,
-            "contact": 0.25,
-            "profile": 0.25,
+            "money": 25,
+            "decisionmaker": 25,
+            "champion": 25,
+            "process": 25,
         },
         "thresholds": {
-            "hot": 80,
-            "warm": 60,
-            "cold": 0,
+            "hotMin": 71,
+            "warmMin": 40,
         },
-        "factors": {
-            "money": "Does company revenue match your target range?",
-            "decision": "Is this person an identified decision-maker?",
-            "contact": "Have they recently engaged with you (last N days)?",
-            "profile": "Does their profile match your ideal customer profile?",
+        "config": {
+            "moneyMinRevenue": 1000000,
+            "moneyMaxRevenue": 100000000,
+            "decisionmakerTitles": ["CEO", "VP Sales", "CMO"],
+            "championEngagementDays": 30,
+            "processDays": 90,
         },
     },
     "bant": {
         "framework": "BANT",
-        "name": "Budget-Authority-Need-Timeline",
-        "description": "Classic B2B qualification framework",
         "weights": {
-            "budget": 0.25,
-            "authority": 0.25,
-            "need": 0.25,
-            "timeline": 0.25,
+            "budget": 25,
+            "authority": 25,
+            "need": 25,
+            "timeline": 25,
         },
         "thresholds": {
-            "hot": 80,
-            "warm": 60,
-            "cold": 0,
+            "hotMin": 71,
+            "warmMin": 40,
         },
-        "factors": {
-            "budget": "Do they have budget allocated?",
-            "authority": "Are they a decision-maker or influencer?",
-            "need": "Do they have a clear need for your solution?",
-            "timeline": "What's their implementation timeline?",
+        "config": {
+            "budgetMin": 100000,
+            "budgetMax": 10000000,
+            "authorityTitles": ["VP", "Director", "Manager"],
+            "needCriteria": ["Problem identified", "Active search", "Competitive threat"],
+            "timelineDays": 90,
         },
     },
     "spice": {
         "framework": "SPICE",
-        "name": "Situation-Problem-Implication-Critical Event-Decision",
-        "description": "Advanced consultative selling framework",
         "weights": {
-            "situation": 0.2,
-            "problem": 0.2,
-            "implication": 0.2,
-            "critical_event": 0.2,
-            "decision": 0.2,
+            "situation": 20,
+            "problem": 20,
+            "implication": 20,
+            "criticalevent": 20,
+            "decision": 20,
         },
         "thresholds": {
-            "hot": 80,
-            "warm": 60,
-            "cold": 0,
+            "hotMin": 71,
+            "warmMin": 40,
         },
-        "factors": {
-            "situation": "Understanding of current situation",
-            "problem": "Problem identification and assessment",
-            "implication": "Impact and consequence analysis",
-            "critical_event": "Urgency and critical business drivers",
-            "decision": "Decision criteria and process clarity",
+        "config": {
+            "situationCriteria": ["New role", "New company", "New budget"],
+            "problemCriteria": ["Current pain point", "Documented issue"],
+            "implicationLevel": ["High", "Medium", "Low"],
+            "criticalEventTypes": ["Fiscal year end", "New initiative", "Crisis"],
+            "decisionProcessMonths": 3,
         },
     },
 }
+
 
 # ============================================================================
 # ROUTER
@@ -241,3 +235,4 @@ async def calculate_unified(request: ScoreRequest, user: dict = Depends(get_curr
     except Exception as e:
         logger.error(f"Error calculating unified score: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+        
