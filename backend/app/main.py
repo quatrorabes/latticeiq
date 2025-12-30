@@ -20,6 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
+from enrichment_v3.enrich_router import router as enrich_router
 
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
@@ -344,19 +345,13 @@ except ImportError as e:
 # Enrichment Router
 try:
     from enrichment_v3.enrich_router import router as enrich_router
-    ENRICH_ROUTER_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "enrichment", "source": "enrichment_v3.enrich_router"})
-except ImportError as e:
-    try:
-        from app.enrichment_v3.enrich_router import router as enrich_router
-        ENRICH_ROUTER_AVAILABLE = True
-        logger.info({"event": "router_imported", "router": "enrichment", "source": "app.enrichment_v3.enrich_router"})
-    except ImportError:
-        enrich_router = None
-        ENRICH_ROUTER_AVAILABLE = False
-        logger.error({"event": "router_import_failed", "router": "enrichment", "error": str(e)})
-
+    ENRICHMENT_AVAILABLE = True
+except (ImportError, ModuleNotFoundError) as e:
+    print(f"⚠️ Enrichment router not available: {e}")
+    enrich_router = None
+    ENRICHMENT_AVAILABLE = False
 # Scoring Router - WITH FALLBACK IMPORTS
+    
 SCORING_AVAILABLE = False
 scoring_router = None
 
@@ -422,7 +417,12 @@ if SCORING_AVAILABLE and scoring_router is not None:
 else:
     logger.error({"event": "router_not_registered", "router": "scoring", "reason": "import_failed"})
 
-
+if enrich_router:
+    app.include_router(enrich_router, prefix="/api/v3")
+    logger.info("✅ Enrichment router registered at /api/v3/enrich")
+else:
+    logger.warning("⚠️ Enrichment router not registered")
+    
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
 # ============================================================================
