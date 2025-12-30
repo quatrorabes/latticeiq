@@ -1,2 +1,1 @@
-# Enrichment v3 module
-# Router provided by enrich_router.py
+from .quick_enrich.quick_enrich import router
