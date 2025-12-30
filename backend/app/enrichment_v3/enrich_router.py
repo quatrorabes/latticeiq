@@ -1,4 +1,4 @@
-# backend/enrichment_v3/enrich_router.py
+# backend/app/enrichment_v3/enrich_router.py
 from fastapi import APIRouter, HTTPException, Depends, Header
 from typing import Optional, Dict, Any
 import httpx
@@ -40,11 +40,10 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
 
 def strip_code_fences(text: str) -> str:
     """Remove markdown code fences from JSON responses"""
-    # Remove `````` markers
-    text = re.sub(r"^```
-    text = re.sub(r"^```\s*$", "", text, flags=re.MULTILINE)
+    # Remove ```json and ``` markers
+    text = re.sub("^```json\\s*", "", text, flags=re.MULTILINE)
+    text = re.sub("^```\\s*$", "", text, flags=re.MULTILINE)
     return text.strip()
-        
 
 
 async def enrich_with_perplexity(contact: Dict[str, Any]) -> Dict[str, Any]:
@@ -134,11 +133,7 @@ async def enrich_contact(
     
     try:
         # 1. Fetch contact from database
-        response = supabase.table("contacts")\
-            .select("*")\
-            .eq("id", contact_id)\
-            .eq("user_id", user["id"])\
-            .execute()
+        response = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user["id"]).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -146,10 +141,7 @@ async def enrich_contact(
         contact = response.data[0]
         
         # 2. Update status to 'processing'
-        supabase.table("contacts")\
-            .update({"enrichment_status": "processing"})\
-            .eq("id", contact_id)\
-            .execute()
+        supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", contact_id).execute()
         
         # 3. Call Perplexity API
         enrichment_data = await enrich_with_perplexity(contact)
@@ -171,10 +163,7 @@ async def enrich_contact(
         if not contact.get("persona_type") and enrichment_data.get("persona_type"):
             update_data["persona_type"] = enrichment_data["persona_type"]
         
-        supabase.table("contacts")\
-            .update(update_data)\
-            .eq("id", contact_id)\
-            .execute()
+        supabase.table("contacts").update(update_data).eq("id", contact_id).execute()
         
         return {
             "status": "completed",
@@ -188,10 +177,7 @@ async def enrich_contact(
     except Exception as e:
         # Update status to 'failed'
         if supabase:
-            supabase.table("contacts")\
-                .update({"enrichment_status": "failed"})\
-                .eq("id", contact_id)\
-                .execute()
+            supabase.table("contacts").update({"enrichment_status": "failed"}).eq("id", contact_id).execute()
         
         raise HTTPException(status_code=500, detail=f"Enrichment error: {str(e)}")
 
@@ -206,11 +192,7 @@ async def get_enrichment_status(
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
-        response = supabase.table("contacts")\
-            .select("enrichment_status, enriched_at")\
-            .eq("id", contact_id)\
-            .eq("user_id", user["id"])\
-            .execute()
+        response = supabase.table("contacts").select("enrichment_status, enriched_at").eq("id", contact_id).eq("user_id", user["id"]).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -240,11 +222,7 @@ async def get_enrichment_data(
         raise HTTPException(status_code=500, detail="Database not configured")
     
     try:
-        response = supabase.table("contacts")\
-            .select("enrichment_data, enrichment_status, enriched_at")\
-            .eq("id", contact_id)\
-            .eq("user_id", user["id"])\
-            .execute()
+        response = supabase.table("contacts").select("enrichment_data, enrichment_status, enriched_at").eq("id", contact_id).eq("user_id", user["id"]).execute()
         
         if not response.data:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -262,4 +240,3 @@ async def get_enrichment_data(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Data fetch failed: {str(e)}")
-        
