@@ -12,7 +12,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from functools import lru_cache
-import jwt  # PyJWT (must be "PyJWT" in requirements)
+import jwt
 import logging
 from fastapi import FastAPI, HTTPException, Header, status, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
-from app.enrichment_v3.enrich_router import router as enrich_router
 
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
@@ -53,7 +52,7 @@ class Settings(BaseModel):
     ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
     CORS_ALLOW_ORIGIN: str = Field(default="", alias="CORS_ALLOW_ORIGIN")
     CORS_ALLOW_ORIGINS: str = Field(default="", alias="CORS_ALLOW_ORIGINS")
-
+    
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -70,11 +69,9 @@ class Settings(BaseModel):
             CORS_ALLOW_ORIGINS=os.getenv("CORS_ALLOW_ORIGINS", ""),
         )
 
-
 @lru_cache
 def get_settings() -> Settings:
     return Settings.from_env()
-
 
 settings = get_settings()
 
@@ -92,16 +89,14 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger.propagate = False
     return logger
 
-
 logger = setup_logging(settings.LOG_LEVEL)
 
 # ============================================================================
-# MIDDLEWARE
+# CORS MIDDLEWARE - MUST BE FIRST
 # ============================================================================
-app.add_middleware(GZipMiddleware, minimum_size=1000)
-
 default_origins = [
     "https://latticeiq.vercel.app",
+    "https://*.vercel.app",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
@@ -109,106 +104,34 @@ default_origins = [
 ]
 
 allow_origins = list(default_origins)
-
 if getattr(settings, "CORS_ALLOW_ORIGIN", "").strip():
     origin = settings.CORS_ALLOW_ORIGIN.strip()
     if origin not in allow_origins:
         allow_origins.append(origin)
-        
 if settings.CORS_ALLOW_ORIGINS.strip():
     for o in settings.CORS_ALLOW_ORIGINS.split(","):
         o = o.strip()
         if o and o not in allow_origins:
             allow_origins.append(o)
-            
+
 logger.info({"event": "cors_config", "allow_origins": allow_origins})
 
+# CORS MUST be added BEFORE other middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allow_origins,
+    allow_origins=["*"],  # NUCLEAR OPTION - allow all origins for debugging
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# ============================================================================
-# CLOUDFLARE CACHE BYPASS (prevent caching of OPTIONS preflight)
-# ============================================================================
-@app.middleware("http")
-async def set_cache_headers(request: Request, call_next):
-    """Prevent Cloudflare from caching OPTIONS requests or preflight responses."""
-    response = await call_next(request)
-    
-    if request.method == "OPTIONS":
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-        response.headers["CDN-Cache-Control"] = "no-cache"
-        
-    return response
-
-# ============================================================================
-# EXPLICIT CORS PREFLIGHT HANDLER
-# ============================================================================
-@app.options("/{path:path}")
-async def preflight_handler(path: str):
-    return {"detail": "ok"}
-
-# ============================================================================
-# NUCLEAR OPTION: CORS DEBUGGING MIDDLEWARE
-# ============================================================================
-from fastapi import Request
-
-@app.middleware("http")
-async def log_cors_debug(request: Request, call_next):
-    """Log every request origin and response CORS headers for debugging."""
-    origin = request.headers.get("origin")
-    method = request.method
-    path = request.url.path
-    
-    logger.info({
-        "event": "cors_debug_request",
-        "method": method,
-        "path": path,
-        "origin": origin,
-        "headers": dict(request.headers),
-    })
-    
-    response = await call_next(request)
-    
-    logger.info({
-        "event": "cors_debug_response",
-        "method": method,
-        "path": path,
-        "origin": origin,
-        "cors_allow_origin": response.headers.get("access-control-allow-origin"),
-        "cors_allow_credentials": response.headers.get("access-control-allow-credentials"),
-        "cors_allow_methods": response.headers.get("access-control-allow-methods"),
-        "cors_allow_headers": response.headers.get("access-control-allow-headers"),
-        "status_code": response.status_code,
-    })
-    
-    return response
-
-
-# ============================================================================
-# EXPLICIT CORS PREFLIGHT HANDLER (fixes Cloudflare/Render CORS issues)
-# ============================================================================
-@app.options("/{path:path}")
-async def preflight_handler(path: str, request: Request):
-    """Handle CORS preflight requests explicitly for all routes."""
-    origin = request.headers.get("origin", "")
-    logger.info({"event": "preflight_explicit", "path": path, "origin": origin})
-    
-    # Return empty response - CORS middleware will add headers
-    return {"detail": "ok"}
-
+# GZip compression
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # ============================================================================
 # INITIALIZE SUPABASE
 # ============================================================================
-    
 def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning({"event": "supabase_not_configured"})
@@ -221,7 +144,6 @@ def initialize_supabase() -> Optional[Client]:
         logger.error({"event": "supabase_init_failed", "error": str(e)})
         return None
 
-
 supabase = initialize_supabase()
 
 # ============================================================================
@@ -231,60 +153,50 @@ class CurrentUser(BaseModel):
     id: str
     email: str
 
-
 class ContactCreate(BaseModel):
-    firstname: str = Field(..., min_length=1, max_length=100)
-    lastname: str = Field(..., min_length=1, max_length=100)
+    first_name: str = Field(..., min_length=1, max_length=100)
+    last_name: str = Field(..., min_length=1, max_length=100)
     email: str = Field(..., pattern=r".+@.+\..+")
-    jobtitle: Optional[str] = Field(None, max_length=100)
+    job_title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
-    linkedinurl: Optional[str] = Field(None, max_length=500)
+    linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
-
 
 class ContactUpdate(BaseModel):
-    firstname: Optional[str] = Field(None, max_length=100)
-    lastname: Optional[str] = Field(None, max_length=100)
+    first_name: Optional[str] = Field(None, max_length=100)
+    last_name: Optional[str] = Field(None, max_length=100)
     email: Optional[str] = Field(None, pattern=r".+@.+\..+")
-    jobtitle: Optional[str] = Field(None, max_length=100)
+    job_title: Optional[str] = Field(None, max_length=100)
     company: Optional[str] = Field(None, max_length=200)
     phone: Optional[str] = Field(None, max_length=20)
-    linkedinurl: Optional[str] = Field(None, max_length=500)
+    linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
-    enrichmentdata: Optional[dict] = None
-    mdcpscore: Optional[int] = Field(None, ge=0, le=100)
-    bantscore: Optional[int] = Field(None, ge=0, le=100)
-    spicescore: Optional[int] = Field(None, ge=0, le=100)
-
+    enrichment_data: Optional[dict] = None
+    mdcp_score: Optional[int] = Field(None, ge=0, le=100)
+    bant_score: Optional[int] = Field(None, ge=0, le=100)
+    spice_score: Optional[int] = Field(None, ge=0, le=100)
 
 # ============================================================================
 # AUTH DEPENDENCY - JWT DECODE
 # ============================================================================
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
-    """
-    Validate JWT token from Supabase using simple JWT decode.
-    """
     if not authorization:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     try:
         parts = authorization.split(" ", 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization format")
-
         token = parts[1]
         payload = jwt.decode(token, options={"verify_signature": False})
         user_id = payload.get("sub")
         email = payload.get("email", "")
-
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
-
         return CurrentUser(id=str(user_id), email=str(email))
     except HTTPException:
         raise
@@ -292,93 +204,99 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
         logger.error({"event": "auth_error", "error_type": type(e).__name__, "error": str(e)})
         raise HTTPException(status_code=401, detail="Invalid token")
 
-
 # ============================================================================
 # IMPORT ROUTERS (with error handling)
 # ============================================================================
 
-# Contacts Router (CRUD)
+# Contacts Router
+contacts_router = None
+CONTACTS_ROUTER_AVAILABLE = False
 try:
     from contacts_router import router as contacts_router
     CONTACTS_ROUTER_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "contacts", "source": "contacts_router"})
-except ImportError as e:
+    logger.info({"event": "router_imported", "router": "contacts"})
+except ImportError:
     try:
         from app.contacts_router import router as contacts_router
         CONTACTS_ROUTER_AVAILABLE = True
         logger.info({"event": "router_imported", "router": "contacts", "source": "app.contacts_router"})
-    except ImportError:
-        contacts_router = None
-        CONTACTS_ROUTER_AVAILABLE = False
-        logger.error({"event": "router_import_failed", "router": "contacts", "error": str(e)})
+    except ImportError as e:
+        logger.warning({"event": "router_import_failed", "router": "contacts", "error": str(e)})
 
 # CRM Settings Router
+settings_router = None
+SETTINGS_ROUTER_AVAILABLE = False
 try:
     from crm.settings_router import router as settings_router
     SETTINGS_ROUTER_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "settings", "source": "crm.settings_router"})
-except ImportError as e:
+    logger.info({"event": "router_imported", "router": "settings"})
+except ImportError:
     try:
         from app.crm.settings_router import router as settings_router
         SETTINGS_ROUTER_AVAILABLE = True
-        logger.info({"event": "router_imported", "router": "settings", "source": "app.crm.settings_router"})
-    except ImportError:
-        settings_router = None
-        SETTINGS_ROUTER_AVAILABLE = False
-        logger.error({"event": "router_import_failed", "router": "settings", "error": str(e)})
+    except ImportError as e:
+        logger.warning({"event": "router_import_failed", "router": "settings", "error": str(e)})
 
 # CRM Import Router
+crm_router = None
+CRM_ROUTER_AVAILABLE = False
 try:
     from crm.router import router as crm_router
     CRM_ROUTER_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "crm", "source": "crm.router"})
-except ImportError as e:
+    logger.info({"event": "router_imported", "router": "crm"})
+except ImportError:
     try:
         from app.crm.router import router as crm_router
         CRM_ROUTER_AVAILABLE = True
-        logger.info({"event": "router_imported", "router": "crm", "source": "app.crm.router"})
-    except ImportError:
-        crm_router = None
-        CRM_ROUTER_AVAILABLE = False
-        logger.error({"event": "router_import_failed", "router": "crm", "error": str(e)})
+    except ImportError as e:
+        logger.warning({"event": "router_import_failed", "router": "crm", "error": str(e)})
 
-# Enrichment Router Import
-ENRICH_ROUTER_AVAILABLE = False
+# Enrichment Router
 enrich_router = None
+ENRICH_ROUTER_AVAILABLE = False
 try:
     from app.enrichment_v3.enrich_router import router as enrich_router
     ENRICH_ROUTER_AVAILABLE = True
-    logger.info("", extra={"event": "router_imported", "router": "enrichment"})
+    logger.info({"event": "router_imported", "router": "enrichment"})
 except (ImportError, ModuleNotFoundError) as e:
-    logger.warning(f"Enrichment router not available: {e}")
-    ENRICH_ROUTER_AVAILABLE = False
-    
-# Scoring Router - WITH FALLBACK IMPORTS
-    
-SCORING_AVAILABLE = False
-scoring_router = None
+    logger.warning({"event": "router_import_failed", "router": "enrichment", "error": str(e)})
 
+# Scoring Router
+scoring_router = None
+SCORING_AVAILABLE = False
 try:
     from app.scoring.router import router as scoring_router
     SCORING_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "scoring", "source": "app.scoring.router"})
-except ImportError as e1:
-    logger.warning({"event": "router_import_attempt_failed", "router": "scoring", "source": "app.scoring.router", "error": str(e1)})
+    logger.info({"event": "router_imported", "router": "scoring"})
+except ImportError:
     try:
         from scoring.router import router as scoring_router
         SCORING_AVAILABLE = True
-        logger.info({"event": "router_imported", "router": "scoring", "source": "scoring.router"})
-    except ImportError as e2:
-        logger.warning({"event": "router_import_attempt_failed", "router": "scoring", "source": "scoring.router", "error": str(e2)})
-        try:
-            from backend.app.scoring.router import router as scoring_router
-            SCORING_AVAILABLE = True
-            logger.info({"event": "router_imported", "router": "scoring", "source": "backend.app.scoring.router"})
-        except ImportError as e3:
-            scoring_router = None
-            SCORING_AVAILABLE = False
-            logger.error({"event": "router_import_failed", "router": "scoring", "all_attempts_failed": True, "errors": [str(e1), str(e2), str(e3)]})
+    except ImportError as e:
+        logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
 
+# ============================================================================
+# REGISTER ROUTERS (ONCE EACH)
+# ============================================================================
+if CONTACTS_ROUTER_AVAILABLE and contacts_router:
+    app.include_router(contacts_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "contacts", "prefix": "/api/v3"})
+
+if SETTINGS_ROUTER_AVAILABLE and settings_router:
+    app.include_router(settings_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "settings", "prefix": "/api/v3"})
+
+if CRM_ROUTER_AVAILABLE and crm_router:
+    app.include_router(crm_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "crm", "prefix": "/api/v3"})
+
+if ENRICH_ROUTER_AVAILABLE and enrich_router:
+    app.include_router(enrich_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
+
+if SCORING_AVAILABLE and scoring_router:
+    app.include_router(scoring_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
 
 # ============================================================================
 # ICP CONFIG ENDPOINT
@@ -394,44 +312,6 @@ async def get_icp_config():
         "scoring_thresholds": {"high": 80, "medium": 60, "low": 40},
     }
 
-
-# ============================================================================
-# REGISTER ROUTERS
-# ============================================================================
-if CONTACTS_ROUTER_AVAILABLE and contacts_router is not None:
-    app.include_router(contacts_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "contacts", "prefix": "/api/v3"})
-
-if SETTINGS_ROUTER_AVAILABLE and settings_router is not None:
-    app.include_router(settings_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "settings", "prefix": "/api/v3"})
-
-if CRM_ROUTER_AVAILABLE and crm_router is not None:
-    app.include_router(crm_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "crm", "prefix": "/api/v3"})
-
-if ENRICH_ROUTER_AVAILABLE and enrich_router is not None:
-    app.include_router(enrich_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
-
-if SCORING_AVAILABLE and scoring_router is not None:
-    app.include_router(scoring_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
-else:
-    logger.error({"event": "router_not_registered", "router": "scoring", "reason": "import_failed"})
-
-if enrich_router:
-    app.include_router(enrich_router, prefix="/api/v3")
-    logger.info("✅ Enrichment router registered at /api/v3/enrich")
-else:
-    logger.warning("⚠️ Enrichment router not registered")
-    
-# Register enrichment router
-if ENRICH_ROUTER_AVAILABLE and enrich_router is not None:
-    app.include_router(enrich_router, prefix="/api/v3")
-    logger.info("", extra={"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
-    
-    
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
 # ============================================================================
@@ -442,8 +322,6 @@ async def health():
         "timestamp": datetime.utcnow().isoformat(),
         "uptime": "running",
     }
-    
-
 
 @app.get("/api/routes")
 def list_routes(request: Request):
@@ -453,7 +331,6 @@ def list_routes(request: Request):
         key=lambda x: x["path"]
     )
 
-
 # ============================================================================
 # STARTUP / SHUTDOWN EVENTS
 # ============================================================================
@@ -461,8 +338,6 @@ def list_routes(request: Request):
 async def startup_event():
     logger.info({"event": "startup", "message": "LatticeIQ API starting up..."})
 
-
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
-    
