@@ -3,27 +3,30 @@ from fastapi import APIRouter, HTTPException, Depends, Header
 from typing import Dict, Any, Optional
 import os
 from datetime import datetime
+import jwt
 
-# CREATE THE ROUTER FIRST (this was missing!)
+# CREATE THE ROUTER FIRST
 router = APIRouter(prefix="/scoring", tags=["Scoring"])
 
 # Environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-# Initialize Supabase client
+# Initialize Supabase client with proper error handling
 supabase = None
-try:
-    if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    try:
         from supabase import create_client
         supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
-except Exception as e:
-    print(f"⚠️ Scoring router: Supabase init failed: {e}")
+        print(f"✅ Supabase initialized for scoring")
+    except Exception as e:
+        print(f"⚠️ Supabase init failed (scoring): {e}")
+else:
+    print(f"⚠️ Missing Supabase env vars - SUPABASE_URL: {bool(SUPABASE_URL)}, SUPABASE_SERVICE_KEY: {bool(SUPABASE_SERVICE_KEY)}")
 
 
 def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
     """Extract user from JWT token"""
-    import jwt
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing authorization header")
     
@@ -102,7 +105,16 @@ def calculate_mdcp_score(contact: Dict[str, Any], config: Dict[str, Any]) -> Dic
     total = money_score + decision_score + champion_score + process_score
     tier = "hot" if total >= thresholds["hotMin"] else ("warm" if total >= thresholds["warmMin"] else "cold")
     
-    return {"score": total, "tier": tier, "breakdown": {"money": money_score, "decisionmaker": decision_score, "champion": champion_score, "process": process_score}}
+    return {
+        "score": total,
+        "tier": tier,
+        "breakdown": {
+            "money": money_score,
+            "decisionmaker": decision_score,
+            "champion": champion_score,
+            "process": process_score
+        }
+    }
 
 
 def calculate_bant_score(contact: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -120,7 +132,16 @@ def calculate_bant_score(contact: Dict[str, Any], config: Dict[str, Any]) -> Dic
     total = budget_score + authority_score + need_score + timeline_score
     tier = "hot" if total >= thresholds["hotMin"] else ("warm" if total >= thresholds["warmMin"] else "cold")
     
-    return {"score": total, "tier": tier, "breakdown": {"budget": budget_score, "authority": authority_score, "need": need_score, "timeline": timeline_score}}
+    return {
+        "score": total,
+        "tier": tier,
+        "breakdown": {
+            "budget": budget_score,
+            "authority": authority_score,
+            "need": need_score,
+            "timeline": timeline_score
+        }
+    }
 
 
 def calculate_spice_score(contact: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -136,7 +157,17 @@ def calculate_spice_score(contact: Dict[str, Any], config: Dict[str, Any]) -> Di
     total = situation_score + problem_score + implication_score + critical_event_score + decision_score
     tier = "hot" if total >= thresholds["hotMin"] else ("warm" if total >= thresholds["warmMin"] else "cold")
     
-    return {"score": total, "tier": tier, "breakdown": {"situation": situation_score, "problem": problem_score, "implication": implication_score, "criticalEvent": critical_event_score, "decision": decision_score}}
+    return {
+        "score": total,
+        "tier": tier,
+        "breakdown": {
+            "situation": situation_score,
+            "problem": problem_score,
+            "implication": implication_score,
+            "criticalEvent": critical_event_score,
+            "decision": decision_score
+        }
+    }
 
 
 @router.post("/score-all")
@@ -156,7 +187,12 @@ async def score_all_contacts(
         response = supabase.table("contacts").select("*").eq("user_id", user["id"]).execute()
         
         if not response.data:
-            return {"framework": framework, "scored": 0, "errors": [], "message": "No contacts found"}
+            return {
+                "framework": framework,
+                "scored": 0,
+                "errors": [],
+                "message": "No contacts found"
+            }
         
         contacts = response.data
         config = SCORING_CONFIGS.get(framework_lower, {})
@@ -167,13 +203,22 @@ async def score_all_contacts(
             try:
                 if framework_lower == "mdcp":
                     result = calculate_mdcp_score(contact, config)
-                    update_data = {"mdcp_score": result["score"], "mdcp_tier": result["tier"]}
+                    update_data = {
+                        "mdcp_score": result["score"],
+                        "mdcp_tier": result["tier"]
+                    }
                 elif framework_lower == "bant":
                     result = calculate_bant_score(contact, config)
-                    update_data = {"bant_score": result["score"], "bant_tier": result["tier"]}
-                else:
+                    update_data = {
+                        "bant_score": result["score"],
+                        "bant_tier": result["tier"]
+                    }
+                else:  # spice
                     result = calculate_spice_score(contact, config)
-                    update_data = {"spice_score": result["score"], "spice_tier": result["tier"]}
+                    update_data = {
+                        "spice_score": result["score"],
+                        "spice_tier": result["tier"]
+                    }
                 
                 supabase.table("contacts").update(update_data).eq("id", contact["id"]).execute()
                 scored_count += 1
@@ -216,17 +261,30 @@ async def score_single_contact(
         
         if framework_lower == "mdcp":
             result = calculate_mdcp_score(contact, config)
-            update_data = {"mdcp_score": result["score"], "mdcp_tier": result["tier"]}
+            update_data = {
+                "mdcp_score": result["score"],
+                "mdcp_tier": result["tier"]
+            }
         elif framework_lower == "bant":
             result = calculate_bant_score(contact, config)
-            update_data = {"bant_score": result["score"], "bant_tier": result["tier"]}
-        else:
+            update_data = {
+                "bant_score": result["score"],
+                "bant_tier": result["tier"]
+            }
+        else:  # spice
             result = calculate_spice_score(contact, config)
-            update_data = {"spice_score": result["score"], "spice_tier": result["tier"]}
+            update_data = {
+                "spice_score": result["score"],
+                "spice_tier": result["tier"]
+            }
         
         supabase.table("contacts").update(update_data).eq("id", contact_id).execute()
         
-        return {"contact_id": contact_id, "framework": framework, **result}
+        return {
+            "contact_id": contact_id,
+            "framework": framework,
+            **result
+        }
     except HTTPException:
         raise
     except Exception as e:
