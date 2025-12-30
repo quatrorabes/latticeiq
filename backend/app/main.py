@@ -342,14 +342,17 @@ except ImportError as e:
         CRM_ROUTER_AVAILABLE = False
         logger.error({"event": "router_import_failed", "router": "crm", "error": str(e)})
 
-# Enrichment Router
+# Enrichment Router Import
+ENRICH_ROUTER_AVAILABLE = False
+enrich_router = None
 try:
-    from enrichment_v3.enrich_router import router as enrich_router
-    ENRICHMENT_AVAILABLE = True
+    from app.enrichment_v3.enrich_router import router as enrich_router
+    ENRICH_ROUTER_AVAILABLE = True
+    logger.info("", extra={"event": "router_imported", "router": "enrichment", "source": "app.enrichment_v3.enrich_router"})
 except (ImportError, ModuleNotFoundError) as e:
-    print(f"⚠️ Enrichment router not available: {e}")
-    enrich_router = None
-    ENRICHMENT_AVAILABLE = False
+    logger.warning(f"Enrichment router not available: {e}")
+    ENRICH_ROUTER_AVAILABLE = False
+    
 # Scoring Router - WITH FALLBACK IMPORTS
     
 SCORING_AVAILABLE = False
@@ -422,6 +425,12 @@ if enrich_router:
     logger.info("✅ Enrichment router registered at /api/v3/enrich")
 else:
     logger.warning("⚠️ Enrichment router not registered")
+    
+# Register enrichment router
+if ENRICH_ROUTER_AVAILABLE and enrich_router is not None:
+    app.include_router(enrich_router, prefix="/api/v3")
+    logger.info("", extra={"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
+    
     
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
