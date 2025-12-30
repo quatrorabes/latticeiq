@@ -41,9 +41,10 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
 def strip_code_fences(text: str) -> str:
     """Remove markdown code fences from JSON responses"""
     # Remove `````` markers
-    text = re.sub(r'^```
-    text = re.sub(r'^```\s*$', '', text, flags=re.MULTILINE)
+    text = re.sub(r"^```
+    text = re.sub(r"^```\s*$", "", text, flags=re.MULTILINE)
     return text.strip()
+        
 
 
 async def enrich_with_perplexity(contact: Dict[str, Any]) -> Dict[str, Any]:
@@ -261,3 +262,4 @@ async def get_enrichment_data(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Data fetch failed: {str(e)}")
+        
