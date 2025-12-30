@@ -13,7 +13,8 @@ router = APIRouter(prefix="/enrich", tags=["Enrichment"])
 # Environment variables
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+# Try both possible env var names
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_SERVICE_KEY")
 
 # Initialize Supabase client
 supabase = None
@@ -44,8 +45,8 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
 
 def strip_code_fences(text: str) -> str:
     """Remove markdown code fences from JSON responses"""
-    # Remove ```json and ``` markers
-    text = re.sub("^```json\\s*", "", text, flags=re.MULTILINE)
+    # Remove `````` markers
+    text = re.sub("^```
     text = re.sub("^```\\s*$", "", text, flags=re.MULTILINE)
     return text.strip()
 
@@ -57,29 +58,29 @@ async def enrich_with_perplexity(contact: Dict[str, Any]) -> Dict[str, Any]:
     
     # Build enrichment prompt
     prompt = f"""
-    Research and provide detailed intelligence about this sales contact:
-    
-    Name: {contact.get('first_name', '')} {contact.get('last_name', '')}
-    Email: {contact.get('email', '')}
-    Company: {contact.get('company', '')}
-    Title: {contact.get('title', '')}
-    LinkedIn: {contact.get('linkedin_url', '')}
-    
-    Provide a JSON response with the following structure:
-    {{
-        "summary": "2-3 sentence overview of the contact",
-        "persona_type": "Decision-maker|Champion|Influencer|Initiator",
-        "vertical": "Industry vertical (SaaS, Healthcare, Finance, etc.)",
-        "talking_points": ["Point 1", "Point 2", "Point 3"],
-        "company_overview": "Brief company description",
-        "recommended_approach": "How to engage this contact",
-        "inferred_title": "Standardized job title if available",
-        "inferred_company_website": "Company website if found",
-        "inferred_location": "Location if available"
-    }}
-    
-    Only return valid JSON, no markdown formatting.
-    """
+Research and provide detailed intelligence about this sales contact:
+
+Name: {contact.get('first_name', '')} {contact.get('last_name', '')}
+Email: {contact.get('email', '')}
+Company: {contact.get('company', '')}
+Title: {contact.get('title', '')}
+LinkedIn: {contact.get('linkedin_url', '')}
+
+Provide a JSON response with the following structure:
+{{
+    "summary": "2-3 sentence overview of the contact",
+    "persona_type": "Decision-maker|Champion|Influencer|Initiator",
+    "vertical": "Industry vertical (SaaS, Healthcare, Finance, etc.)",
+    "talking_points": ["Point 1", "Point 2", "Point 3"],
+    "company_overview": "Brief company description",
+    "recommended_approach": "How to engage this contact",
+    "inferred_title": "Standardized job title if available",
+    "inferred_company_website": "Company website if found",
+    "inferred_location": "Location if available"
+}}
+
+Only return valid JSON, no markdown formatting.
+"""
     
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -160,10 +161,8 @@ async def enrich_contact(
         # Auto-fill empty fields from enrichment
         if not contact.get("title") and enrichment_data.get("inferred_title"):
             update_data["title"] = enrichment_data["inferred_title"]
-        
         if not contact.get("vertical") and enrichment_data.get("vertical"):
             update_data["vertical"] = enrichment_data["vertical"]
-            
         if not contact.get("persona_type") and enrichment_data.get("persona_type"):
             update_data["persona_type"] = enrichment_data["persona_type"]
         
@@ -182,7 +181,6 @@ async def enrich_contact(
         # Update status to 'failed'
         if supabase:
             supabase.table("contacts").update({"enrichment_status": "failed"}).eq("id", contact_id).execute()
-        
         raise HTTPException(status_code=500, detail=f"Enrichment error: {str(e)}")
 
 
@@ -202,7 +200,6 @@ async def get_enrichment_status(
             raise HTTPException(status_code=404, detail="Contact not found")
         
         contact = response.data[0]
-        
         return {
             "contact_id": contact_id,
             "status": contact.get("enrichment_status", "pending"),
@@ -232,7 +229,6 @@ async def get_enrichment_data(
             raise HTTPException(status_code=404, detail="Contact not found")
         
         contact = response.data[0]
-        
         return {
             "contact_id": contact_id,
             "enrichment_data": contact.get("enrichment_data", {}),
