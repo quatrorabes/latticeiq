@@ -132,6 +132,14 @@ app.add_middleware(
 )
 
 # ============================================================================
+# EXPLICIT CORS PREFLIGHT HANDLER (fixes Cloudflare/Render CORS issues)
+# ============================================================================
+@app.options("/{path:path}")
+async def preflight_handler(path: str):
+    """Handle CORS preflight requests explicitly for all routes."""
+    return {"detail": "ok"}
+
+# ============================================================================
 # INITIALIZE SUPABASE
 # ============================================================================
 def initialize_supabase() -> Optional[Client]:
@@ -399,3 +407,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
+    
