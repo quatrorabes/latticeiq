@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { supabase } from './lib/supabaseClient';
 import type { Session } from '@supabase/supabase-js';
 
@@ -76,6 +77,12 @@ function App() {
           </Routes>
         </main>
       </div>
+
+      {/* ✅ Portal container for modals - renders at document.body */}
+      {createPortal(
+        <div id="modal-root" />,
+        document.body
+      )}
     </Router>
   );
 }
