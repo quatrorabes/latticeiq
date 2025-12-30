@@ -45,9 +45,10 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, A
 
 def strip_code_fences(text: str) -> str:
     """Remove markdown code fences from JSON responses"""
-    # Remove `````` markers
-    text = re.sub("^```
-    text = re.sub("^```\\s*$", "", text, flags=re.MULTILINE)
+    # Remove opening code fence with optional language identifier (e.g., ```
+    text = re.sub(r"^```[a-zA-Z]*\s*\n?", "", text, flags=re.MULTILINE)
+    # Remove closing code fence
+    text = re.sub(r"^```
     return text.strip()
 
 
@@ -103,7 +104,7 @@ Only return valid JSON, no markdown formatting.
                 raise HTTPException(status_code=response.status_code, detail=f"Perplexity API error: {response.text}")
             
             result = response.json()
-            content = result["choices"][0]["message"]["content"]
+            content = result["choices"]["message"]["content"]
             
             # Strip code fences and parse JSON
             content = strip_code_fences(content)
@@ -143,7 +144,7 @@ async def enrich_contact(
         if not response.data:
             raise HTTPException(status_code=404, detail="Contact not found")
         
-        contact = response.data[0]
+        contact = response.data
         
         # 2. Update status to 'processing'
         supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", contact_id).execute()
@@ -199,7 +200,7 @@ async def get_enrichment_status(
         if not response.data:
             raise HTTPException(status_code=404, detail="Contact not found")
         
-        contact = response.data[0]
+        contact = response.data
         return {
             "contact_id": contact_id,
             "status": contact.get("enrichment_status", "pending"),
@@ -228,7 +229,7 @@ async def get_enrichment_data(
         if not response.data:
             raise HTTPException(status_code=404, detail="Contact not found")
         
-        contact = response.data[0]
+        contact = response.data
         return {
             "contact_id": contact_id,
             "enrichment_data": contact.get("enrichment_data", {}),
