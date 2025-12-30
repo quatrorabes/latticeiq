@@ -1,32 +1,13 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import supabase from '../lib/supabaseClient';
+import { supabase } from '../lib/supabaseClient';  // FIXED: Named import
 import type { Contact } from '../types/contact';
 import ContactDetailModal from '../components/ContactDetailModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
 interface EnrichedContact extends Contact {
-  enrichment_data?: {
-    summary?: string;
-    talking_points?: string[];
-    hook?: string;
-    objections?: string[];
-    next_steps?: string[];
-    bant?: {
-      budget?: string;
-      authority?: string;
-      need?: string;
-      timeline?: string;
-    };
-    spice?: {
-      situation?: string;
-      problem?: string;
-      implication?: string;
-      consequence?: string;
-      decision?: string;
-    };
-  };
+  enrichment_data?: any;
   enrichment_status?: string;
   mdcp_score?: number;
   mdcp_tier?: string;
@@ -48,16 +29,14 @@ export default function ContactsPage() {
 
   // Get session on mount
   useEffect(() => {
-    const getSession = async () => {
-      const { data } = await supabase.auth.getSession();
+    supabase.auth.getSession().then(({ data }) => {
       setSession(data.session);
-    };
-    getSession();
+    });
   }, []);
 
   // Fetch contacts with CORS fix
   const fetchContacts = async () => {
-    if (!session) {
+    if (!session?.access_token) {
       setError('Not authenticated');
       setLoading(false);
       return;
@@ -71,267 +50,157 @@ export default function ContactsPage() {
       const headers: HeadersInit = {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
-        'Origin': window.location.origin,
+        'Origin': window.location.origin,  // CORS FIX
       };
 
       const response = await fetch(`${API_BASE}/api/v3/contacts`, {
         method: 'GET',
         headers,
-        credentials: 'include',
+        credentials: 'include',  // CORS FIX
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to fetch contacts: ${response.status} - ${errorText}`);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
       const data = await response.json();
       const contactsList = Array.isArray(data) ? data : data.contacts || [];
-      
       setContacts(contactsList);
       setFilteredContacts(contactsList);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch contacts';
-      console.error('Error fetching contacts:', message);
-      setError(message);
+    } catch (err: any) {
+      console.error('Fetch error:', err);
+      setError(err.message || 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch on session change
   useEffect(() => {
-    if (session) {
-      fetchContacts();
-    }
+    if (session) fetchContacts();
   }, [session]);
 
-  // Handle search
   const handleSearch = (query: string) => {
     setSearchQuery(query);
-    const filtered = contacts.filter((contact) =>
-      `${contact.first_name || ''} ${contact.last_name || ''}`
-        .toLowerCase()
-        .includes(query.toLowerCase()) ||
-      contact.email?.toLowerCase().includes(query.toLowerCase()) ||
-      contact.company?.toLowerCase().includes(query.toLowerCase())
+    const lowerQuery = query.toLowerCase();
+    const filtered = contacts.filter(contact =>
+      contact.first_name?.toLowerCase().includes(lowerQuery) ||
+      contact.last_name?.toLowerCase().includes(lowerQuery) ||
+      contact.email?.toLowerCase().includes(lowerQuery) ||
+      contact.company?.toLowerCase().includes(lowerQuery)
     );
     setFilteredContacts(filtered);
   };
 
-  // Handle modal open
   const openModal = (contact: EnrichedContact) => {
     setSelectedContact(contact);
     setIsModalOpen(true);
   };
 
-  // Handle modal close
   const closeModal = () => {
     setSelectedContact(null);
     setIsModalOpen(false);
   };
 
-  // Handle contact update
-  const handleContactUpdate = (updated: EnrichedContact) => {
-    setContacts((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    );
-    setFilteredContacts((prev) =>
-      prev.map((c) => (c.id === updated.id ? updated : c))
-    );
-    setSelectedContact(updated);
-  };
-
-  // Handle delete
-  const handleDelete = async (contactId: string) => {
-    if (!session) {
-      alert('Not authenticated');
-      return;
-    }
-
-    if (!window.confirm('Are you sure you want to delete this contact?')) {
-      return;
-    }
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this contact?')) return;
 
     try {
-      const token = session.access_token;
-      const headers: HeadersInit = {
+      const token = session?.access_token;
+      const headers = {
         'Authorization': `Bearer ${token}`,
         'Origin': window.location.origin,
       };
 
-      const response = await fetch(`${API_BASE}/api/v3/contacts/${contactId}`, {
+      const res = await fetch(`${API_BASE}/api/v3/contacts/${id}`, {
         method: 'DELETE',
         headers,
         credentials: 'include',
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to delete contact: ${response.status}`);
-      }
+      if (!res.ok) throw new Error('Delete failed');
 
-      setContacts((prev) => prev.filter((c) => c.id !== contactId));
-      setFilteredContacts((prev) => prev.filter((c) => c.id !== contactId));
-      if (selectedContact?.id === contactId) {
-        closeModal();
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to delete contact';
-      console.error('Error deleting contact:', message);
-      alert(`Error: ${message}`);
+      setContacts(c => c.filter(contact => contact.id !== id));
+      setFilteredContacts(c => c.filter(contact => contact.id !== id));
+    } catch (err: any) {
+      alert(err.message);
     }
   };
 
-  // Helper functions
-  const asString = (value: unknown): string => {
-    if (typeof value === 'string') return value;
-    if (Array.isArray(value)) return value.join(', ');
-    if (value === null || value === undefined) return '';
-    return String(value);
+  const getStatusClass = (status?: string) => {
+    const classes = {
+      completed: 'bg-green-100 text-green-800',
+      processing: 'bg-yellow-100 text-yellow-800',
+      failed: 'bg-red-100 text-red-800',
+      pending: 'bg-gray-100 text-gray-800',
+    };
+    return classes[status?.toLowerCase() as keyof typeof classes] || classes.pending!;
   };
 
-  const getStatusBadge = (status: string | undefined) => {
-    const baseClass = 'px-3 py-1 rounded text-xs font-medium';
-    switch (status?.toLowerCase()) {
-      case 'completed':
-        return `${baseClass} bg-green-500/20 text-green-300`;
-      case 'processing':
-        return `${baseClass} bg-blue-500/20 text-blue-300`;
-      case 'failed':
-        return `${baseClass} bg-red-500/20 text-red-300`;
-      default:
-        return `${baseClass} bg-gray-500/20 text-gray-300`;
-    }
-  };
-
-  const getScoreTier = (score: number | undefined) => {
-    if (!score) return '-';
-    if (score >= 75) return 'HIGH';
-    if (score >= 50) return 'MEDIUM';
-    return 'LOW';
-  };
+  if (loading) return <div className="flex justify-center py-8">Loading...</div>;
+  if (error) return <div className="text-red-500 p-4">{error}</div>;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white p-8">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Contacts</h1>
-          <p className="text-gray-400">Manage and score your contacts</p>
-        </div>
+    <div className="p-8 max-w-7xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">Contacts ({contacts.length})</h1>
+      
+      <input
+        type="text"
+        placeholder="Search contacts..."
+        value={searchQuery}
+        onChange={e => handleSearch(e.target.value)}
+        className="w-full max-w-md p-3 border rounded-lg mb-6"
+      />
 
-        {/* Search Bar */}
-        <div className="mb-6">
-          <input
-            type="text"
-            placeholder="Search by name, email, or company..."
-            value={searchQuery}
-            onChange={(e) => handleSearch(e.target.value)}
-            className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded text-white placeholder-gray-500 focus:outline-none focus:border-teal-500"
-          />
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="mb-6 p-4 bg-red-500/20 border border-red-500 rounded text-red-300">
-            {error}
-          </div>
-        )}
-
-        {/* Loading State */}
-        {loading && (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border border-teal-500 border-t-transparent"></div>
-          </div>
-        )}
-
-        {/* Contacts Table */}
-        {!loading && (
-          <div className="overflow-x-auto bg-gray-900 rounded border border-gray-800">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-gray-800 bg-gray-800/50">
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">NAME</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">EMAIL</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">COMPANY</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">TITLE</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">MDCP</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">BANT</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">SPICE</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">STATUS</th>
-                  <th className="px-6 py-3 text-left text-sm font-semibold text-gray-300">ACTIONS</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredContacts.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-8 text-center text-gray-500">
-                      {contacts.length === 0
-                        ? 'No contacts found. Import from CRM or CSV to get started.'
-                        : 'No contacts match your search.'}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredContacts.map((contact) => (
-                    <tr key={contact.id} className="border-b border-gray-800 hover:bg-gray-800/50 cursor-pointer transition">
-                      <td className="px-6 py-4 text-sm">
-                        <button
-                          onClick={() => openModal(contact)}
-                          className="text-teal-400 hover:text-teal-300"
-                        >
-                          {contact.first_name} {contact.last_name}
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-400">{contact.email || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-400">{contact.company || '-'}</td>
-                      <td className="px-6 py-4 text-sm text-gray-400">{contact.title || contact.job_title || '-'}</td>
-                      <td className="px-6 py-4 text-sm">
-                        {contact.mdcp_score ?? '-'}
-                        {contact.mdcp_tier && <span className="ml-1 text-xs bg-blue-500/20 px-2 py-1 rounded">{contact.mdcp_tier.toUpperCase()}</span>}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {contact.bant_score ?? '-'}
-                        {contact.bant_tier && <span className="ml-1 text-xs bg-green-500/20 px-2 py-1 rounded">{contact.bant_tier.toUpperCase()}</span>}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {contact.spice_score ?? '-'}
-                        {contact.spice_tier && <span className="ml-1 text-xs bg-purple-500/20 px-2 py-1 rounded">{contact.spice_tier.toUpperCase()}</span>}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        <span className={getStatusBadge(contact.enrichment_status)}>
-                          {contact.enrichment_status || 'pending'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        <button
-                          onClick={() => handleDelete(contact.id)}
-                          className="px-3 py-1 bg-red-500/20 text-red-400 rounded hover:bg-red-500/30 transition"
-                        >
-                          Delete
-                        </button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
+      <div className="overflow-x-auto">
+        <table className="w-full bg-white border rounded-lg shadow">
+          <thead>
+            <tr className="bg-gray-50">
+              <th className="p-4 text-left">Name</th>
+              <th className="p-4 text-left">Email</th>
+              <th className="p-4 text-left">Company</th>
+              <th className="p-4 text-left">Title</th>
+              <th className="p-4 text-left">MDCP</th>
+              <th className="p-4 text-left">BANT</th>
+              <th className="p-4 text-left">SPICE</th>
+              <th className="p-4 text-left">Status</th>
+              <th className="p-4 text-left">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredContacts.map(contact => (
+              <tr key={contact.id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => openModal(contact)}>
+                <td className="p-4 font-medium">{contact.first_name} {contact.last_name}</td>
+                <td className="p-4">{contact.email || '-'}</td>
+                <td className="p-4">{contact.company || '-'}</td>
+                <td className="p-4">{contact.title || '-'}</td>
+                <td className="p-4">{contact.mdcp_score || '-'}</td>
+                <td className="p-4">{contact.bant_score || '-'}</td>
+                <td className="p-4">{contact.spice_score || '-'}</td>
+                <td className="p-4">
+                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(contact.enrichment_status)}`}>
+                    {contact.enrichment_status || 'pending'}
+                  </span>
+                </td>
+                <td className="p-4">
+                  <button onClick={e => { e.stopPropagation(); handleDelete(contact.id!); }} className="text-red-600 hover:text-red-800">
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
-      {/* Modal */}
-      {isModalOpen &&
-        selectedContact &&
-        createPortal(
-          <ContactDetailModal
-            contact={selectedContact}
-            isOpen={isModalOpen}
-            onClose={closeModal}
-            onContactUpdate={handleContactUpdate}
-            session={session}
-          />,
-          document.body
-        )}
+      {isModalOpen && selectedContact && createPortal(
+        <ContactDetailModal
+          contact={selectedContact}
+          isOpen={true}
+          onClose={closeModal}
+        />,
+        document.body
+      )}
     </div>
   );
 }
