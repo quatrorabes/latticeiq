@@ -1,9 +1,10 @@
 // frontend/src/pages/ScoringConfigPage.tsx
-import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../context/AuthContext';
-import { Settings2, RefreshCw, Users, Play, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
+import { Sliders, Play, RefreshCw, CheckCircle, AlertCircle, Users } from 'lucide-react';
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
 interface Contact {
   id: string;
@@ -12,74 +13,87 @@ interface Contact {
   email?: string;
   company?: string;
   job_title?: string;
-  title?: string;
   mdcp_score?: number;
-  mdcp_tier?: string;
   bant_score?: number;
-  bant_tier?: string;
   spice_score?: number;
+  mdcp_tier?: string;
+  bant_tier?: string;
   spice_tier?: string;
-  enrichment_status?: string;
 }
 
-interface FrameworkConfig {
+interface ScoreAllResult {
+  ok?: boolean;
   framework: string;
-  weights: Record<string, number>;
-  thresholds: { hotMin: number; warmMin: number };
-  config?: Record<string, any>;
+  total_contacts?: number;
+  total?: number;
+  scored?: number;
+  updated?: number;
+  failed?: { contact_id: string; error: string }[];
+  errors?: { contact_id: string; error: string }[];
+  message: string;
 }
 
-const FRAMEWORK_INFO = {
-  mdcp: {
+const FRAMEWORKS = [
+  {
+    id: 'mdcp',
     name: 'MDCP',
     description: 'Money, Decision-maker, Champion, Process',
-    detail: 'Best for straightforward enterprise sales with clear budget and decision-makers.'
+    detail: 'Best for straightforward enterprise sales with clear budget and decision-makers.',
+    color: 'from-cyan-500 to-blue-500',
   },
-  bant: {
+  {
+    id: 'bant',
     name: 'BANT',
     description: 'Budget, Authority, Need, Timeline',
-    detail: 'Industry standard for enterprise sales qualification with detailed criteria.'
+    detail: 'Industry standard for enterprise sales qualification with detailed criteria.',
+    color: 'from-orange-500 to-red-500',
   },
-  spice: {
+  {
+    id: 'spice',
     name: 'SPICE',
     description: 'Situation, Problem, Implication, Critical Event, Decision',
-    detail: 'Best for complex solutions with multiple stakeholders.'
-  }
-};
+    detail: 'Best for complex solutions with multiple stakeholders.',
+    color: 'from-green-500 to-emerald-500',
+  },
+];
 
 export default function ScoringConfigPage() {
-  const { session } = useAuth();
-  const [selectedFramework, setSelectedFramework] = useState<'mdcp' | 'bant' | 'spice'>('mdcp');
+  const location = useLocation();
+  const [selectedFramework, setSelectedFramework] = useState<string>('mdcp');
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
-  const [contactsLoading, setContactsLoading] = useState(false);
+  const [scoring, setScoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [contactsError, setContactsError] = useState<string | null>(null);
-  const [scoringResult, setScoringResult] = useState<any>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [scoreResult, setScoreResult] = useState<ScoreAllResult | null>(null);
 
-  // Fetch contacts
-  const fetchContacts = useCallback(async () => {
+  // Fetch contacts on mount and when navigating back to this page
+  useEffect(() => {
+    fetchContacts();
+  }, [location.key]);
+
+  const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
-      setContactsError('Not authenticated');
-      return;
+      throw new Error('Not authenticated');
     }
+    return {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    };
+  };
 
-    setContactsLoading(true);
-    setContactsError(null);
-
+  const fetchContacts = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const response = await fetch(`${API_URL}/api/v3/contacts`, {
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/api/v3/contacts`, { headers });
+      
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        throw new Error(`Failed to fetch contacts: ${response.status}`);
       }
-
+      
       const data = await response.json();
       
       // Handle different response shapes
@@ -90,63 +104,65 @@ export default function ScoringConfigPage() {
       } else if (data?.data && Array.isArray(data.data)) {
         setContacts(data.data);
       } else {
-        console.warn('Unexpected contacts response shape:', data);
+        console.warn('Unexpected contacts response:', data);
         setContacts([]);
       }
     } catch (err: any) {
-      console.error('Failed to fetch contacts:', err);
-      setContactsError(err.message || 'Failed to fetch contacts');
+      console.error('Error fetching contacts:', err);
+      setError(err.message || 'Failed to fetch contacts');
       setContacts([]);
-    } finally {
-      setContactsLoading(false);
-    }
-  }, [session?.access_token]);
-
-  // Fetch contacts on mount
-  useEffect(() => {
-    fetchContacts();
-  }, [fetchContacts]);
-
-  // Score all contacts
-  const handleScoreAll = async () => {
-    if (!session?.access_token) {
-      setError('Not authenticated');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setScoringResult(null);
-
-    try {
-      const response = await fetch(`${API_URL}/api/v3/scoring/score-all?framework=${selectedFramework}`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
-      }
-
-      const result = await response.json();
-      setScoringResult(result);
-      
-      // Refresh contacts to show updated scores
-      await fetchContacts();
-    } catch (err: any) {
-      console.error('Scoring failed:', err);
-      setError(err.message || 'Scoring failed');
     } finally {
       setLoading(false);
     }
   };
 
-  // Get score and tier for a contact based on selected framework
-  const getContactScore = (contact: Contact) => {
+  const handleScoreAll = async () => {
+    setScoring(true);
+    setError(null);
+    setSuccess(null);
+    setScoreResult(null);
+    
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/api/v3/scoring/score-all?framework=${selectedFramework}`, {
+        method: 'POST',
+        headers,
+      });
+      
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Scoring failed: ${response.status}`);
+      }
+      
+      const result: ScoreAllResult = await response.json();
+      setScoreResult(result);
+      setSuccess(result.message);
+      
+      // Refresh contacts to show updated scores
+      await fetchContacts();
+    } catch (err: any) {
+      console.error('Error scoring contacts:', err);
+      setError(err.message || 'Failed to score contacts');
+    } finally {
+      setScoring(false);
+    }
+  };
+
+  const getTierBadge = (tier?: string) => {
+    if (!tier) return null;
+    const colors: Record<string, string> = {
+      hot: 'bg-red-500/20 text-red-400 border-red-500/30',
+      warm: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+      cold: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    };
+    return (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium border ${colors[tier] || 'bg-gray-500/20 text-gray-400'}`}>
+        {tier.toUpperCase()}
+      </span>
+    );
+  };
+
+  const getScoreForFramework = (contact: Contact): { score?: number; tier?: string } => {
     switch (selectedFramework) {
       case 'mdcp':
         return { score: contact.mdcp_score, tier: contact.mdcp_tier };
@@ -155,171 +171,188 @@ export default function ScoringConfigPage() {
       case 'spice':
         return { score: contact.spice_score, tier: contact.spice_tier };
       default:
-        return { score: undefined, tier: undefined };
+        return {};
     }
   };
 
-  // Tier badge component
-  const getTierBadge = (tier?: string) => {
-    if (!tier) return <span className="text-gray-500">-</span>;
-    
-    const colors: Record<string, string> = {
-      hot: 'bg-red-500 text-white',
-      warm: 'bg-yellow-500 text-black',
-      cold: 'bg-blue-500 text-white'
-    };
-    
-    return (
-      <span className={`px-2 py-1 rounded text-xs font-medium ${colors[tier] || 'bg-gray-500 text-white'}`}>
-        {tier.toUpperCase()}
-      </span>
-    );
-  };
+  const failedItems = scoreResult?.failed || scoreResult?.errors || [];
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Settings2 className="w-6 h-6" />
-          Scoring Configuration
-        </h1>
-        <p className="text-gray-400 mt-1">
-          Customize how leads are qualified and prioritized. Set weights and thresholds for each framework.
-        </p>
-      </div>
-
-      {/* Refresh Button */}
-      <button
-        onClick={fetchContacts}
-        disabled={contactsLoading}
-        className="mb-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 disabled:opacity-50"
-      >
-        <RefreshCw className={`w-4 h-4 ${contactsLoading ? 'animate-spin' : ''}`} />
-        Refresh
-      </button>
-
-      {/* Framework Tabs */}
-      <div className="flex gap-0 mb-6">
-        {Object.entries(FRAMEWORK_INFO).map(([key, info]) => (
-          <button
-            key={key}
-            onClick={() => setSelectedFramework(key as 'mdcp' | 'bant' | 'spice')}
-            className={`flex-1 p-4 text-center transition-colors ${
-              selectedFramework === key
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-            }`}
-          >
-            <div className="font-bold">{info.name}</div>
-            <div className="text-sm opacity-80">{info.description}</div>
-            <div className="text-xs mt-1 opacity-60">{info.detail}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* Score All Section */}
-      <div className="bg-gray-800 rounded-lg p-4 mb-6">
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-2">
-          <Users className="w-5 h-5" />
-          Score All Contacts
-        </h2>
-        <p className="text-gray-400 mb-4">
-          Apply {selectedFramework.toUpperCase()} scoring to all {contacts.length} contacts
-        </p>
-        
-        <button
-          onClick={handleScoreAll}
-          disabled={loading || contacts.length === 0}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <Play className="w-4 h-4" />
-          {loading ? 'Scoring...' : 'Score All'}
-        </button>
-
-        {/* Scoring Result */}
-        {scoringResult && (
-          <div className="mt-4 p-3 bg-green-900/30 border border-green-600 rounded">
-            <p className="text-green-400">
-              ✅ {scoringResult.message || `Scored ${scoringResult.scored}/${scoringResult.total} contacts`}
+    <div className="min-h-screen bg-[#0a0e17] text-white p-6">
+      <div className="max-w-6xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              <Sliders className="w-8 h-8 text-cyan-400" />
+              Scoring Configuration
+            </h1>
+            <p className="text-gray-400 mt-2">
+              Customize how leads are qualified and prioritized. Set weights and thresholds for each framework.
             </p>
           </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="mt-4 p-3 bg-red-900/30 border border-red-600 rounded flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 text-red-400" />
-            <p className="text-red-400">{error}</p>
-          </div>
-        )}
-      </div>
-
-      {/* Contacts Error */}
-      {contactsError && (
-        <div className="mb-4 p-3 bg-red-900/30 border border-red-600 rounded flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-red-400" />
-          <p className="text-red-400">{contactsError}</p>
+          <button
+            onClick={fetchContacts}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
         </div>
-      )}
 
-      {/* Contacts Table */}
-      <div className="bg-gray-800 rounded-lg p-4">
-        <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-          <Users className="w-5 h-5" />
-          Contacts ({contacts.length})
-        </h2>
+        {/* Framework Selection */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          {FRAMEWORKS.map((fw) => (
+            <button
+              key={fw.id}
+              onClick={() => setSelectedFramework(fw.id)}
+              className={`p-4 rounded-xl border-2 transition-all text-left ${
+                selectedFramework === fw.id
+                  ? 'border-cyan-500 bg-cyan-500/10'
+                  : 'border-gray-700 bg-gray-800/50 hover:border-gray-600'
+              }`}
+            >
+              <div className={`text-lg font-bold bg-gradient-to-r ${fw.color} bg-clip-text text-transparent`}>
+                {fw.name}
+              </div>
+              <div className="text-sm text-gray-400 mt-1">{fw.description}</div>
+              <div className="text-xs text-gray-500 mt-2">{fw.detail}</div>
+            </button>
+          ))}
+        </div>
 
-        {contactsLoading ? (
-          <div className="text-center py-8 text-gray-400">
-            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
-            Loading contacts...
+        {/* Score All Button */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-6 mb-8">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Users className="w-8 h-8 text-cyan-400" />
+              <div>
+                <h3 className="text-lg font-semibold">Score All Contacts</h3>
+                <p className="text-gray-400 text-sm">
+                  Apply {selectedFramework.toUpperCase()} scoring to all {contacts.length} contacts
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleScoreAll}
+              disabled={scoring || contacts.length === 0}
+              className={`flex items-center gap-2 px-6 py-3 rounded-lg font-semibold transition-all ${
+                scoring || contacts.length === 0
+                  ? 'bg-gray-600 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400'
+              }`}
+            >
+              {scoring ? (
+                <>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
+                  Scoring...
+                </>
+              ) : (
+                <>
+                  <Play className="w-5 h-5" />
+                  Score All
+                </>
+              )}
+            </button>
           </div>
-        ) : contacts.length === 0 ? (
-          <div className="text-center py-8 text-gray-400">
-            <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            No contacts found. Import contacts from the Contacts page.
+
+          {/* Status Messages */}
+          {error && (
+            <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+              <AlertCircle className="w-5 h-5 text-red-400" />
+              <span className="text-red-400">{error}</span>
+            </div>
+          )}
+
+          {success && (
+            <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center gap-3">
+              <CheckCircle className="w-5 h-5 text-green-400" />
+              <span className="text-green-400">{success}</span>
+            </div>
+          )}
+
+          {failedItems.length > 0 && (
+            <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
+              <div className="text-orange-400 font-medium mb-2">
+                {failedItems.length} contacts failed to score:
+              </div>
+              <ul className="text-sm text-gray-400 list-disc list-inside">
+                {failedItems.slice(0, 5).map((f, i) => (
+                  <li key={i}>{f.contact_id}: {f.error}</li>
+                ))}
+                {failedItems.length > 5 && (
+                  <li>...and {failedItems.length - 5} more</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Contacts Table */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden">
+          <div className="p-4 border-b border-gray-700">
+            <h3 className="text-lg font-semibold">
+              Contacts ({contacts.length})
+            </h3>
           </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-gray-700">
-                  <th className="pb-2 pr-4">Name</th>
-                  <th className="pb-2 pr-4">Company</th>
-                  <th className="pb-2 pr-4">Title</th>
-                  <th className="pb-2 pr-4">{selectedFramework.toUpperCase()} Score</th>
-                  <th className="pb-2">Tier</th>
-                </tr>
-              </thead>
-              <tbody>
-                {contacts.map((contact) => {
-                  const { score, tier } = getContactScore(contact);
-                  return (
-                    <tr key={contact.id} className="border-b border-gray-700/50 hover:bg-gray-700/30">
-                      <td className="py-3 pr-4">
-                        <div className="font-medium">
-                          {contact.first_name} {contact.last_name}
-                        </div>
-                        <div className="text-sm text-gray-400">{contact.email}</div>
-                      </td>
-                      <td className="py-3 pr-4 text-gray-300">{contact.company || '-'}</td>
-                      <td className="py-3 pr-4 text-gray-300">{contact.job_title || contact.title || '-'}</td>
-                      <td className="py-3 pr-4">
-                        {score !== undefined && score !== null ? (
-                          <span className="font-mono">{score}</span>
-                        ) : (
-                          <span className="text-gray-500">-</span>
-                        )}
-                      </td>
-                      <td className="py-3">{getTierBadge(tier)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+
+          {loading ? (
+            <div className="p-8 text-center text-gray-400">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+              Loading contacts...
+            </div>
+          ) : contacts.length === 0 ? (
+            <div className="p-8 text-center text-gray-400">
+              <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              No contacts found. Import contacts from the Contacts page.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-900/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Company</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">Title</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">{selectedFramework.toUpperCase()} Score</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">Tier</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {contacts.slice(0, 50).map((contact) => {
+                    const { score, tier } = getScoreForFramework(contact);
+                    return (
+                      <tr key={contact.id} className="hover:bg-gray-700/30 transition-colors">
+                        <td className="px-4 py-3">
+                          <div className="font-medium">
+                            {contact.first_name} {contact.last_name}
+                          </div>
+                          <div className="text-sm text-gray-400">{contact.email}</div>
+                        </td>
+                        <td className="px-4 py-3 text-gray-300">{contact.company || '-'}</td>
+                        <td className="px-4 py-3 text-gray-300">{contact.job_title || '-'}</td>
+                        <td className="px-4 py-3 text-center">
+                          {score !== undefined && score !== null ? (
+                            <span className="font-mono font-bold text-lg">{score}</span>
+                          ) : (
+                            <span className="text-gray-500">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">{getTierBadge(tier)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {contacts.length > 50 && (
+                <div className="p-4 text-center text-gray-400 border-t border-gray-700">
+                  Showing 50 of {contacts.length} contacts
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
