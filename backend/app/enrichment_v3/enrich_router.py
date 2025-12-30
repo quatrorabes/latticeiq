@@ -16,12 +16,14 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
 # Initialize Supabase client
+supabase = None
 try:
-    from supabase import create_client
-    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+        from supabase import create_client
+        supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 except Exception as e:
     print(f"⚠️ Supabase client initialization failed: {e}")
-    supabase = None
+    
 
 
 def get_current_user(authorization: Optional[str] = Header(None)) -> Dict[str, Any]:
@@ -240,3 +242,4 @@ async def get_enrichment_data(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Data fetch failed: {str(e)}")
+        
