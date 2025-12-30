@@ -348,7 +348,7 @@ enrich_router = None
 try:
     from app.enrichment_v3.enrich_router import router as enrich_router
     ENRICH_ROUTER_AVAILABLE = True
-    logger.info("", extra={"event": "router_imported", "router": "enrichment", "source": "app.enrichment_v3.enrich_router"})
+    logger.info("", extra={"event": "router_imported", "router": "enrichment"})
 except (ImportError, ModuleNotFoundError) as e:
     logger.warning(f"Enrichment router not available: {e}")
     ENRICH_ROUTER_AVAILABLE = False

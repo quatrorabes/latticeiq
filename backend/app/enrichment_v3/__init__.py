@@ -1,1 +1,1 @@
-from .quick_enrich.quick_enrich import router
+# Enrichment v3 - router imported directly in main.py
