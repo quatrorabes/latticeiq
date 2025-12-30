@@ -113,13 +113,13 @@ if getattr(settings, "CORS_ALLOW_ORIGIN", "").strip():
     origin = settings.CORS_ALLOW_ORIGIN.strip()
     if origin not in allow_origins:
         allow_origins.append(origin)
-
+        
 if settings.CORS_ALLOW_ORIGINS.strip():
     for o in settings.CORS_ALLOW_ORIGINS.split(","):
         o = o.strip()
         if o and o not in allow_origins:
             allow_origins.append(o)
-
+            
 logger.info({"event": "cors_config", "allow_origins": allow_origins})
 
 app.add_middleware(
@@ -132,16 +132,59 @@ app.add_middleware(
 )
 
 # ============================================================================
+# NUCLEAR OPTION: CORS DEBUGGING MIDDLEWARE
+# ============================================================================
+from fastapi import Request
+
+@app.middleware("http")
+async def log_cors_debug(request: Request, call_next):
+    """Log every request origin and response CORS headers for debugging."""
+    origin = request.headers.get("origin")
+    method = request.method
+    path = request.url.path
+    
+    logger.info({
+        "event": "cors_debug_request",
+        "method": method,
+        "path": path,
+        "origin": origin,
+        "headers": dict(request.headers),
+    })
+    
+    response = await call_next(request)
+    
+    logger.info({
+        "event": "cors_debug_response",
+        "method": method,
+        "path": path,
+        "origin": origin,
+        "cors_allow_origin": response.headers.get("access-control-allow-origin"),
+        "cors_allow_credentials": response.headers.get("access-control-allow-credentials"),
+        "cors_allow_methods": response.headers.get("access-control-allow-methods"),
+        "cors_allow_headers": response.headers.get("access-control-allow-headers"),
+        "status_code": response.status_code,
+    })
+    
+    return response
+
+
+# ============================================================================
 # EXPLICIT CORS PREFLIGHT HANDLER (fixes Cloudflare/Render CORS issues)
 # ============================================================================
 @app.options("/{path:path}")
-async def preflight_handler(path: str):
+async def preflight_handler(path: str, request: Request):
     """Handle CORS preflight requests explicitly for all routes."""
+    origin = request.headers.get("origin", "")
+    logger.info({"event": "preflight_explicit", "path": path, "origin": origin})
+    
+    # Return empty response - CORS middleware will add headers
     return {"detail": "ok"}
+
 
 # ============================================================================
 # INITIALIZE SUPABASE
 # ============================================================================
+    
 def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning({"event": "supabase_not_configured"})
