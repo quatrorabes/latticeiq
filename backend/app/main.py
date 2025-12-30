@@ -20,7 +20,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
-from enrichment_v3.enrich_router import router as enrich_router
+from app.enrichment_v3.enrich_router import router as enrich_router
 
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
