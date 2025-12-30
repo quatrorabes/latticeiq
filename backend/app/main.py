@@ -132,6 +132,29 @@ app.add_middleware(
 )
 
 # ============================================================================
+# CLOUDFLARE CACHE BYPASS (prevent caching of OPTIONS preflight)
+# ============================================================================
+@app.middleware("http")
+async def set_cache_headers(request: Request, call_next):
+    """Prevent Cloudflare from caching OPTIONS requests or preflight responses."""
+    response = await call_next(request)
+    
+    if request.method == "OPTIONS":
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        response.headers["CDN-Cache-Control"] = "no-cache"
+        
+    return response
+
+# ============================================================================
+# EXPLICIT CORS PREFLIGHT HANDLER
+# ============================================================================
+@app.options("/{path:path}")
+async def preflight_handler(path: str):
+    return {"detail": "ok"}
+
+# ============================================================================
 # NUCLEAR OPTION: CORS DEBUGGING MIDDLEWARE
 # ============================================================================
 from fastapi import Request
@@ -408,26 +431,9 @@ async def health():
     return {
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
-        "database": "connected" if supabase else "disconnected",
+        "uptime": "running",
     }
-
-
-@app.get("/api/health")
-async def api_health():
-    return {
-        "status": "ok",
-        "timestamp": datetime.utcnow().isoformat(),
-        "database": "connected" if supabase else "disconnected",
-        "version": "3.0.0",
-        "cors_allow_origins": allow_origins,
-        "routers": {
-            "contacts": CONTACTS_ROUTER_AVAILABLE,
-            "settings": SETTINGS_ROUTER_AVAILABLE,
-            "crm": CRM_ROUTER_AVAILABLE,
-            "enrichment": ENRICH_ROUTER_AVAILABLE,
-            "scoring": SCORING_AVAILABLE,
-        },
-    }
+    
 
 
 @app.get("/api/routes")
