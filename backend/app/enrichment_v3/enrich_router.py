@@ -180,9 +180,9 @@ Return ONLY valid JSON, no markdown or extra text."""
                     ],
                     "temperature": 0.1,
                     "max_tokens": 1500,
-                }
+                }  # ✅ CLOSING BRACE ADDED
             )
-        
+            
         if response.status_code != 200:
             logger.error(f"Perplexity API error: {response.status_code} - {response.text}")
             raise HTTPException(status_code=502, detail="Enrichment service error")
