@@ -1,6 +1,7 @@
 // ============================================================================
 // FILE: frontend/src/pages/ScoringConfigPage.tsx
 // PURPOSE: Scoring configuration + Score All Contacts
+// FIXED: Dec 29, 2025 - Query params, response interface, tier calculation
 // ============================================================================
 
 import React, { useState, useEffect } from 'react';
@@ -20,24 +21,13 @@ interface Contact {
   mdcp_score?: number;
   bant_score?: number;
   spice_score?: number;
-  mdcp_tier?: string;
-  bant_tier?: string;
-  spice_tier?: string;
-}
-
-interface ScoringConfig {
-  framework: string;
-  weights: Record<string, number>;
-  thresholds: { hotMin: number; warmMin: number };
-  config: Record<string, any>;
 }
 
 interface ScoreAllResult {
-  ok: boolean;
   framework: string;
-  total_contacts: number;
-  updated: number;
-  failed: { contact_id: string; error: string }[];
+  scored: number;
+  total: number;
+  errors: string[];
   message: string;
 }
 
@@ -48,6 +38,8 @@ const FRAMEWORKS = [
     description: 'Money, Decision-maker, Champion, Process',
     detail: 'Best for straightforward enterprise sales with clear budget and decision-makers.',
     color: 'from-cyan-500 to-blue-500',
+    hotMin: 80,
+    warmMin: 50,
   },
   {
     id: 'bant',
@@ -55,6 +47,8 @@ const FRAMEWORKS = [
     description: 'Budget, Authority, Need, Timeline',
     detail: 'Industry standard for enterprise sales qualification with detailed criteria.',
     color: 'from-orange-500 to-red-500',
+    hotMin: 75,
+    warmMin: 50,
   },
   {
     id: 'spice',
@@ -62,6 +56,8 @@ const FRAMEWORKS = [
     description: 'Situation, Problem, Implication, Critical Event, Decision',
     detail: 'Best for complex solutions with multiple stakeholders.',
     color: 'from-green-500 to-emerald-500',
+    hotMin: 85,
+    warmMin: 60,
   },
 ];
 
@@ -120,11 +116,14 @@ export default function ScoringConfigPage() {
 
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_BASE}/api/v3/scoring/score-all`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ framework: selectedFramework }),
-      });
+      // FIX: Use query parameter instead of JSON body
+      const response = await fetch(
+        `${API_BASE}/api/v3/scoring/score-all?framework=${selectedFramework}`,
+        {
+          method: 'POST',
+          headers,
+        }
+      );
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -133,7 +132,7 @@ export default function ScoringConfigPage() {
 
       const result: ScoreAllResult = await response.json();
       setScoreResult(result);
-      setSuccess(result.message);
+      setSuccess(result.message || `Successfully scored ${result.scored} contacts`);
 
       // Refresh contacts to show updated scores
       await fetchContacts();
@@ -145,8 +144,20 @@ export default function ScoringConfigPage() {
     }
   };
 
-  const getTierBadge = (tier?: string) => {
-    if (!tier) return null;
+  // Calculate tier from score based on framework thresholds
+  const getTierFromScore = (score: number | undefined, frameworkId: string): string | null => {
+    if (score === undefined || score === null) return null;
+    
+    const fw = FRAMEWORKS.find(f => f.id === frameworkId);
+    if (!fw) return null;
+    
+    if (score >= fw.hotMin) return 'hot';
+    if (score >= fw.warmMin) return 'warm';
+    return 'cold';
+  };
+
+  const getTierBadge = (tier: string | null) => {
+    if (!tier) return <span className="text-gray-500">-</span>;
     const colors: Record<string, string> = {
       hot: 'bg-red-500/20 text-red-400 border-red-500/30',
       warm: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
@@ -159,17 +170,20 @@ export default function ScoringConfigPage() {
     );
   };
 
-  const getScoreForFramework = (contact: Contact): { score?: number; tier?: string } => {
+  const getScoreForFramework = (contact: Contact): number | undefined => {
     switch (selectedFramework) {
-      case 'mdcp':
-        return { score: contact.mdcp_score, tier: contact.mdcp_tier };
-      case 'bant':
-        return { score: contact.bant_score, tier: contact.bant_tier };
-      case 'spice':
-        return { score: contact.spice_score, tier: contact.spice_tier };
-      default:
-        return {};
+      case 'mdcp': return contact.mdcp_score;
+      case 'bant': return contact.bant_score;
+      case 'spice': return contact.spice_score;
+      default: return undefined;
     }
+  };
+
+  const getScoreColor = (score: number | undefined): string => {
+    if (score === undefined || score === null) return 'text-gray-500';
+    if (score >= 80) return 'text-green-400';
+    if (score >= 50) return 'text-yellow-400';
+    return 'text-red-400';
   };
 
   return (
@@ -255,27 +269,27 @@ export default function ScoringConfigPage() {
           {/* Status Messages */}
           {error && (
             <div className="mt-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-red-400" />
+              <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
               <span className="text-red-400">{error}</span>
             </div>
           )}
           {success && (
             <div className="mt-4 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center gap-3">
-              <CheckCircle className="w-5 h-5 text-green-400" />
+              <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
               <span className="text-green-400">{success}</span>
             </div>
           )}
-          {scoreResult && scoreResult.failed.length > 0 && (
+          {scoreResult && scoreResult.errors && scoreResult.errors.length > 0 && (
             <div className="mt-4 p-4 bg-orange-500/10 border border-orange-500/30 rounded-lg">
               <div className="text-orange-400 font-medium mb-2">
-                {scoreResult.failed.length} contact(s) failed to score:
+                {scoreResult.errors.length} error(s) during scoring:
               </div>
               <ul className="text-sm text-gray-400 list-disc list-inside">
-                {scoreResult.failed.slice(0, 5).map((f, i) => (
-                  <li key={i}>{f.contact_id}: {f.error}</li>
+                {scoreResult.errors.slice(0, 5).map((err, i) => (
+                  <li key={i}>{err}</li>
                 ))}
-                {scoreResult.failed.length > 5 && (
-                  <li>...and {scoreResult.failed.length - 5} more</li>
+                {scoreResult.errors.length > 5 && (
+                  <li>...and {scoreResult.errors.length - 5} more</li>
                 )}
               </ul>
             </div>
@@ -324,7 +338,8 @@ export default function ScoringConfigPage() {
                 </thead>
                 <tbody className="divide-y divide-gray-700">
                   {contacts.slice(0, 50).map((contact) => {
-                    const { score, tier } = getScoreForFramework(contact);
+                    const score = getScoreForFramework(contact);
+                    const tier = getTierFromScore(score, selectedFramework);
                     return (
                       <tr key={contact.id} className="hover:bg-gray-700/30 transition-colors">
                         <td className="px-4 py-3">
@@ -341,7 +356,9 @@ export default function ScoringConfigPage() {
                         </td>
                         <td className="px-4 py-3 text-center">
                           {score !== undefined && score !== null ? (
-                            <span className="font-mono font-bold text-lg">{score}</span>
+                            <span className={`font-mono font-bold text-lg ${getScoreColor(score)}`}>
+                              {score}
+                            </span>
                           ) : (
                             <span className="text-gray-500">-</span>
                           )}
