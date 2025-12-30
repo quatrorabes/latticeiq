@@ -1,80 +1,93 @@
 # ============================================================================
 # FILE: backend/app/scoring/router.py
-# PURPOSE: Scoring Framework APIs - MDCP, BANT, SPICE, Unified
-# UPDATED: Dec 29, 2025 - Added score-all endpoint and real scoring logic
+# PURPOSE: Scoring Framework APIs - MDCP, BANT, SPICE + batch score-all
+# SCHEMA: contacts.user_id, contacts.mdcp_score, contacts.bant_score, contacts.spice_score, *_tier
+# UPDATED: Dec 29, 2025 - Fix Supabase write failures, correct user_id scoping
 # ============================================================================
 
-import logging
 import os
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+import logging
+from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+import jwt  # PyJWT
+from fastapi import APIRouter, Depends, HTTPException, Header, status
 from pydantic import BaseModel
 from supabase import create_client, Client
 
 logger = logging.getLogger("latticeiq")
 
 # ============================================================================
-# SUPABASE CLIENT
+# SUPABASE CLIENTS
 # ============================================================================
 
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY", "")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "") or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
-supabase: Client = None
+_supabase_anon: Optional[Client] = None
+_supabase_service: Optional[Client] = None
 
-def get_supabase() -> Client:
-    """Get or create Supabase client"""
-    global supabase
-    if supabase is None:
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            logger.warning("Supabase credentials not configured")
-            return None
-        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return supabase
+def get_supabase_anon() -> Optional[Client]:
+    global _supabase_anon
+    if _supabase_anon is None and SUPABASE_URL and SUPABASE_ANON_KEY:
+        _supabase_anon = create_client(SUPABASE_URL, SUPABASE_ANON_KEY)
+    return _supabase_anon
+
+def get_supabase_service() -> Optional[Client]:
+    global _supabase_service
+    if _supabase_service is None and SUPABASE_URL and SUPABASE_SERVICE_KEY:
+        _supabase_service = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    return _supabase_service
+
+def get_db_client_for_writes() -> Client:
+    """
+    Prefer service role for backend writes (bypasses RLS).
+    If not present, fall back to anon client (may fail under RLS).
+    """
+    svc = get_supabase_service()
+    if svc:
+        return svc
+    anon = get_supabase_anon()
+    if anon:
+        return anon
+    raise HTTPException(status_code=503, detail="Supabase not configured")
 
 # ============================================================================
-# AUTH DEPENDENCY
+# AUTH
 # ============================================================================
 
-async def get_current_user(authorization: str = Header(None)) -> dict:
-    """Validate Supabase JWT and extract user info"""
+class CurrentUser(BaseModel):
+    id: str
+    email: str = ""
+
+async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
-    
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing authorization header",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    parts = authorization.split(" ", 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization format")
+
+    token = parts[1]
     try:
-        scheme, token = authorization.split(" ", 1)
-        if scheme.lower() != "bearer":
-            raise ValueError("Invalid scheme")
-        
-        # Decode JWT to get user_id (basic decode without verification for now)
-        import base64
-        import json
-        
-        # JWT has 3 parts: header.payload.signature
-        parts = token.split(".")
-        if len(parts) >= 2:
-            # Decode payload (add padding if needed)
-            payload = parts[1]
-            padding = 4 - len(payload) % 4
-            if padding != 4:
-                payload += "=" * padding
-            decoded = base64.urlsafe_b64decode(payload)
-            claims = json.loads(decoded)
-            user_id = claims.get("sub", "unknown")
-            email = claims.get("email", "user@example.com")
-            return {"id": user_id, "email": email}
-        
-        # Fallback if JWT parsing fails
-        return {"id": "user-id-from-token", "email": "user@example.com"}
-        
+        payload = jwt.decode(token, options={"verify_signature": False})
+        user_id = payload.get("sub")
+        email = payload.get("email", "")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token: missing user id")
+        return CurrentUser(id=str(user_id), email=str(email))
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Token validation error: {str(e)}")
-        raise HTTPException(status_code=401, detail=f"Invalid token: {str(e)}")
+        logger.error(f"Auth decode error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # ============================================================================
-# MODELS
+# REQUEST MODELS
 # ============================================================================
 
 class ScoreRequest(BaseModel):
@@ -82,257 +95,162 @@ class ScoreRequest(BaseModel):
     enrichment_data: Optional[Dict[str, Any]] = None
 
 class ScoreAllRequest(BaseModel):
-    framework: str = "mdcp"
-
-class ScoringConfig(BaseModel):
-    framework: str
-    weights: Dict[str, float]
-    thresholds: Dict[str, float]
+    framework: str = "mdcp"  # mdcp | bant | spice
 
 # ============================================================================
-# CONFIG DATA (DEFAULT CONFIGURATIONS)
+# CONFIGS
 # ============================================================================
 
-SCORING_CONFIGS = {
+SCORING_CONFIGS: Dict[str, Dict[str, Any]] = {
     "mdcp": {
         "framework": "MDCP",
-        "weights": {
-            "money": 25,
-            "decisionmaker": 25,
-            "champion": 25,
-            "process": 25,
-        },
-        "thresholds": {
-            "hotMin": 71,
-            "warmMin": 40,
-        },
+        "weights": {"money": 25, "decisionmaker": 25, "champion": 25, "process": 25},
+        "thresholds": {"hotMin": 71, "warmMin": 40},
         "config": {
-            "moneyMinRevenue": 1000000,
-            "moneyMaxRevenue": 100000000,
-            "decisionmakerTitles": ["CEO", "CTO", "VP", "VP Sales", "CMO", "Director", "President", "Founder", "Owner", "Chief"],
-            "championEngagementDays": 30,
-            "processDays": 90,
+            "moneyMinRevenue": 1_000_000,
+            "decisionmakerTitles": ["CEO", "CTO", "COO", "CFO", "Chief", "President", "Founder", "Owner", "VP", "Director"],
         },
     },
     "bant": {
         "framework": "BANT",
-        "weights": {
-            "budget": 25,
-            "authority": 25,
-            "need": 25,
-            "timeline": 25,
-        },
-        "thresholds": {
-            "hotMin": 71,
-            "warmMin": 40,
-        },
-        "config": {
-            "budgetMin": 100000,
-            "budgetMax": 10000000,
-            "authorityTitles": ["VP", "Director", "Manager", "CEO", "CTO", "CMO", "President"],
-            "needCriteria": ["Problem identified", "Active search", "Competitive threat"],
-            "timelineDays": 90,
-        },
+        "weights": {"budget": 25, "authority": 25, "need": 25, "timeline": 25},
+        "thresholds": {"hotMin": 71, "warmMin": 40},
+        "config": {"authorityTitles": ["CEO", "CTO", "COO", "CFO", "Chief", "VP", "Director", "Head"]},
     },
     "spice": {
         "framework": "SPICE",
-        "weights": {
-            "situation": 20,
-            "problem": 20,
-            "implication": 20,
-            "criticalevent": 20,
-            "decision": 20,
-        },
-        "thresholds": {
-            "hotMin": 71,
-            "warmMin": 40,
-        },
-        "config": {
-            "situationCriteria": ["New role", "New company", "New budget"],
-            "problemCriteria": ["Current pain point", "Documented issue"],
-            "implicationLevel": ["High", "Medium", "Low"],
-            "criticalEventTypes": ["Fiscal year end", "New initiative", "Crisis"],
-            "decisionProcessMonths": 3,
-        },
+        "weights": {"situation": 20, "problem": 20, "implication": 20, "criticalevent": 20, "decision": 20},
+        "thresholds": {"hotMin": 71, "warmMin": 40},
+        "config": {},
     },
 }
 
 # ============================================================================
-# SCORING CALCULATORS
+# SCORING HELPERS
 # ============================================================================
 
-def calculate_mdcp_score(contact: Dict[str, Any], config: Dict[str, Any]) -> tuple:
-    """Calculate MDCP score for a contact"""
-    weights = config.get("weights", SCORING_CONFIGS["mdcp"]["weights"])
-    thresholds = config.get("thresholds", SCORING_CONFIGS["mdcp"]["thresholds"])
-    cfg = config.get("config", SCORING_CONFIGS["mdcp"]["config"])
-    
-    breakdown = {}
-    
-    # Money (check revenue)
-    revenue = contact.get("annual_revenue") or contact.get("annualrevenue") or 0
+def _tier_from_score(score: int, thresholds: Dict[str, Any]) -> str:
+    hot_min = int(thresholds.get("hotMin", 71))
+    warm_min = int(thresholds.get("warmMin", 40))
+    if score >= hot_min:
+        return "hot"
+    if score >= warm_min:
+        return "warm"
+    return "cold"
+
+def _safe_lower(v: Any) -> str:
+    return str(v or "").lower()
+
+def calculate_mdcp(contact: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[int, str, Dict[str, int]]:
+    weights = cfg["weights"]
+    thresholds = cfg["thresholds"]
+    rules = cfg.get("config", {})
+
+    revenue = contact.get("annual_revenue") or 0
     try:
-        revenue = float(revenue) if revenue else 0
-    except (ValueError, TypeError):
-        revenue = 0
-    
-    min_rev = cfg.get("moneyMinRevenue", 1000000)
-    max_rev = cfg.get("moneyMaxRevenue", 100000000)
-    
-    if revenue >= min_rev:
-        breakdown["money"] = weights.get("money", 25)
-    elif revenue > 0:
-        breakdown["money"] = int(weights.get("money", 25) * 0.5)
-    else:
-        breakdown["money"] = 0
-    
-    # Decision-maker (check title)
-    title = (contact.get("title") or contact.get("job_title") or contact.get("jobtitle") or "").lower()
-    dm_titles = [t.lower() for t in cfg.get("decisionmakerTitles", [])]
-    
-    if any(dm in title for dm in dm_titles):
-        breakdown["decisionmaker"] = weights.get("decisionmaker", 25)
-    elif title:
-        breakdown["decisionmaker"] = int(weights.get("decisionmaker", 25) * 0.25)
-    else:
-        breakdown["decisionmaker"] = 0
-    
-    # Champion (check enrichment status)
-    enrichment_status = contact.get("enrichment_status") or contact.get("enrichmentstatus") or ""
-    if enrichment_status == "completed":
-        breakdown["champion"] = weights.get("champion", 25)
-    elif enrichment_status == "processing":
-        breakdown["champion"] = int(weights.get("champion", 25) * 0.5)
-    else:
-        breakdown["champion"] = int(weights.get("champion", 25) * 0.25)
-    
-    # Process (check data completeness)
+        revenue_f = float(revenue) if revenue is not None else 0.0
+    except Exception:
+        revenue_f = 0.0
+
+    title = _safe_lower(contact.get("job_title"))
+    dm_titles = [t.lower() for t in rules.get("decisionmakerTitles", [])]
+
     has_email = bool(contact.get("email"))
-    has_phone = bool(contact.get("phone"))
     has_company = bool(contact.get("company"))
-    has_linkedin = bool(contact.get("linkedin_url") or contact.get("linkedinurl"))
-    
-    completeness = sum([has_email, has_phone, has_company, has_linkedin]) / 4
-    breakdown["process"] = int(weights.get("process", 25) * completeness)
-    
-    # Calculate total score
-    total_score = sum(breakdown.values())
-    
-    # Determine tier
-    if total_score >= thresholds.get("hotMin", 71):
-        tier = "hot"
-    elif total_score >= thresholds.get("warmMin", 40):
-        tier = "warm"
+    has_phone = bool(contact.get("phone"))
+    has_linkedin = bool(contact.get("linkedin_url"))
+
+    # Money
+    money = weights["money"] if revenue_f >= float(rules.get("moneyMinRevenue", 1_000_000)) else (weights["money"] // 2 if revenue_f > 0 else 0)
+
+    # Decision-maker
+    decisionmaker = weights["decisionmaker"] if any(k in title for k in dm_titles) else (weights["decisionmaker"] // 4 if title else 0)
+
+    # Champion proxy: enrichment status
+    status_val = _safe_lower(contact.get("enrichment_status"))
+    if status_val == "completed":
+        champion = weights["champion"]
+    elif status_val == "processing":
+        champion = weights["champion"] // 2
     else:
-        tier = "cold"
-    
-    return total_score, tier, breakdown
+        champion = weights["champion"] // 4
 
+    # Process proxy: completeness
+    completeness = (int(has_email) + int(has_company) + int(has_phone) + int(has_linkedin)) / 4.0
+    process = int(weights["process"] * completeness)
 
-def calculate_bant_score(contact: Dict[str, Any], config: Dict[str, Any]) -> tuple:
-    """Calculate BANT score for a contact"""
-    weights = config.get("weights", SCORING_CONFIGS["bant"]["weights"])
-    thresholds = config.get("thresholds", SCORING_CONFIGS["bant"]["thresholds"])
-    cfg = config.get("config", SCORING_CONFIGS["bant"]["config"])
-    
-    breakdown = {}
-    
-    # Budget
-    revenue = contact.get("annual_revenue") or contact.get("annualrevenue") or 0
+    breakdown = {"money": int(money), "decisionmaker": int(decisionmaker), "champion": int(champion), "process": int(process)}
+    score = int(sum(breakdown.values()))
+    tier = _tier_from_score(score, thresholds)
+    return score, tier, breakdown
+
+def calculate_bant(contact: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[int, str, Dict[str, int]]:
+    weights = cfg["weights"]
+    thresholds = cfg["thresholds"]
+    rules = cfg.get("config", {})
+
+    title = _safe_lower(contact.get("job_title"))
+    auth_titles = [t.lower() for t in rules.get("authorityTitles", [])]
+
+    # Budget proxy: revenue known
+    revenue = contact.get("annual_revenue") or 0
     try:
-        revenue = float(revenue) if revenue else 0
-    except (ValueError, TypeError):
-        revenue = 0
-    
-    if revenue >= cfg.get("budgetMin", 100000):
-        breakdown["budget"] = weights.get("budget", 25)
-    elif revenue > 0:
-        breakdown["budget"] = int(weights.get("budget", 25) * 0.5)
-    else:
-        breakdown["budget"] = int(weights.get("budget", 25) * 0.25)
-    
-    # Authority
-    title = (contact.get("title") or contact.get("job_title") or contact.get("jobtitle") or "").lower()
-    auth_titles = [t.lower() for t in cfg.get("authorityTitles", [])]
-    
-    if any(at in title for at in auth_titles):
-        breakdown["authority"] = weights.get("authority", 25)
-    elif title:
-        breakdown["authority"] = int(weights.get("authority", 25) * 0.25)
-    else:
-        breakdown["authority"] = 0
-    
-    # Need (based on enrichment data presence)
-    enrichment_data = contact.get("enrichment_data") or contact.get("enrichmentdata")
-    if enrichment_data:
-        breakdown["need"] = weights.get("need", 25)
-    elif contact.get("enrichment_status") == "completed":
-        breakdown["need"] = int(weights.get("need", 25) * 0.75)
-    else:
-        breakdown["need"] = int(weights.get("need", 25) * 0.25)
-    
-    # Timeline (default scoring based on data freshness)
-    created_at = contact.get("created_at") or contact.get("createdat")
-    breakdown["timeline"] = int(weights.get("timeline", 25) * 0.75)
-    
-    total_score = sum(breakdown.values())
-    
-    if total_score >= thresholds.get("hotMin", 71):
-        tier = "hot"
-    elif total_score >= thresholds.get("warmMin", 40):
-        tier = "warm"
-    else:
-        tier = "cold"
-    
-    return total_score, tier, breakdown
+        revenue_f = float(revenue) if revenue is not None else 0.0
+    except Exception:
+        revenue_f = 0.0
+    budget = weights["budget"] if revenue_f > 0 else weights["budget"] // 4
 
+    # Authority: title-based
+    authority = weights["authority"] if any(k in title for k in auth_titles) else (weights["authority"] // 4 if title else 0)
 
-def calculate_spice_score(contact: Dict[str, Any], config: Dict[str, Any]) -> tuple:
-    """Calculate SPICE score for a contact"""
-    weights = config.get("weights", SCORING_CONFIGS["spice"]["weights"])
-    thresholds = config.get("thresholds", SCORING_CONFIGS["spice"]["thresholds"])
-    
-    breakdown = {}
-    
-    # Situation (company info available)
+    # Need: enrichment_data exists
+    enrichment = contact.get("enrichment_data")
+    need = weights["need"] if enrichment else weights["need"] // 4
+
+    # Timeline: default mid
+    timeline = int(weights["timeline"] * 0.75)
+
+    breakdown = {"budget": int(budget), "authority": int(authority), "need": int(need), "timeline": int(timeline)}
+    score = int(sum(breakdown.values()))
+    tier = _tier_from_score(score, thresholds)
+    return score, tier, breakdown
+
+def calculate_spice(contact: Dict[str, Any], cfg: Dict[str, Any]) -> Tuple[int, str, Dict[str, int]]:
+    weights = cfg["weights"]
+    thresholds = cfg["thresholds"]
+
+    title = _safe_lower(contact.get("job_title"))
+
     has_company = bool(contact.get("company"))
     has_vertical = bool(contact.get("vertical"))
-    breakdown["situation"] = int(weights.get("situation", 20) * (0.5 if has_company else 0) + (0.5 if has_vertical else 0))
-    
-    # Problem (enrichment data suggests needs)
-    enrichment_status = contact.get("enrichment_status") or contact.get("enrichmentstatus")
-    if enrichment_status == "completed":
-        breakdown["problem"] = weights.get("problem", 20)
-    else:
-        breakdown["problem"] = int(weights.get("problem", 20) * 0.25)
-    
-    # Implication (title suggests decision power)
-    title = (contact.get("title") or contact.get("job_title") or "").lower()
-    if any(t in title for t in ["ceo", "cto", "president", "founder", "owner", "chief"]):
-        breakdown["implication"] = weights.get("implication", 20)
-    elif any(t in title for t in ["vp", "director", "head"]):
-        breakdown["implication"] = int(weights.get("implication", 20) * 0.75)
-    else:
-        breakdown["implication"] = int(weights.get("implication", 20) * 0.25)
-    
-    # Critical Event (default moderate score)
-    breakdown["criticalevent"] = int(weights.get("criticalevent", 20) * 0.5)
-    
-    # Decision (contact completeness)
     has_email = bool(contact.get("email"))
     has_phone = bool(contact.get("phone"))
-    breakdown["decision"] = int(weights.get("decision", 20) * ((0.5 if has_email else 0) + (0.5 if has_phone else 0)))
-    
-    total_score = sum(breakdown.values())
-    
-    if total_score >= thresholds.get("hotMin", 71):
-        tier = "hot"
-    elif total_score >= thresholds.get("warmMin", 40):
-        tier = "warm"
+
+    enrichment_status = _safe_lower(contact.get("enrichment_status"))
+
+    situation = int(weights["situation"] * (0.5 * int(has_company) + 0.5 * int(has_vertical)))
+    problem = weights["problem"] if enrichment_status == "completed" else weights["problem"] // 4
+
+    if any(k in title for k in ["ceo", "cto", "cfo", "chief", "president", "founder", "owner"]):
+        implication = weights["implication"]
+    elif any(k in title for k in ["vp", "director", "head"]):
+        implication = int(weights["implication"] * 0.75)
     else:
-        tier = "cold"
-    
-    return total_score, tier, breakdown
+        implication = weights["implication"] // 4
+
+    criticalevent = int(weights["criticalevent"] * 0.5)
+    decision = int(weights["decision"] * (0.5 * int(has_email) + 0.5 * int(has_phone)))
+
+    breakdown = {
+        "situation": int(situation),
+        "problem": int(problem),
+        "implication": int(implication),
+        "criticalevent": int(criticalevent),
+        "decision": int(decision),
+    }
+    score = int(sum(breakdown.values()))
+    tier = _tier_from_score(score, thresholds)
+    return score, tier, breakdown
 
 # ============================================================================
 # ROUTER
@@ -340,267 +258,74 @@ def calculate_spice_score(contact: Dict[str, Any], config: Dict[str, Any]) -> tu
 
 router = APIRouter(prefix="/scoring", tags=["Scoring"])
 
-# ============================================================================
-# CONFIG ENDPOINTS
-# ============================================================================
-
-@router.get("/config/{framework}")
-async def get_scoring_config(framework: str, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Get scoring configuration for a specific framework"""
-    framework_lower = framework.lower()
-    if framework_lower not in SCORING_CONFIGS:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Framework '{framework}' not found. Available: mdcp, bant, spice"
-        )
-    return SCORING_CONFIGS[framework_lower]
-
-
-@router.get("/config")
-async def get_all_configs(user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Get all scoring configurations"""
-    return SCORING_CONFIGS
-
-
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "frameworks": ["MDCP", "BANT", "SPICE"],
-        "configs_loaded": len(SCORING_CONFIGS),
-    }
-
-# ============================================================================
-# SCORE-ALL ENDPOINT (NEW)
-# ============================================================================
+    return {"status": "healthy", "frameworks": list(SCORING_CONFIGS.keys())}
 
 @router.post("/score-all")
-async def score_all_contacts(
-    request: ScoreAllRequest = None,
-    user: dict = Depends(get_current_user)
-) -> Dict[str, Any]:
-    """Score all contacts for user using specified framework"""
-    
-    framework = (request.framework if request else "mdcp").lower()
-    
+async def score_all(payload: ScoreAllRequest, user: CurrentUser = Depends(get_current_user)) -> Dict[str, Any]:
+    framework = (payload.framework or "mdcp").lower().strip()
     if framework not in SCORING_CONFIGS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid framework '{framework}'. Available: mdcp, bant, spice"
+        raise HTTPException(status_code=400, detail="Framework must be one of: mdcp, bant, spice")
+
+    db = get_db_client_for_writes()
+
+    # IMPORTANT: your schema uses user_id (not userid)
+    try:
+        contacts_res = (
+            db.table("contacts")
+            .select("id,user_id,workspace_id,email,first_name,last_name,company,job_title,phone,linkedin_url,website,vertical,persona_type,annual_revenue,enrichment_status,enrichment_data,mdcp_score,bant_score,spice_score,mdcp_tier,bant_tier,spice_tier")
+            .eq("user_id", user.id)
+            .execute()
         )
-    
-    db = get_supabase()
-    if not db:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # 1. Get user's contacts from DB
-        result = db.table("contacts").select("*").eq("user_id", user["id"]).execute()
-        contacts = result.data or []
-        
-        if not contacts:
-            return {
-                "framework": framework.upper(),
-                "scored": 0,
-                "errors": [],
-                "message": "No contacts found to score"
-            }
-        
-        # 2. Get config
-        config = SCORING_CONFIGS[framework]
-        
-        scored_count = 0
-        errors = []
-        
-        # 3. Calculate and update scores for each contact
-        for contact in contacts:
-            try:
-                if framework == "mdcp":
-                    score, tier, breakdown = calculate_mdcp_score(contact, config)
-                    update_data = {"mdcp_score": score, "mdcp_tier": tier}
-                elif framework == "bant":
-                    score, tier, breakdown = calculate_bant_score(contact, config)
-                    update_data = {"bant_score": score, "bant_tier": tier}
-                elif framework == "spice":
-                    score, tier, breakdown = calculate_spice_score(contact, config)
-                    update_data = {"spice_score": score, "spice_tier": tier}
-                
-                # Update contact in database
-                db.table("contacts").update(update_data).eq("id", contact["id"]).execute()
-                scored_count += 1
-                
-            except Exception as e:
-                errors.append({
-                    "contact_id": contact.get("id"),
-                    "error": str(e)
-                })
-                logger.error(f"Error scoring contact {contact.get('id')}: {str(e)}")
-        
-        return {
-            "framework": framework.upper(),
-            "scored": scored_count,
-            "total": len(contacts),
-            "errors": errors,
-            "message": f"Successfully scored {scored_count} of {len(contacts)} contacts"
-        }
-        
+        contacts = contacts_res.data or []
     except Exception as e:
-        logger.error(f"Error in score_all_contacts: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Failed to fetch contacts for scoring: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch contacts for scoring")
 
-# ============================================================================
-# INDIVIDUAL SCORING ENDPOINTS
-# ============================================================================
+    cfg = SCORING_CONFIGS[framework]
+    updated = 0
+    failed: List[Dict[str, Any]] = []
 
-@router.post("/mdcp")
-async def calculate_mdcp(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Calculate Match-Data-Contact-Profile (MDCP) score"""
-    try:
-        config = SCORING_CONFIGS["mdcp"]
-        score, tier, breakdown = calculate_mdcp_score(request.contact_data, config)
-        
-        return {
-            "framework": "MDCP",
-            "score": score,
-            "tier": tier,
-            "breakdown": breakdown,
-        }
-    except Exception as e:
-        logger.error(f"Error calculating MDCP score: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    for c in contacts:
+        contact_id = c.get("id")
+        try:
+            if framework == "mdcp":
+                score, tier, _ = calculate_mdcp(c, cfg)
+                update_payload = {"mdcp_score": score, "mdcp_tier": tier}
+            elif framework == "bant":
+                score, tier, _ = calculate_bant(c, cfg)
+                update_payload = {"bant_score": score, "bant_tier": tier}
+            else:
+                score, tier, _ = calculate_spice(c, cfg)
+                update_payload = {"spice_score": score, "spice_tier": tier}
 
+            # Safety scope: update by id AND user_id
+            res = (
+                db.table("contacts")
+                .update(update_payload)
+                .eq("id", contact_id)
+                .eq("user_id", user.id)
+                .execute()
+            )
 
-@router.post("/bant")
-async def calculate_bant(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Calculate Budget-Authority-Need-Timeline (BANT) score"""
-    try:
-        config = SCORING_CONFIGS["bant"]
-        score, tier, breakdown = calculate_bant_score(request.contact_data, config)
-        
-        return {
-            "framework": "BANT",
-            "score": score,
-            "tier": tier,
-            "breakdown": breakdown,
-        }
-    except Exception as e:
-        logger.error(f"Error calculating BANT score: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+            # If Supabase edge returns HTML/None, treat as failure
+            if getattr(res, "data", None) is None:
+                raise RuntimeError("Supabase update returned no JSON data (possible edge error)")
 
+            updated += 1
 
-@router.post("/spice")
-async def calculate_spice(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Calculate Situation-Problem-Implication-Critical Event-Decision (SPICE) score"""
-    try:
-        config = SCORING_CONFIGS["spice"]
-        score, tier, breakdown = calculate_spice_score(request.contact_data, config)
-        
-        return {
-            "framework": "SPICE",
-            "score": score,
-            "tier": tier,
-            "breakdown": breakdown,
-        }
-    except Exception as e:
-        logger.error(f"Error calculating SPICE score: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        except Exception as e:
+            err_text = str(e)
+            logger.error(f"Error scoring contact {contact_id}: {err_text}")
+            failed.append({"contact_id": str(contact_id), "error": err_text})
 
-
-@router.post("/unified")
-async def calculate_unified(request: ScoreRequest, user: dict = Depends(get_current_user)) -> Dict[str, Any]:
-    """Calculate unified score blending all frameworks"""
-    try:
-        mdcp_score, mdcp_tier, mdcp_breakdown = calculate_mdcp_score(
-            request.contact_data, SCORING_CONFIGS["mdcp"]
-        )
-        bant_score, bant_tier, bant_breakdown = calculate_bant_score(
-            request.contact_data, SCORING_CONFIGS["bant"]
-        )
-        spice_score, spice_tier, spice_breakdown = calculate_spice_score(
-            request.contact_data, SCORING_CONFIGS["spice"]
-        )
-        
-        # Weighted average: 40% MDCP, 30% BANT, 30% SPICE
-        unified_score = int(mdcp_score * 0.4 + bant_score * 0.3 + spice_score * 0.3)
-        
-        if unified_score >= 71:
-            unified_tier = "hot"
-        elif unified_score >= 40:
-            unified_tier = "warm"
-        else:
-            unified_tier = "cold"
-        
-        return {
-            "framework": "Unified",
-            "score": unified_score,
-            "tier": unified_tier,
-            "breakdown": {
-                "mdcp": mdcp_score,
-                "bant": bant_score,
-                "spice": spice_score,
-            },
-        }
-    except Exception as e:
-        logger.error(f"Error calculating unified score: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# ============================================================================
-# SINGLE CONTACT SCORING (for modal/detail view)
-# ============================================================================
-
-@router.post("/contact/{contact_id}")
-async def score_single_contact(
-    contact_id: str,
-    framework: str = "mdcp",
-    user: dict = Depends(get_current_user)
-) -> Dict[str, Any]:
-    """Score a single contact and update database"""
-    
-    framework = framework.lower()
-    if framework not in SCORING_CONFIGS:
-        raise HTTPException(status_code=400, detail=f"Invalid framework: {framework}")
-    
-    db = get_supabase()
-    if not db:
-        raise HTTPException(status_code=500, detail="Database not configured")
-    
-    try:
-        # Get contact
-        result = db.table("contacts").select("*").eq("id", contact_id).single().execute()
-        contact = result.data
-        
-        if not contact:
-            raise HTTPException(status_code=404, detail="Contact not found")
-        
-        # Calculate score
-        config = SCORING_CONFIGS[framework]
-        
-        if framework == "mdcp":
-            score, tier, breakdown = calculate_mdcp_score(contact, config)
-            update_data = {"mdcp_score": score, "mdcp_tier": tier}
-        elif framework == "bant":
-            score, tier, breakdown = calculate_bant_score(contact, config)
-            update_data = {"bant_score": score, "bant_tier": tier}
-        elif framework == "spice":
-            score, tier, breakdown = calculate_spice_score(contact, config)
-            update_data = {"spice_score": score, "spice_tier": tier}
-        
-        # Update contact
-        db.table("contacts").update(update_data).eq("id", contact_id).execute()
-        
-        return {
-            "contact_id": contact_id,
-            "framework": framework.upper(),
-            "score": score,
-            "tier": tier,
-            "breakdown": breakdown,
-            "updated": True
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error scoring contact {contact_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return {
+        "ok": True,
+        "framework": framework,
+        "user_id": user.id,
+        "total_contacts": len(contacts),
+        "updated": updated,
+        "failed": failed[:25],
+        "message": f"Scored {updated}/{len(contacts)} contacts using {framework.upper()}",
+    }
