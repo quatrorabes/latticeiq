@@ -1,279 +1,315 @@
-import { useState } from 'react';
+// frontend/src/components/ContactDetailModal.tsx
+import React, { useState } from 'react';
 import { createPortal } from 'react-dom';
-import type { EnrichedContact } from '../types/contact';
+import { X, RefreshCw } from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+
+const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+
+interface Contact {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  company?: string;
+  job_title?: string;
+  title?: string;
+  phone?: string;
+  linkedin_url?: string;
+  vertical?: string;
+  persona_type?: string;
+  enrichment_status?: string;
+  enrichment_data?: any;
+  mdcp_score?: number;
+  bant_score?: number;
+  spice_score?: number;
+  mdcp_tier?: string;
+  bant_tier?: string;
+  spice_tier?: string;
+}
 
 interface ContactDetailModalProps {
-  contact: EnrichedContact | null;
-  isOpen: boolean;
+  contact: Contact | null;
+  isOpen?: boolean;
   onClose: () => void;
-  onContactUpdate?: (updated: EnrichedContact) => void;
-  session?: any;
+  onUpdate: (contact: Contact) => void;
 }
 
 export default function ContactDetailModal({
   contact,
-  isOpen,
   onClose,
-  onContactUpdate,
-  session,
+  onUpdate,
 }: ContactDetailModalProps) {
-  const [enriching, setEnriching] = useState(false);
+  const [isEnriching, setIsEnriching] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [enrichData, setEnrichData] = useState<any>(contact?.enrichment_data);
 
-  if (!isOpen || !contact) return null;
-
-  const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+  if (!contact) return null;
 
   const handleEnrich = async () => {
-    if (!session?.access_token || !contact?.id) {
-      setError('Not authenticated or missing contact ID');
-      return;
-    }
-
-    setEnriching(true);
+    setIsEnriching(true);
     setError(null);
 
     try {
-      const token = session.access_token;
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'Origin': window.location.origin,
-      };
+      // ✅ SIMPLIFIED: Static import instead of dynamic
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
 
-      // CRITICAL: Backend endpoint is POST /api/v3/enrich/{id}
+      if (!token) {
+        throw new Error('Not authenticated');
+      }
+
       const response = await fetch(`${API_BASE}/api/v3/enrich/${contact.id}`, {
         method: 'POST',
-        headers,
-        credentials: 'include',
-        body: JSON.stringify({}),
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.detail || `Enrichment failed: ${response.status}`);
       }
 
-      const data = await response.json();
-      console.log('✅ Enrichment response:', data);
+      const result = await response.json();
+      console.log('✅ Enrichment complete:', result);
 
-      // Update local state with new enrichment data
-      if (data.enrichment_data) {
-        setEnrichData(data.enrichment_data);
-      }
+      // Update contact with enrichment data
+      const updatedContact: Contact = {
+        ...contact,
+        enrichment_status: 'completed',
+        enrichment_data: result.enrichment_data,
+      };
 
-      // Update parent contacts list if callback provided
-      if (onContactUpdate && data) {
-        onContactUpdate({
-          ...contact,
-          enrichment_data: data.enrichment_data,
-          enrichment_status: data.enrichment_status || 'completed',
-          mdcp_score: data.mdcp_score,
-          bant_score: data.bant_score,
-          spice_score: data.spice_score,
-        });
-      }
+      onUpdate(updatedContact);
     } catch (err: any) {
       console.error('❌ Enrichment error:', err);
       setError(err.message || 'Enrichment failed');
     } finally {
-      setEnriching(false);
+      setIsEnriching(false);
     }
   };
 
-  const enrichData_ = enrichData || contact?.enrichment_data;
+  const enrichData = contact.enrichment_data || {};
 
   const modalContent = (
-    <div className="fixed inset-0 z-40 bg-black bg-opacity-50 flex items-center justify-center p-4">
-      <div className="bg-gray-900 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-700 z-50">
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/80"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="relative z-50 w-full max-w-2xl mx-4 bg-gray-900 rounded-xl border border-gray-700 shadow-2xl max-h-[90vh] overflow-y-auto">
         {/* Header */}
-        <div className="sticky top-0 bg-gray-800 p-6 border-b border-gray-700">
-          <div className="flex justify-between items-start">
-            <div>
-              <h2 className="text-2xl font-bold text-white">
-                {contact.first_name} {contact.last_name}
-              </h2>
-              <p className="text-sm text-gray-400 mt-1">ID: {contact.id}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-white text-2xl font-bold"
-            >
-              ✕
-            </button>
-          </div>
+        <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-gray-700 bg-gray-900">
+          <h2 className="text-xl font-bold text-white">
+            {contact.first_name} {contact.last_name}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1 hover:bg-gray-800 rounded transition-colors"
+          >
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
         </div>
 
-        {/* Content */}
+        {/* Body */}
         <div className="p-6 space-y-6">
-          {/* Contact Information */}
+          {/* Basic Info */}
           <div>
-            <h3 className="text-lg font-semibold text-blue-400 mb-4">📋 Contact Information</h3>
-            <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-gray-400 uppercase mb-3">
+              Contact Information
+            </h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
               <div>
-                <label className="text-sm text-gray-400">EMAIL</label>
-                <p className="text-white font-mono">{contact.email || '(empty)'}</p>
+                <div className="text-gray-400">Email</div>
+                <div className="text-white">{contact.email || '(empty)'}</div>
               </div>
               <div>
-                <label className="text-sm text-gray-400">COMPANY</label>
-                <p className="text-white">{contact.company || '(empty)'}</p>
+                <div className="text-gray-400">Company</div>
+                <div className="text-white">{contact.company || '(empty)'}</div>
               </div>
               <div>
-                <label className="text-sm text-gray-400">JOB TITLE</label>
-                <p className="text-white">{contact.title || contact.job_title || '(empty)'}</p>
+                <div className="text-gray-400">Title</div>
+                <div className="text-white">
+                  {contact.title || contact.job_title || '(empty)'}
+                </div>
               </div>
               <div>
-                <label className="text-sm text-gray-400">PHONE</label>
-                <p className="text-white">{contact.phone || '(empty)'}</p>
+                <div className="text-gray-400">Phone</div>
+                <div className="text-white">{contact.phone || '(empty)'}</div>
               </div>
-              <div>
-                <label className="text-sm text-gray-400">LINKEDIN URL</label>
-                <p className="text-white break-all">{contact.linkedin_url || '(empty)'}</p>
-              </div>
+              {contact.linkedin_url && (
+                <div className="col-span-2">
+                  <div className="text-gray-400">LinkedIn</div>
+                  <a
+                    href={contact.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-cyan-400 hover:text-cyan-300 truncate"
+                  >
+                    {contact.linkedin_url}
+                  </a>
+                </div>
+              )}
             </div>
           </div>
 
           {/* Scores */}
           <div>
-            <h3 className="text-lg font-semibold text-blue-400 mb-4">📊 Scores</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="bg-gray-800 p-4 rounded border border-gray-700">
-                <p className="text-gray-400 text-sm">MDCP</p>
-                <p className="text-2xl font-bold text-teal-400">{contact.mdcp_score ?? '-'}</p>
-                {contact.mdcp_tier && (
-                  <p className="text-xs text-gray-500 mt-1">{contact.mdcp_tier}</p>
-                )}
-              </div>
-              <div className="bg-gray-800 p-4 rounded border border-gray-700">
-                <p className="text-gray-400 text-sm">BANT</p>
-                <p className="text-2xl font-bold text-green-400">{contact.bant_score ?? '-'}</p>
-                {contact.bant_tier && (
-                  <p className="text-xs text-gray-500 mt-1">{contact.bant_tier}</p>
-                )}
-              </div>
-              <div className="bg-gray-800 p-4 rounded border border-gray-700">
-                <p className="text-gray-400 text-sm">SPICE</p>
-                <p className="text-2xl font-bold text-purple-400">{contact.spice_score ?? '-'}</p>
-                {contact.spice_tier && (
-                  <p className="text-xs text-gray-500 mt-1">{contact.spice_tier}</p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Enrichment Status */}
-          <div>
-            <h3 className="text-lg font-semibold text-blue-400 mb-4">
-              🔄 Enrichment Status
+            <h3 className="text-sm font-semibold text-gray-400 uppercase mb-3">
+              Qualification Scores
             </h3>
-            <div className="bg-gray-800 p-4 rounded border border-gray-700">
-              <p className="text-gray-400 text-sm">STATUS</p>
-              <p className="text-lg font-mono text-white mt-1">
-                {contact.enrichment_status || 'pending'}
-              </p>
+            <div className="grid grid-cols-3 gap-4 text-sm">
+              <div className="bg-gray-800/50 p-3 rounded border border-gray-700">
+                <div className="text-gray-400">MDCP</div>
+                <div className="text-xl font-bold text-cyan-400">
+                  {contact.mdcp_score ?? '-'}
+                </div>
+                {contact.mdcp_tier && (
+                  <div className="text-xs text-gray-400 mt-1">{contact.mdcp_tier}</div>
+                )}
+              </div>
+              <div className="bg-gray-800/50 p-3 rounded border border-gray-700">
+                <div className="text-gray-400">BANT</div>
+                <div className="text-xl font-bold text-cyan-400">
+                  {contact.bant_score ?? '-'}
+                </div>
+                {contact.bant_tier && (
+                  <div className="text-xs text-gray-400 mt-1">{contact.bant_tier}</div>
+                )}
+              </div>
+              <div className="bg-gray-800/50 p-3 rounded border border-gray-700">
+                <div className="text-gray-400">SPICE</div>
+                <div className="text-xl font-bold text-cyan-400">
+                  {contact.spice_score ?? '-'}
+                </div>
+                {contact.spice_tier && (
+                  <div className="text-xs text-gray-400 mt-1">{contact.spice_tier}</div>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* Enrichment Error */}
+          {/* Status */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-400 uppercase mb-3">
+              Status
+            </h3>
+            <div className="px-3 py-2 bg-gray-800/50 rounded border border-gray-700 text-sm">
+              <span className="text-gray-400">Enrichment Status:</span>
+              <span className="ml-2 font-medium text-white capitalize">
+                {contact.enrichment_status || 'pending'}
+              </span>
+            </div>
+          </div>
+
+          {/* Error Message */}
           {error && (
-            <div className="bg-red-500/20 border border-red-500 rounded p-4">
-              <p className="text-red-300 text-sm">
-                <strong>❌ Enrichment Error:</strong> {error}
-              </p>
+            <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+              ❌ Enrichment Error: {error}
             </div>
           )}
 
           {/* Enrichment Data */}
-          {enrichData_ && (
-            <div>
-              <h3 className="text-lg font-semibold text-blue-400 mb-4">
-                ✨ Sales Intelligence
-              </h3>
-              <div className="space-y-4">
-                {enrichData_.summary && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Summary</h4>
-                    <p className="text-gray-300 text-sm">{enrichData_.summary}</p>
-                  </div>
-                )}
-
-                {enrichData_.company_overview && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Company Overview</h4>
-                    <p className="text-gray-300 text-sm">{enrichData_.company_overview}</p>
-                  </div>
-                )}
-
-                {enrichData_.talking_points && Array.isArray(enrichData_.talking_points) && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Talking Points</h4>
-                    <ul className="list-disc list-inside space-y-1 text-gray-300 text-sm">
-                      {enrichData_.talking_points.map((point: string, i: number) => (
-                        <li key={i}>{point}</li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {enrichData_.hook && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Hook</h4>
-                    <p className="text-gray-300 text-sm">{enrichData_.hook}</p>
-                  </div>
-                )}
-
-                {enrichData_.recommended_approach && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Recommended Approach</h4>
-                    <p className="text-gray-300 text-sm">{enrichData_.recommended_approach}</p>
-                  </div>
-                )}
-
-                {enrichData_.persona_type && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Persona Type</h4>
-                    <p className="text-gray-300 text-sm font-mono">{enrichData_.persona_type}</p>
-                  </div>
-                )}
-
-                {enrichData_.vertical && (
-                  <div>
-                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Vertical</h4>
-                    <p className="text-gray-300 text-sm font-mono">{enrichData_.vertical}</p>
-                  </div>
-                )}
+          {contact.enrichment_status === 'completed' && enrichData.summary && (
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold text-gray-400 mb-2">Summary</h4>
+                <p className="text-sm text-gray-300">{enrichData.summary}</p>
               </div>
+
+              {enrichData.company_overview && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">
+                    Company Overview
+                  </h4>
+                  <p className="text-sm text-gray-300">{enrichData.company_overview}</p>
+                </div>
+              )}
+
+              {enrichData.recommended_approach && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">
+                    Recommended Approach
+                  </h4>
+                  <p className="text-sm text-gray-300">{enrichData.recommended_approach}</p>
+                </div>
+              )}
+
+              {enrichData.persona_type && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">Persona</h4>
+                  <p className="text-sm text-gray-300">{enrichData.persona_type}</p>
+                </div>
+              )}
+
+              {enrichData.vertical && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">Vertical</h4>
+                  <p className="text-sm text-gray-300">{enrichData.vertical}</p>
+                </div>
+              )}
+
+              {enrichData.talking_points && Array.isArray(enrichData.talking_points) && (
+                <div>
+                  <h4 className="text-sm font-semibold text-gray-400 mb-2">
+                    Talking Points
+                  </h4>
+                  <ul className="text-sm text-gray-300 list-disc list-inside space-y-1">
+                    {enrichData.talking_points.map((point: string, idx: number) => (
+                      <li key={idx}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
 
-          {!enrichData_ && contact.enrichment_status !== 'failed' && (
-            <div className="bg-gray-800 p-4 rounded border border-gray-700 text-center">
-              <p className="text-gray-400 text-sm">
-                📭 No enrichment data yet. Click "Re-Enrich" below to start.
-              </p>
+          {contact.enrichment_status === 'processing' && (
+            <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg text-blue-400 text-sm flex items-center gap-2">
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Enrichment in progress...
+            </div>
+          )}
+
+          {contact.enrichment_status !== 'completed' && contact.enrichment_status !== 'processing' && (
+            <div className="p-3 bg-gray-800/50 rounded border border-gray-700 text-gray-400 text-sm">
+              📭 No enrichment data yet. Click "Re-Enrich" below to start.
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-gray-800 p-6 border-t border-gray-700 flex gap-3 justify-end">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition"
-          >
-            Close
-          </button>
+        <div className="sticky bottom-0 z-10 flex gap-3 p-6 border-t border-gray-700 bg-gray-900">
           <button
             onClick={handleEnrich}
-            disabled={enriching}
-            className={`px-4 py-2 rounded font-semibold transition ${
-              enriching
-                ? 'bg-yellow-600 text-yellow-100 cursor-not-allowed'
-                : 'bg-green-600 text-white hover:bg-green-700'
+            disabled={isEnriching}
+            className={`flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+              isEnriching
+                ? 'bg-gray-600 cursor-not-allowed opacity-50'
+                : 'bg-cyan-600 hover:bg-cyan-700 text-white'
             }`}
           >
-            {enriching ? '🔄 Re-Enriching...' : '⚡ Re-Enrich'}
+            {isEnriching ? (
+              <>
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                Enriching...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Re-Enrich
+              </>
+            )}
+          </button>
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 rounded-lg font-medium bg-gray-700 hover:bg-gray-600 text-white transition-colors"
+          >
+            Close
           </button>
         </div>
       </div>
