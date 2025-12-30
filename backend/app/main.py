@@ -56,7 +56,12 @@ class Settings(BaseModel):
     SUPABASE_SERVICE_KEY: str = Field(default="", alias="SUPABASE_SERVICE_KEY")
     LOG_LEVEL: str = Field(default="INFO", alias="LOG_LEVEL")
     ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
-    CORS_ALLOW_ORIGINS: str = Field(default="", alias="CORS_ALLOW_ORIGINS")  # comma-separated optional override
+
+    # Support BOTH Render keys:
+    # - CORS_ALLOW_ORIGIN (singular) matches your Render env var
+    # - CORS_ALLOW_ORIGINS (plural) optional comma-separated override
+    CORS_ALLOW_ORIGIN: str = Field(default="", alias="CORS_ALLOW_ORIGIN")
+    CORS_ALLOW_ORIGINS: str = Field(default="", alias="CORS_ALLOW_ORIGINS")
 
     class Config:
         env_file = ".env"
@@ -70,15 +75,16 @@ class Settings(BaseModel):
             SUPABASE_SERVICE_KEY=os.getenv("SUPABASE_SERVICE_KEY", ""),
             LOG_LEVEL=os.getenv("LOG_LEVEL", "INFO"),
             ENVIRONMENT=os.getenv("ENVIRONMENT", "development"),
+            CORS_ALLOW_ORIGIN=os.getenv("CORS_ALLOW_ORIGIN", ""),
             CORS_ALLOW_ORIGINS=os.getenv("CORS_ALLOW_ORIGINS", ""),
         )
+
 
 @lru_cache
 def get_settings() -> Settings:
     return Settings.from_env()
 
 settings = get_settings()
-
 # ============================================================================
 # SETUP LOGGING
 # ============================================================================
@@ -111,10 +117,21 @@ default_origins = [
     "http://127.0.0.1:3000",
 ]
 
+# Start with defaults, then merge in env overrides.
+allow_origins = list(default_origins)
+
+# If Render sets a single allowed origin (your case: CORS_ALLOW_ORIGIN)
+if getattr(settings, "CORS_ALLOW_ORIGIN", "").strip():
+    origin = settings.CORS_ALLOW_ORIGIN.strip()
+    if origin not in allow_origins:
+        allow_origins.append(origin)
+
+# If you later set a comma-separated list (CORS_ALLOW_ORIGINS), merge them too.
 if settings.CORS_ALLOW_ORIGINS.strip():
-    allow_origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
-else:
-    allow_origins = default_origins
+    for o in settings.CORS_ALLOW_ORIGINS.split(","):
+        o = o.strip()
+        if o and o not in allow_origins:
+            allow_origins.append(o)
 
 logger.info({"event": "cors_config", "allow_origins": allow_origins})
 
@@ -126,7 +143,6 @@ app.add_middleware(
     allow_headers=["*"],
     expose_headers=["*"],
 )
-
 # ============================================================================
 # INITIALIZE SUPABASE
 # ============================================================================
