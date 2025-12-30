@@ -30,7 +30,6 @@ interface Contact {
 
 interface ContactDetailModalProps {
   contact: Contact | null;
-  isOpen?: boolean;
   onClose: () => void;
   onUpdate: (contact: Contact) => void;
 }
@@ -50,7 +49,6 @@ export default function ContactDetailModal({
     setError(null);
 
     try {
-      // ✅ SIMPLIFIED: Static import instead of dynamic
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 

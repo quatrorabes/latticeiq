@@ -90,7 +90,7 @@ export default function ContactsPage() {
   };
 
   // ============================================================================
-  // SCORE ALL CONTACTS HANDLER - MINIMAL VERSION
+  // SCORE ALL CONTACTS HANDLER
   // ============================================================================
   const handleScoreAllContacts = async () => {
     setIsScoring(true);
