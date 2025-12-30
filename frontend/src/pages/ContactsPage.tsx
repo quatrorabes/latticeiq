@@ -1,205 +1,236 @@
-import { useState, useEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { supabase } from '../lib/supabaseClient';  // FIXED: Named import
-import type { Contact } from '../types/contact';
+// frontend/src/pages/ContactsPage.tsx
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
+import { supabase } from '../lib/supabaseClient';
+import { Users, RefreshCw, Search, X } from 'lucide-react';
 import ContactDetailModal from '../components/ContactDetailModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-interface EnrichedContact extends Contact {
-  enrichment_data?: any;
+interface Contact {
+  id: string;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  company?: string;
+  job_title?: string;
+  title?: string;
+  phone?: string;
+  linkedin_url?: string;
+  vertical?: string;
+  persona_type?: string;
   enrichment_status?: string;
+  enrichment_data?: any;
   mdcp_score?: number;
-  mdcp_tier?: string;
   bant_score?: number;
-  bant_tier?: string;
   spice_score?: number;
+  mdcp_tier?: string;
+  bant_tier?: string;
   spice_tier?: string;
 }
 
 export default function ContactsPage() {
-  const [contacts, setContacts] = useState<EnrichedContact[]>([]);
-  const [filteredContacts, setFilteredContacts] = useState<EnrichedContact[]>([]);
-  const [loading, setLoading] = useState(true);
+  const location = useLocation();
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedContact, setSelectedContact] = useState<EnrichedContact | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [session, setSession] = useState<any>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
-  // Get session on mount
+  // Fetch contacts on mount
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session);
-    });
-  }, []);
+    fetchContacts();
+  }, [location.key]);
 
-  // Fetch contacts with CORS fix
-  const fetchContacts = async () => {
+  const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
-      setError('Not authenticated');
-      setLoading(false);
-      return;
+      throw new Error('Not authenticated');
     }
+    return {
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
+    };
+  };
 
+  const fetchContacts = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
-
-      const token = session.access_token;
-      const headers: HeadersInit = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        'Origin': window.location.origin,  // CORS FIX
-      };
-
-      const response = await fetch(`${API_BASE}/api/v3/contacts`, {
-        method: 'GET',
-        headers,
-        credentials: 'include',  // CORS FIX
-      });
-
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_BASE}/api/v3/contacts`, { headers });
+      
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`HTTP ${response.status}: ${errorText}`);
+        throw new Error(`Failed to fetch contacts: ${response.status}`);
       }
-
+      
       const data = await response.json();
-      const contactsList = Array.isArray(data) ? data : data.contacts || [];
-      setContacts(contactsList);
-      setFilteredContacts(contactsList);
+      
+      // Handle different response shapes
+      if (Array.isArray(data)) {
+        setContacts(data);
+      } else if (data?.contacts && Array.isArray(data.contacts)) {
+        setContacts(data.contacts);
+      } else if (data?.data && Array.isArray(data.data)) {
+        setContacts(data.data);
+      } else {
+        setContacts([]);
+      }
     } catch (err: any) {
-      console.error('Fetch error:', err);
-      setError(err.message || 'Failed to load contacts');
+      console.error('Error fetching contacts:', err);
+      setError(err.message || 'Failed to fetch contacts');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    if (session) fetchContacts();
-  }, [session]);
-
-  const handleSearch = (query: string) => {
-    setSearchQuery(query);
-    const lowerQuery = query.toLowerCase();
-    const filtered = contacts.filter(contact =>
-      contact.first_name?.toLowerCase().includes(lowerQuery) ||
-      contact.last_name?.toLowerCase().includes(lowerQuery) ||
-      contact.email?.toLowerCase().includes(lowerQuery) ||
-      contact.company?.toLowerCase().includes(lowerQuery)
+  // Filter contacts by search term
+  const filteredContacts = contacts.filter((contact) => {
+    if (!searchTerm) return true;
+    const search = searchTerm.toLowerCase();
+    return (
+      contact.first_name?.toLowerCase().includes(search) ||
+      contact.last_name?.toLowerCase().includes(search) ||
+      contact.email?.toLowerCase().includes(search) ||
+      contact.company?.toLowerCase().includes(search)
     );
-    setFilteredContacts(filtered);
-  };
+  });
 
-  const openModal = (contact: EnrichedContact) => {
-    setSelectedContact(contact);
-    setIsModalOpen(true);
-  };
-
-  const closeModal = () => {
-    setSelectedContact(null);
-    setIsModalOpen(false);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this contact?')) return;
-
-    try {
-      const token = session?.access_token;
-      const headers = {
-        'Authorization': `Bearer ${token}`,
-        'Origin': window.location.origin,
-      };
-
-      const res = await fetch(`${API_BASE}/api/v3/contacts/${id}`, {
-        method: 'DELETE',
-        headers,
-        credentials: 'include',
-      });
-
-      if (!res.ok) throw new Error('Delete failed');
-
-      setContacts(c => c.filter(contact => contact.id !== id));
-      setFilteredContacts(c => c.filter(contact => contact.id !== id));
-    } catch (err: any) {
-      alert(err.message);
-    }
-  };
-
-  const getStatusClass = (status?: string) => {
-    const classes = {
-      completed: 'bg-green-100 text-green-800',
-      processing: 'bg-yellow-100 text-yellow-800',
-      failed: 'bg-red-100 text-red-800',
-      pending: 'bg-gray-100 text-gray-800',
+  const getStatusBadge = (status?: string) => {
+    const colors: Record<string, string> = {
+      completed: 'bg-green-500/20 text-green-400',
+      pending: 'bg-yellow-500/20 text-yellow-400',
+      processing: 'bg-blue-500/20 text-blue-400',
+      failed: 'bg-red-500/20 text-red-400',
     };
-    return classes[status?.toLowerCase() as keyof typeof classes] || classes.pending!;
+    return (
+      <span className={`px-2 py-1 rounded text-xs ${colors[status || 'pending'] || colors.pending}`}>
+        {status || 'pending'}
+      </span>
+    );
   };
-
-  if (loading) return <div className="flex justify-center py-8">Loading...</div>;
-  if (error) return <div className="text-red-500 p-4">{error}</div>;
 
   return (
-    <div className="p-8 max-w-7xl mx-auto">
-      <h1 className="text-3xl font-bold mb-6">Contacts ({contacts.length})</h1>
-      
-      <input
-        type="text"
-        placeholder="Search contacts..."
-        value={searchQuery}
-        onChange={e => handleSearch(e.target.value)}
-        className="w-full max-w-md p-3 border rounded-lg mb-6"
-      />
+    <div className="min-h-screen bg-[#0a0e17] text-white p-6">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-3">
+              <Users className="w-8 h-8 text-cyan-400" />
+              Contacts
+            </h1>
+            <p className="text-gray-400 mt-1">
+              {contacts.length} contacts • Click a row to view details
+            </p>
+          </div>
+          <button
+            onClick={fetchContacts}
+            disabled={loading}
+            className="flex items-center gap-2 px-4 py-2 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full bg-white border rounded-lg shadow">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="p-4 text-left">Name</th>
-              <th className="p-4 text-left">Email</th>
-              <th className="p-4 text-left">Company</th>
-              <th className="p-4 text-left">Title</th>
-              <th className="p-4 text-left">MDCP</th>
-              <th className="p-4 text-left">BANT</th>
-              <th className="p-4 text-left">SPICE</th>
-              <th className="p-4 text-left">Status</th>
-              <th className="p-4 text-left">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredContacts.map(contact => (
-              <tr key={contact.id} className="border-t hover:bg-gray-50 cursor-pointer" onClick={() => openModal(contact)}>
-                <td className="p-4 font-medium">{contact.first_name} {contact.last_name}</td>
-                <td className="p-4">{contact.email || '-'}</td>
-                <td className="p-4">{contact.company || '-'}</td>
-                <td className="p-4">{contact.title || '-'}</td>
-                <td className="p-4">{contact.mdcp_score || '-'}</td>
-                <td className="p-4">{contact.bant_score || '-'}</td>
-                <td className="p-4">{contact.spice_score || '-'}</td>
-                <td className="p-4">
-                  <span className={`px-2 py-1 rounded-full text-xs ${getStatusClass(contact.enrichment_status)}`}>
-                    {contact.enrichment_status || 'pending'}
-                  </span>
-                </td>
-                <td className="p-4">
-                  <button onClick={e => { e.stopPropagation(); handleDelete(contact.id!); }} className="text-red-600 hover:text-red-800">
-                    Delete
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {/* Search */}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search contacts..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-10 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-cyan-500"
+          />
+          {searchTerm && (
+            <button
+              onClick={() => setSearchTerm('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400">
+            {error}
+          </div>
+        )}
+
+        {/* Table */}
+        <div className="bg-gray-800/50 border border-gray-700 rounded-xl overflow-hidden">
+          {loading ? (
+            <div className="p-8 text-center text-gray-400">
+              <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-2" />
+              Loading contacts...
+            </div>
+          ) : filteredContacts.length === 0 ? (
+            <div className="p-8 text-center text-gray-400">
+              <Users className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              {searchTerm ? 'No contacts match your search' : 'No contacts found'}
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-900/50">
+                  <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Name</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Company</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-400 uppercase">Title</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">MDCP</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">BANT</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">SPICE</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium text-gray-400 uppercase">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-700">
+                  {filteredContacts.map((contact) => (
+                    <tr
+                      key={contact.id}
+                      onClick={() => setSelectedContact(contact)}
+                      className="hover:bg-gray-700/30 cursor-pointer transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{contact.first_name} {contact.last_name}</div>
+                        <div className="text-sm text-gray-400">{contact.email || '-'}</div>
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">{contact.company || '-'}</td>
+                      <td className="px-4 py-3 text-gray-300">{contact.job_title || contact.title || '-'}</td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="font-mono">{contact.mdcp_score ?? '-'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="font-mono">{contact.bant_score ?? '-'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className="font-mono">{contact.spice_score ?? '-'}</span>
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {getStatusBadge(contact.enrichment_status)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
-      {isModalOpen && selectedContact && createPortal(
+      {/* Modal - MUST be outside all containers for Portal to work */}
+      {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
-          isOpen={true}
-          onClose={closeModal}
-        />,
-        document.body
+          onClose={() => setSelectedContact(null)}
+          onUpdate={(updated) => {
+            setContacts(contacts.map(c => c.id === updated.id ? updated : c));
+            setSelectedContact(updated);
+          }}
+        />
       )}
     </div>
   );
