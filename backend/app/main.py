@@ -341,8 +341,12 @@ if ENRICH_ROUTER_AVAILABLE and enrich_router is not None:
     logger.info({"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
 
 if SCORING_AVAILABLE and scoring_router is not None:
-    app.include_router(scoring_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
+    try:
+        app.include_router(scoring_router, prefix="/api/v3")
+        logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3", "config_routes": ["/config", "/config/{framework}", "/score-all", "/health"]})
+    except Exception as e:
+        logger.error({"event": "scoring_router_failed", "error": str(e)})
+        
 
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
@@ -373,6 +377,16 @@ async def api_health():
         },
     }
 
+from fastapi import Request
+
+@app.get("/api/routes")
+def list_routes(request: Request):
+    return sorted(
+        [{"path": r.path, "name": r.name, "methods": sorted(list(r.methods or []))}
+         for r in request.app.router.routes]
+        , key=lambda x: x["path"]
+    )
+    
 # ============================================================================
 # STARTUP / SHUTDOWN EVENTS
 # ============================================================================
@@ -384,3 +398,4 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
+    
