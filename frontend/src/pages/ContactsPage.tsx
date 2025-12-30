@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { Users, RefreshCw, Search, X } from 'lucide-react';
+import { Users, RefreshCw, Search, X, Zap } from 'lucide-react';
 import ContactDetailModal from '../components/ContactDetailModal';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
@@ -36,6 +36,11 @@ export default function ContactsPage() {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  
+  // Scoring state
+  const [isScoring, setIsScoring] = useState(false);
+  const [selectedFramework, setSelectedFramework] = useState<string>('mdcp');
+  const [scoringMessage, setScoringMessage] = useState<string | null>(null);
 
   // Fetch contacts on mount
   useEffect(() => {
@@ -84,8 +89,69 @@ export default function ContactsPage() {
     }
   };
 
+  // ============================================================================
+  // SCORE ALL CONTACTS HANDLER
+  // ============================================================================
+  const handleScoreAllContacts = async () => {
+    setIsScoring(true);
+    setScoringMessage(null);
+    setError(null);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        throw new Error('Please log in to score contacts');
+      }
+
+      const userId = session?.user?.id;
+
+      // Build the URL with query parameters
+      const url = new URL(`${API_BASE}/api/v3/scoring/score-all`);
+      url.searchParams.append('framework', selectedFramework);
+      if (userId) {
+        url.searchParams.append('user_id', userId);
+      }
+
+      console.log(`Scoring all contacts with ${selectedFramework.toUpperCase()}...`);
+
+      const response = await fetch(url.toString(), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Scoring failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('Scoring result:', result);
+
+      // Show success message
+      const message = `✅ Scored ${result.scored} of ${result.total || contacts.length} contacts using ${result.framework?.toUpperCase() || selectedFramework.toUpperCase()}`;
+      setScoringMessage(message);
+
+      // Refresh contacts to show updated scores
+      await fetchContacts();
+
+      // Clear message after 5 seconds
+      setTimeout(() => setScoringMessage(null), 5000);
+
+    } catch (err: any) {
+      console.error('Scoring failed:', err);
+      setError(`Scoring failed: ${err.message}`);
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
   // Filter contacts by search term
-  const filteredContacts = contacts.filter((contact) => {
+  const filteredContacts = contacts.filter(contact => {
     if (!searchTerm) return true;
     const search = searchTerm.toLowerCase();
     return (
@@ -96,6 +162,7 @@ export default function ContactsPage() {
     );
   });
 
+  // Status badge styling
   const getStatusBadge = (status?: string) => {
     const colors: Record<string, string> = {
       completed: 'bg-green-500/20 text-green-400',
@@ -107,6 +174,32 @@ export default function ContactsPage() {
       <span className={`px-2 py-1 rounded text-xs ${colors[status || 'pending'] || colors.pending}`}>
         {status || 'pending'}
       </span>
+    );
+  };
+
+  // Tier badge styling with colors
+  const getTierBadge = (score?: number, tier?: string) => {
+    if (score === undefined && tier === undefined) {
+      return <span className="text-gray-500">-</span>;
+    }
+
+    const tierColors: Record<string, string> = {
+      hot: 'bg-red-500/20 text-red-400 border-red-500/30',
+      warm: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
+      cold: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    };
+
+    const tierColor = tierColors[tier || 'cold'] || tierColors.cold;
+
+    return (
+      <div className="flex flex-col items-center gap-1">
+        <span className="font-mono font-bold">{score ?? '-'}</span>
+        {tier && (
+          <span className={`px-2 py-0.5 rounded text-xs border ${tierColor}`}>
+            {tier.toUpperCase()}
+          </span>
+        )}
+      </div>
     );
   };
 
@@ -132,6 +225,53 @@ export default function ContactsPage() {
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </button>
+        </div>
+
+        {/* Scoring Controls */}
+        <div className="mb-6 p-4 bg-gray-800/50 border border-gray-700 rounded-xl">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-yellow-400" />
+              <span className="font-medium">Score Contacts:</span>
+            </div>
+            
+            <select
+              value={selectedFramework}
+              onChange={(e) => setSelectedFramework(e.target.value)}
+              disabled={isScoring}
+              className="px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-cyan-500"
+            >
+              <option value="mdcp">MDCP (Money, Decision-maker, Champion, Process)</option>
+              <option value="bant">BANT (Budget, Authority, Need, Timeline)</option>
+              <option value="spice">SPICE (Situation, Problem, Implication, Critical Event, Decision)</option>
+            </select>
+
+            <button
+              onClick={handleScoreAllContacts}
+              disabled={isScoring || loading || contacts.length === 0}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                isScoring || loading || contacts.length === 0
+                  ? 'bg-gray-600 cursor-not-allowed opacity-50'
+                  : 'bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-black'
+              }`}
+            >
+              {isScoring ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin" />
+                  Scoring...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  Score All Contacts
+                </>
+              )}
+            </button>
+
+            {scoringMessage && (
+              <span className="text-green-400 text-sm">{scoringMessage}</span>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -195,19 +335,23 @@ export default function ContactsPage() {
                       className="hover:bg-gray-700/30 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium">{contact.first_name} {contact.last_name}</div>
+                        <div className="font-medium">
+                          {contact.first_name} {contact.last_name}
+                        </div>
                         <div className="text-sm text-gray-400">{contact.email || '-'}</div>
                       </td>
                       <td className="px-4 py-3 text-gray-300">{contact.company || '-'}</td>
-                      <td className="px-4 py-3 text-gray-300">{contact.job_title || contact.title || '-'}</td>
-                      <td className="px-4 py-3 text-center">
-                        <span className="font-mono">{contact.mdcp_score ?? '-'}</span>
+                      <td className="px-4 py-3 text-gray-300">
+                        {contact.job_title || contact.title || '-'}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="font-mono">{contact.bant_score ?? '-'}</span>
+                        {getTierBadge(contact.mdcp_score, contact.mdcp_tier)}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <span className="font-mono">{contact.spice_score ?? '-'}</span>
+                        {getTierBadge(contact.bant_score, contact.bant_tier)}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        {getTierBadge(contact.spice_score, contact.spice_tier)}
                       </td>
                       <td className="px-4 py-3 text-center">
                         {getStatusBadge(contact.enrichment_status)}
