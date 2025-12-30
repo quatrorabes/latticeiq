@@ -1,438 +1,284 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
-import { supabase } from '../lib/supabaseClient';
+import type { EnrichedContact } from '../types/contact';
 
-interface Contact {
-  [key: string]: any;
-}
-
-interface Props {
-  contact: Contact | null;
+interface ContactDetailModalProps {
+  contact: EnrichedContact | null;
   isOpen: boolean;
   onClose: () => void;
-  onEnrichComplete: () => void;
+  onContactUpdate?: (updated: EnrichedContact) => void;
+  session?: any;
 }
 
 export default function ContactDetailModal({
   contact,
   isOpen,
   onClose,
-  onEnrichComplete,
-}: Props) {
+  onContactUpdate,
+  session,
+}: ContactDetailModalProps) {
   const [enriching, setEnriching] = useState(false);
-  const [enrichmentResult, setEnrichmentResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [enrichData, setEnrichData] = useState<any>(contact?.enrichment_data);
 
   if (!isOpen || !contact) return null;
 
-  async function handleEnrich() {
+  const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+
+  const handleEnrich = async () => {
+    if (!session?.access_token || !contact?.id) {
+      setError('Not authenticated or missing contact ID');
+      return;
+    }
+
     setEnriching(true);
+    setError(null);
+
     try {
-      const { data: { session }, error: authError } = await supabase.auth.getSession();
-      
-      if (authError || !session) {
-        alert('Not authenticated. Please login first.');
-        setEnriching(false);
-        return;
-      }
-
       const token = session.access_token;
-      const apiUrl = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'Origin': window.location.origin,
+      };
 
-      console.log('=== ENRICH REQUEST ===');
-      console.log('Contact ID:', contact?.id);
-      console.log('Token:', token.slice(0, 20) + '...');
-      console.log('API URL:', apiUrl);
+      // CRITICAL: Backend endpoint is POST /api/v3/enrich/{id}
+      const response = await fetch(`${API_BASE}/api/v3/enrich/${contact.id}`, {
+        method: 'POST',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify({}),
+      });
 
-      const response = await fetch(
-        `${apiUrl}/api/v3/enrich/${contact?.id}`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      console.log('Response Status:', response.status);
-      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Enrich error:', errorText);
-        setEnrichmentResult({ error: `${response.status}: ${errorText}` });
-        
-        // Mark as failed
-        await supabase
-          .from('contacts')
-          .update({ enrichment_status: 'failed' })
-          .eq('id', contact?.id);
-        
-        setEnriching(false);
-        return;
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      const result = await response.json();
-      console.log('=== ENRICHMENT RESULT ===');
-      console.log(result);
-      
-      // Mark as enriched and save result
-      const { error: updateError } = await supabase
-        .from('contacts')
-        .update({ 
-          enrichment_status: 'enriched',
-          enrichment_data: result.enrichment_data || result,
-          apex_score: result.apex_score || null,
-        })
-        .eq('id', contact?.id);
+      const data = await response.json();
+      console.log('✅ Enrichment response:', data);
 
-      if (updateError) {
-        console.error('Error updating contact status:', updateError);
-        setEnrichmentResult({ error: `Failed to save enrichment: ${updateError.message}` });
-      } else {
-        setEnrichmentResult(result);
-        alert('✅ Enrichment complete!');
+      // Update local state with new enrichment data
+      if (data.enrichment_data) {
+        setEnrichData(data.enrichment_data);
       }
-      
-      onEnrichComplete();
-    } catch (err) {
-      console.error('Error enriching:', err);
-      setEnrichmentResult({ error: (err as Error).message });
-      alert('Error enriching contact: ' + (err as Error).message);
+
+      // Update parent contacts list if callback provided
+      if (onContactUpdate && data) {
+        onContactUpdate({
+          ...contact,
+          enrichment_data: data.enrichment_data,
+          enrichment_status: data.enrichment_status || 'completed',
+          mdcp_score: data.mdcp_score,
+          bant_score: data.bant_score,
+          spice_score: data.spice_score,
+        });
+      }
+    } catch (err: any) {
+      console.error('❌ Enrichment error:', err);
+      setError(err.message || 'Enrichment failed');
     } finally {
       setEnriching(false);
     }
-  }
-
-  const modalStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: '50%',
-    left: '50%',
-    transform: 'translate(-50%, -50%)',
-    background: '#2a2a2a',
-    border: '2px solid #0066cc',
-    borderRadius: '8px',
-    padding: '20px',
-    maxWidth: '900px',
-    width: '95%',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-    zIndex: 1000,
-    boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
-    color: '#fff',
   };
 
-  const backdropStyle: React.CSSProperties = {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    background: 'rgba(0, 0, 0, 0.7)',
-    zIndex: 999,
-  };
+  const enrichData_ = enrichData || contact?.enrichment_data;
 
-  const sectionStyle: React.CSSProperties = {
-    marginBottom: '20px',
-    borderBottom: '1px solid #444',
-    paddingBottom: '15px',
-  };
-
-  const labelStyle: React.CSSProperties = {
-    fontWeight: 'bold',
-    color: '#0066cc',
-    marginTop: '10px',
-    marginBottom: '5px',
-    fontSize: '12px',
-    textTransform: 'uppercase',
-  };
-
-  const valueStyle: React.CSSProperties = {
-    padding: '8px',
-    background: '#1a1a1a',
-    borderRadius: '4px',
-    marginBottom: '8px',
-    fontSize: '14px',
-    fontFamily: 'monospace',
-    wordBreak: 'break-all',
-    lineHeight: '1.6',
-  };
-
-  const jsonStyle: React.CSSProperties = {
-    background: '#0a0a0a',
-    padding: '15px',
-    borderRadius: '4px',
-    marginTop: '10px',
-    fontSize: '11px',
-    fontFamily: 'monospace',
-    maxHeight: '300px',
-    overflowY: 'auto',
-    border: '1px solid #444',
-    color: '#0f0',
-  };
-
-  // Extract enrichment data
-  const enrichmentData = contact.enrichment_data || {};
-  const {
-    summary = '',
-    company_overview = '',
-    talking_points = [],
-    inferred_title = '',
-    inferred_seniority = '',
-    persona_type = '',
-    vertical = '',
-    company_size = '',
-    recent_news = '',
-    recommended_approach = '',
-  } = enrichmentData;
-
-  return createPortal(
-    <>
-      <div style={backdropStyle} onClick={onClose} />
-      <div style={modalStyle}>
-        
-        {/* HEADER */}
-        <div style={{ marginBottom: '20px' }}>
-          <h2 style={{ margin: '0 0 10px 0' }}>
-            {contact.first_name} {contact.last_name}
-          </h2>
-          <p style={{ margin: '0', color: '#0066cc', fontSize: '12px' }}>
-            ID: {contact.id}
-          </p>
-        </div>
-
-        {/* BASIC CONTACT INFO */}
-        <div style={sectionStyle}>
-          <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-            📋 Contact Information
-          </h3>
-          
-          <div>
-            <div style={labelStyle}>Email</div>
-            <div style={valueStyle}>{contact.email || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>Company</div>
-            <div style={valueStyle}>{contact.company || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>Job Title</div>
-            <div style={valueStyle}>{contact.title || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>Phone</div>
-            <div style={valueStyle}>{contact.phone || '(empty)'}</div>
-          </div>
-
-          <div>
-            <div style={labelStyle}>LinkedIn URL</div>
-            <div style={valueStyle}>
-              {contact.linkedin_url ? (
-                <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ color: '#0099ff' }}>
-                  {contact.linkedin_url}
-                </a>
-              ) : (
-                '(empty)'
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* ENRICHMENT STATUS */}
-        <div style={sectionStyle}>
-          <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-            🎯 Enrichment Status
-          </h3>
-
-          <div>
-            <div style={labelStyle}>Status</div>
-            <div style={{
-              padding: '8px',
-              borderRadius: '4px',
-              background: contact.enrichment_status === 'enriched' ? '#003300' : '#663300',
-              color: contact.enrichment_status === 'enriched' ? '#00ff00' : '#ffcc00',
-              display: 'inline-block',
-              fontWeight: 'bold',
-            }}>
-              {contact.enrichment_status || 'pending'}
-            </div>
-          </div>
-
-          {contact.apex_score && (
+  const modalContent = (
+    <div className="fixed inset-0 z-40 bg-black bg-opacity-50 flex items-center justify-center p-4">
+      <div className="bg-gray-900 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-gray-700 z-50">
+        {/* Header */}
+        <div className="sticky top-0 bg-gray-800 p-6 border-b border-gray-700">
+          <div className="flex justify-between items-start">
             <div>
-              <div style={labelStyle}>APEX Score</div>
-              <div style={{ ...valueStyle, color: '#00ff00', fontWeight: 'bold', fontSize: '18px' }}>
-                {Math.round(contact.apex_score)}/100
+              <h2 className="text-2xl font-bold text-white">
+                {contact.first_name} {contact.last_name}
+              </h2>
+              <p className="text-sm text-gray-400 mt-1">ID: {contact.id}</p>
+            </div>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-white text-2xl font-bold"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 space-y-6">
+          {/* Contact Information */}
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">📋 Contact Information</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="text-sm text-gray-400">EMAIL</label>
+                <p className="text-white font-mono">{contact.email || '(empty)'}</p>
               </div>
+              <div>
+                <label className="text-sm text-gray-400">COMPANY</label>
+                <p className="text-white">{contact.company || '(empty)'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-400">JOB TITLE</label>
+                <p className="text-white">{contact.title || contact.job_title || '(empty)'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-400">PHONE</label>
+                <p className="text-white">{contact.phone || '(empty)'}</p>
+              </div>
+              <div>
+                <label className="text-sm text-gray-400">LINKEDIN URL</label>
+                <p className="text-white break-all">{contact.linkedin_url || '(empty)'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Scores */}
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">📊 Scores</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-gray-800 p-4 rounded border border-gray-700">
+                <p className="text-gray-400 text-sm">MDCP</p>
+                <p className="text-2xl font-bold text-teal-400">{contact.mdcp_score ?? '-'}</p>
+                {contact.mdcp_tier && (
+                  <p className="text-xs text-gray-500 mt-1">{contact.mdcp_tier}</p>
+                )}
+              </div>
+              <div className="bg-gray-800 p-4 rounded border border-gray-700">
+                <p className="text-gray-400 text-sm">BANT</p>
+                <p className="text-2xl font-bold text-green-400">{contact.bant_score ?? '-'}</p>
+                {contact.bant_tier && (
+                  <p className="text-xs text-gray-500 mt-1">{contact.bant_tier}</p>
+                )}
+              </div>
+              <div className="bg-gray-800 p-4 rounded border border-gray-700">
+                <p className="text-gray-400 text-sm">SPICE</p>
+                <p className="text-2xl font-bold text-purple-400">{contact.spice_score ?? '-'}</p>
+                {contact.spice_tier && (
+                  <p className="text-xs text-gray-500 mt-1">{contact.spice_tier}</p>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Enrichment Status */}
+          <div>
+            <h3 className="text-lg font-semibold text-blue-400 mb-4">
+              🔄 Enrichment Status
+            </h3>
+            <div className="bg-gray-800 p-4 rounded border border-gray-700">
+              <p className="text-gray-400 text-sm">STATUS</p>
+              <p className="text-lg font-mono text-white mt-1">
+                {contact.enrichment_status || 'pending'}
+              </p>
+            </div>
+          </div>
+
+          {/* Enrichment Error */}
+          {error && (
+            <div className="bg-red-500/20 border border-red-500 rounded p-4">
+              <p className="text-red-300 text-sm">
+                <strong>❌ Enrichment Error:</strong> {error}
+              </p>
+            </div>
+          )}
+
+          {/* Enrichment Data */}
+          {enrichData_ && (
+            <div>
+              <h3 className="text-lg font-semibold text-blue-400 mb-4">
+                ✨ Sales Intelligence
+              </h3>
+              <div className="space-y-4">
+                {enrichData_.summary && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Summary</h4>
+                    <p className="text-gray-300 text-sm">{enrichData_.summary}</p>
+                  </div>
+                )}
+
+                {enrichData_.company_overview && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Company Overview</h4>
+                    <p className="text-gray-300 text-sm">{enrichData_.company_overview}</p>
+                  </div>
+                )}
+
+                {enrichData_.talking_points && Array.isArray(enrichData_.talking_points) && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Talking Points</h4>
+                    <ul className="list-disc list-inside space-y-1 text-gray-300 text-sm">
+                      {enrichData_.talking_points.map((point: string, i: number) => (
+                        <li key={i}>{point}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {enrichData_.hook && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Hook</h4>
+                    <p className="text-gray-300 text-sm">{enrichData_.hook}</p>
+                  </div>
+                )}
+
+                {enrichData_.recommended_approach && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Recommended Approach</h4>
+                    <p className="text-gray-300 text-sm">{enrichData_.recommended_approach}</p>
+                  </div>
+                )}
+
+                {enrichData_.persona_type && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Persona Type</h4>
+                    <p className="text-gray-300 text-sm font-mono">{enrichData_.persona_type}</p>
+                  </div>
+                )}
+
+                {enrichData_.vertical && (
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-300 mb-2">Vertical</h4>
+                    <p className="text-gray-300 text-sm font-mono">{enrichData_.vertical}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {!enrichData_ && contact.enrichment_status !== 'failed' && (
+            <div className="bg-gray-800 p-4 rounded border border-gray-700 text-center">
+              <p className="text-gray-400 text-sm">
+                📭 No enrichment data yet. Click "Re-Enrich" below to start.
+              </p>
             </div>
           )}
         </div>
 
-        {/* INFERRED PROFILE */}
-        {(inferred_title || inferred_seniority || persona_type || vertical || company_size) && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              👤 Inferred Profile
-            </h3>
-
-            {inferred_title && (
-              <div>
-                <div style={labelStyle}>Inferred Title</div>
-                <div style={valueStyle}>{inferred_title}</div>
-              </div>
-            )}
-
-            {inferred_seniority && (
-              <div>
-                <div style={labelStyle}>Seniority Level</div>
-                <div style={valueStyle}>{inferred_seniority}</div>
-              </div>
-            )}
-
-            {persona_type && (
-              <div>
-                <div style={labelStyle}>Persona Type</div>
-                <div style={valueStyle}>{persona_type}</div>
-              </div>
-            )}
-
-            {vertical && (
-              <div>
-                <div style={labelStyle}>Vertical / Industry</div>
-                <div style={valueStyle}>{vertical}</div>
-              </div>
-            )}
-
-            {company_size && (
-              <div>
-                <div style={labelStyle}>Company Size</div>
-                <div style={valueStyle}>{company_size}</div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* PROFESSIONAL SUMMARY */}
-        {summary && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              📝 Professional Summary
-            </h3>
-            <div style={valueStyle}>{summary}</div>
-          </div>
-        )}
-
-        {/* COMPANY OVERVIEW */}
-        {company_overview && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              🏢 Company Overview
-            </h3>
-            <div style={valueStyle}>{company_overview}</div>
-          </div>
-        )}
-
-        {/* TALKING POINTS */}
-        {talking_points.length > 0 && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              💬 Conversation Starters
-            </h3>
-            <ul style={{ margin: '0', paddingLeft: '20px' }}>
-              {talking_points.map((point: string, idx: number) => (
-                <li key={idx} style={{ marginBottom: '12px', lineHeight: '1.6' }}>
-                  <span style={{ color: '#fff' }}>{point}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
-        {/* RECENT NEWS */}
-        {recent_news && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              📰 Recent News & Activity
-            </h3>
-            <div style={valueStyle}>{recent_news}</div>
-          </div>
-        )}
-
-        {/* RECOMMENDED APPROACH */}
-        {recommended_approach && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#0066cc', fontSize: '16px', margin: '0 0 15px 0' }}>
-              🎯 Recommended Sales Approach
-            </h3>
-            <div style={valueStyle}>{recommended_approach}</div>
-          </div>
-        )}
-
-        {/* ENRICHMENT ERROR */}
-        {enrichmentResult?.error && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#ff0000', fontSize: '16px', margin: '0 0 15px 0' }}>
-              ❌ Enrichment Error
-            </h3>
-            <div style={{ ...valueStyle, color: '#ff6666' }}>
-              {enrichmentResult.error}
-            </div>
-          </div>
-        )}
-
-        {/* RAW JSON (DEBUG) */}
-        {enrichmentData && Object.keys(enrichmentData).length > 0 && (
-          <div style={sectionStyle}>
-            <h3 style={{ color: '#666', fontSize: '14px', margin: '0 0 15px 0' }}>
-              🔧 Raw Enrichment JSON
-            </h3>
-            <pre style={jsonStyle}>
-              {JSON.stringify(enrichmentData, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {/* ACTION BUTTONS */}
-        <div style={{ marginTop: '20px', display: 'flex', gap: '10px', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button
-              onClick={handleEnrich}
-              disabled={enriching}
-              style={{
-                padding: '10px 20px',
-                background: enriching ? '#666' : '#00cc00',
-                color: '#000',
-                fontWeight: 'bold',
-                border: 'none',
-                borderRadius: '4px',
-                cursor: enriching ? 'not-allowed' : 'pointer',
-                fontSize: '14px',
-              }}
-            >
-              {enriching ? '⏳ Enriching...' : '✨ Re-Enrich'}
-            </button>
-          </div>
-
+        {/* Footer */}
+        <div className="sticky bottom-0 bg-gray-800 p-6 border-t border-gray-700 flex gap-3 justify-end">
           <button
             onClick={onClose}
-            style={{
-              padding: '10px 20px',
-              background: '#666',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              cursor: 'pointer',
-              fontSize: '14px',
-            }}
+            className="px-4 py-2 bg-gray-700 text-gray-300 rounded hover:bg-gray-600 transition"
           >
             Close
           </button>
+          <button
+            onClick={handleEnrich}
+            disabled={enriching}
+            className={`px-4 py-2 rounded font-semibold transition ${
+              enriching
+                ? 'bg-yellow-600 text-yellow-100 cursor-not-allowed'
+                : 'bg-green-600 text-white hover:bg-green-700'
+            }`}
+          >
+            {enriching ? '🔄 Re-Enriching...' : '⚡ Re-Enrich'}
+          </button>
         </div>
-
       </div>
-    </>,
-    document.body
+    </div>
   );
+
+  return createPortal(modalContent, document.body);
 }
