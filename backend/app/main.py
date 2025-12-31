@@ -94,39 +94,15 @@ logger = setup_logging(settings.LOG_LEVEL)
 # ============================================================================
 # CORS MIDDLEWARE - MUST BE FIRST
 # ============================================================================
-default_origins = [
-    "https://latticeiq.vercel.app",
-    "https://*.vercel.app",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
-
-allow_origins = list(default_origins)
-if getattr(settings, "CORS_ALLOW_ORIGIN", "").strip():
-    origin = settings.CORS_ALLOW_ORIGIN.strip()
-    if origin not in allow_origins:
-        allow_origins.append(origin)
-if settings.CORS_ALLOW_ORIGINS.strip():
-    for o in settings.CORS_ALLOW_ORIGINS.split(","):
-        o = o.strip()
-        if o and o not in allow_origins:
-            allow_origins.append(o)
-
-logger.info({"event": "cors_config", "allow_origins": allow_origins})
-
-# CORS MUST be added BEFORE other middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # NUCLEAR OPTION - allow all origins for debugging
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
-# GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # ============================================================================
@@ -251,7 +227,7 @@ except ImportError:
     except ImportError as e:
         logger.warning({"event": "router_import_failed", "router": "crm", "error": str(e)})
 
-# Enrichment Router
+# Enrichment Router (enrich_router.py)
 enrich_router = None
 ENRICH_ROUTER_AVAILABLE = False
 try:
@@ -275,7 +251,7 @@ except ImportError:
     except ImportError as e:
         logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
 
-# Simple Enrich Router
+# Simple Enrich Router (enrich_simple.py) - THIS IS THE KEY ONE
 simple_enrich_router = None
 SIMPLE_ENRICH_AVAILABLE = False
 try:
@@ -308,13 +284,10 @@ if SCORING_AVAILABLE and scoring_router:
     app.include_router(scoring_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
 
-if QUICK_ENRICH_AVAILABLE and quick_enrich_router:
-    app.include_router(quick_enrich_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "quick_enrich", "prefix": "/api/v3"})
-
 if SIMPLE_ENRICH_AVAILABLE and simple_enrich_router:
     app.include_router(simple_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrich_simple", "prefix": "/api/v3"})
+
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
