@@ -52,7 +52,7 @@ class Settings(BaseModel):
     ENVIRONMENT: str = Field(default="development", alias="ENVIRONMENT")
     CORS_ALLOW_ORIGIN: str = Field(default="", alias="CORS_ALLOW_ORIGIN")
     CORS_ALLOW_ORIGINS: str = Field(default="", alias="CORS_ALLOW_ORIGINS")
-    
+
     class Config:
         env_file = ".env"
         case_sensitive = True
@@ -274,12 +274,12 @@ except ImportError:
         SCORING_AVAILABLE = True
     except ImportError as e:
         logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
-        
-# Quick Enrich Router
+
+# Quick Enrich Router - FIXED PATH
 quick_enrich_router = None
 QUICK_ENRICH_AVAILABLE = False
 try:
-    from app.enrichment_v3.quick_enrich.quick_enrich import router as quick_enrich_router
+    from app.enrichment_v3.quick_enrich import router as quick_enrich_router
     QUICK_ENRICH_AVAILABLE = True
     logger.info({"event": "router_imported", "router": "quick_enrich"})
 except (ImportError, ModuleNotFoundError) as e:
@@ -307,11 +307,10 @@ if ENRICH_ROUTER_AVAILABLE and enrich_router:
 if SCORING_AVAILABLE and scoring_router:
     app.include_router(scoring_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
-    
+
 if QUICK_ENRICH_AVAILABLE and quick_enrich_router:
     app.include_router(quick_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "quick_enrich", "prefix": "/api/v3"})
-    
 
 # ============================================================================
 # ICP CONFIG ENDPOINT
@@ -356,4 +355,3 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
-    
