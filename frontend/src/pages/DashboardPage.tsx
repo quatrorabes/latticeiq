@@ -10,12 +10,8 @@ export default function DashboardPage() {
   const stats = useMemo(() => {
     const totalContacts = contacts.length
     const enrichedContacts = contacts.filter((c) => c.enrichment_status === 'completed').length
-    const avgScore =
-      contacts.length > 0
-        ? Math.round(contacts.reduce((sum, c) => sum + (c.apex_score || 0), 0) / contacts.length)
-        : 0
-    const hotLeads = contacts.filter((c) => (c.apex_score || 0) >= 80).length
-
+    const avgScore = contacts.length > 0 ? Math.round(contacts.reduce((sum, c) => sum + (c.overall_score || c.apex_score || 0), 0) / contacts.length) : 0
+    const hotLeads = contacts.filter((c) => (c.overall_score || c.apex_score || 0) >= 80).length
     return { totalContacts, enrichedContacts, avgScore, hotLeads }
   }, [contacts])
 
