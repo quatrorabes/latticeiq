@@ -176,3 +176,32 @@ class ScoringResult(BaseModel):
         super().__init__(**data)
         if not self.calculated_at:
             self.calculated_at = datetime.utcnow()
+
+# ADD THIS AT THE END OF YOUR EXISTING models.py FILE
+
+
+# ============================================================
+# RESPONSE MODELS FOR PERSISTENCE
+# ============================================================
+
+class ScoreResponse(BaseModel):
+    """Response from scoring endpoint with persisted data"""
+    contact_id: str
+    mdcp_score: Optional[float] = None
+    mdcp_tier: Optional[str] = None
+    bant_score: Optional[float] = None
+    bant_tier: Optional[str] = None
+    spice_score: Optional[float] = None
+    spice_tier: Optional[str] = None
+    last_scored_at: Optional[datetime] = None
+    
+    class Config:
+        extra = "allow"
+
+class BatchScoringResponse(BaseModel):
+    """Response from batch scoring endpoint"""
+    success: bool
+    scored_count: int
+    total_contacts: int
+    message: str
+    errors: Optional[list] = None
