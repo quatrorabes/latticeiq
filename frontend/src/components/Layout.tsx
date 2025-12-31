@@ -1,8 +1,7 @@
-
-import { Outlet } from 'react-router-dom'
-import Sidebar from './Sidebar'
-import { useAuth } from '@hooks/useAuth'
-import { Moon, Sun } from 'lucide-react'
+import { Outlet, Link, useNavigate } from 'react-router-dom'
+import { Menu, X, Moon, Sun } from 'lucide-react'
+import { useState } from 'react'
+import { supabase } from '../lib/supabaseClient'
 
 interface LayoutProps {
   darkMode: boolean
@@ -10,28 +9,72 @@ interface LayoutProps {
 }
 
 export default function Layout({ darkMode, onToggleDarkMode }: LayoutProps) {
-  const { logout } = useAuth()
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    navigate('/login')
+  }
+
+  const navItems = [
+    { label: 'Dashboard', path: '/dashboard' },
+    { label: 'Contacts', path: '/contacts' },
+    { label: 'Enrichment', path: '/enrichment' },
+    { label: 'Scoring', path: '/scoring' },
+    { label: 'Settings', path: '/settings' },
+  ]
 
   return (
-    <div className="flex h-screen bg-slate-950">
-      <Sidebar onLogout={logout} />
-      
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <header className="bg-slate-900 border-b border-slate-800 px-8 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-white">LatticeIQ</h1>
-          <button
-            onClick={onToggleDarkMode}
-            className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
-            aria-label="Toggle dark mode"
-          >
-            {darkMode ? (
-              <Sun className="w-5 h-5 text-yellow-400" />
-            ) : (
-              <Moon className="w-5 h-5 text-slate-400" />
-            )}
-          </button>
-        </header>
+    <div className={`min-h-screen ${darkMode ? 'dark' : ''}`}>
+      <div className="flex h-screen bg-slate-950 text-slate-50">
+        {/* Sidebar */}
+        <aside
+          className={`${
+            sidebarOpen ? 'w-64' : 'w-20'
+          } bg-slate-900 border-r border-slate-700 transition-all duration-300 flex flex-col`}
+        >
+          {/* Header */}
+          <div className="p-4 border-b border-slate-700 flex items-center justify-between">
+            {sidebarOpen && <h1 className="text-lg font-bold text-cyan-400">LatticeIQ</h1>}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 hover:bg-slate-800 rounded-md transition-colors"
+            >
+              {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-2">
+            {navItems.map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className="block px-4 py-2 rounded-md hover:bg-slate-800 transition-colors text-sm"
+              >
+                {sidebarOpen && item.label}
+              </Link>
+            ))}
+          </nav>
+
+          {/* Footer */}
+          <div className="p-4 border-t border-slate-700 space-y-2">
+            <button
+              onClick={onToggleDarkMode}
+              className="w-full px-4 py-2 rounded-md hover:bg-slate-800 transition-colors text-sm flex items-center justify-center gap-2"
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+              {sidebarOpen && (darkMode ? 'Light' : 'Dark')}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="w-full px-4 py-2 rounded-md hover:bg-red-900/20 text-red-400 transition-colors text-sm"
+            >
+              {sidebarOpen ? 'Logout' : '⎋'}
+            </button>
+          </div>
+        </aside>
 
         {/* Main Content */}
         <main className="flex-1 overflow-auto">
