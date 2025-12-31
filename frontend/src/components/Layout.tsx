@@ -22,6 +22,7 @@ export default function Layout({ darkMode, onToggleDarkMode }: LayoutProps) {
     { label: 'Contacts', path: '/contacts' },
     { label: 'Enrichment', path: '/enrichment' },
     { label: 'Scoring', path: '/scoring' },
+    { label: 'CRM Import', path: '/crm' },
     { label: 'Settings', path: '/settings' },
   ]
 
