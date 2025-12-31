@@ -238,12 +238,12 @@ except ImportError:
 crm_router = None
 CRM_ROUTER_AVAILABLE = False
 try:
-    from crm.router import router as crm_router
+    from crm.crm_import_router import router as crm_router
     CRM_ROUTER_AVAILABLE = True
     logger.info({"event": "router_imported", "router": "crm"})
 except ImportError:
     try:
-        from app.crm.router import router as crm_router
+        from app.crm.crm_import_router import router as crm_router
         CRM_ROUTER_AVAILABLE = True
     except ImportError as e:
         logger.warning({"event": "router_import_failed", "router": "crm", "error": str(e)})
