@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Contact, EnrichmentData } from '@typings/index'
 import Modal from './Modal'
 import Button from './Button'
@@ -99,8 +98,8 @@ export default function ContactDetailModal({
         </div>
 
         {error && (
-          <Card variant="default" className="bg-error/10 border-error/30">
-            <p className="text-error text-sm">{error}</p>
+          <Card variant="default" className="bg-red-500/10 border-red-500/30">
+            <p className="text-red-400 text-sm">{error}</p>
           </Card>
         )}
 
@@ -112,7 +111,7 @@ export default function ContactDetailModal({
                 onClick={() => setActiveTab('profile')}
                 className={`px-4 py-2 font-medium transition-colors border-b-2 ${
                   activeTab === 'profile'
-                    ? 'text-primary-400 border-b-primary-400'
+                    ? 'text-cyan-400 border-b-cyan-400'
                     : 'text-slate-400 border-b-transparent hover:text-slate-300'
                 }`}
               >
@@ -122,7 +121,7 @@ export default function ContactDetailModal({
                 onClick={() => setActiveTab('raw')}
                 className={`px-4 py-2 font-medium transition-colors border-b-2 ${
                   activeTab === 'raw'
-                    ? 'text-primary-400 border-b-primary-400'
+                    ? 'text-cyan-400 border-b-cyan-400'
                     : 'text-slate-400 border-b-transparent hover:text-slate-300'
                 }`}
               >
@@ -150,9 +149,9 @@ export default function ContactDetailModal({
                   <Card>
                     <p className="text-slate-400 text-sm mb-3">Talking Points</p>
                     <ul className="space-y-2">
-                      {enrichmentData.talking_points.map((point, idx) => (
+                      {enrichmentData.talking_points.map((point: string, idx: number) => (
                         <li key={idx} className="flex gap-2 text-white text-sm">
-                          <span className="text-primary-400 font-bold">•</span>
+                          <span className="text-cyan-400 font-bold">•</span>
                           <span>{point}</span>
                         </li>
                       ))}
@@ -167,7 +166,7 @@ export default function ContactDetailModal({
                       {Object.entries(enrichmentData.bant).map(([key, value]) => (
                         <div key={key} className="text-sm">
                           <p className="text-slate-400">{key.toUpperCase()}</p>
-                          <p className="text-white font-medium">{value || '-'}</p>
+                          <p className="text-white font-medium">{String(value) || '-'}</p>
                         </div>
                       ))}
                     </div>
