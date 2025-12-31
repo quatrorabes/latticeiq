@@ -1,3 +1,4 @@
+# backend/app/scoring/models.py
 """
 LatticeIQ Scoring Framework Models
 MDCP, BANT, SPICE configuration models for lead qualification
@@ -31,28 +32,19 @@ class MDCPCriteria(BaseModel):
     """MDCP scoring criteria"""
     money_min_revenue: Optional[float] = None
     money_max_revenue: Optional[float] = None
-    
     decision_maker_titles: List[str] = ["CEO", "CTO", "VP Sales", "VP Marketing"]
-    
     champion_engagement_days: int = 30
-    
     process_cycle_days: int = 90
 
 
 class MDCPConfig(BaseModel):
     """Complete MDCP configuration"""
-    weights: MDCPWeights = MDCPWeights()
-    criteria: MDCPCriteria = MDCPCriteria()
-    thresholds: MDCPThresholds = MDCPThresholds()
-    created_at: datetime = None
-    updated_at: datetime = None
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.created_at:
-            self.created_at = datetime.utcnow()
-        if not self.updated_at:
-            self.updated_at = datetime.utcnow()
+    framework: str = "mdcp"
+    weights: Dict[str, int] = {"money": 25, "decisionmaker": 25, "champion": 25, "process": 25}
+    thresholds: Dict[str, int] = {"hotMin": 71, "warmMin": 40}
+    config: Dict[str, Any] = {}
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ============================================================
@@ -78,28 +70,19 @@ class BANTCriteria(BaseModel):
     """BANT scoring criteria"""
     budget_min: Optional[float] = None
     budget_max: Optional[float] = None
-    
     authority_titles: List[str] = ["CEO", "CTO", "VP Sales", "Director", "Manager"]
-    
     need_keywords: List[str] = ["need", "want", "problem", "challenge", "require"]
-    
-    timeline_urgency: Optional[str] = None  # "Immediate", "This quarter", "This year"
+    timeline_urgency: Optional[str] = None
 
 
 class BANTConfig(BaseModel):
     """Complete BANT configuration"""
-    weights: BANTWeights = BANTWeights()
-    criteria: BANTCriteria = BANTCriteria()
-    thresholds: BANTThresholds = BANTThresholds()
-    created_at: datetime = None
-    updated_at: datetime = None
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.created_at:
-            self.created_at = datetime.utcnow()
-        if not self.updated_at:
-            self.updated_at = datetime.utcnow()
+    framework: str = "bant"
+    weights: Dict[str, int] = {"budget": 25, "authority": 25, "need": 25, "timeline": 25}
+    thresholds: Dict[str, int] = {"hotMin": 71, "warmMin": 40}
+    config: Dict[str, Any] = {}
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ============================================================
@@ -131,72 +114,33 @@ class SPICECriteria(BaseModel):
 
 class SPICEConfig(BaseModel):
     """Complete SPICE configuration"""
-    weights: SPICEWeights = SPICEWeights()
-    criteria: SPICECriteria = SPICECriteria()
-    thresholds: SPICEThresholds = SPICEThresholds()
-    created_at: datetime = None
-    updated_at: datetime = None
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.created_at:
-            self.created_at = datetime.utcnow()
-        if not self.updated_at:
-            self.updated_at = datetime.utcnow()
+    framework: str = "spice"
+    weights: Dict[str, int] = {"situation": 20, "problem": 20, "implication": 20, "criticalEvent": 20, "decision": 20}
+    thresholds: Dict[str, int] = {"hotMin": 71, "warmMin": 40}
+    config: Dict[str, Any] = {}
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 # ============================================================
 # Scoring Response Models
 # ============================================================
 
-class ScoringBreakdown(BaseModel):
-    """Detailed score breakdown by component"""
-    mdcp: Optional[Dict[str, int]] = None
-    bant: Optional[Dict[str, int]] = None
-    spice: Optional[Dict[str, int]] = None
-
-
-class ScoringResult(BaseModel):
-    """Scoring calculation result"""
-    contact_id: str
-    
-    mdcp_score: Optional[int] = None
-    mdcp_tier: Optional[str] = None
-    
-    bant_score: Optional[int] = None
-    bant_tier: Optional[str] = None
-    
-    spice_score: Optional[int] = None
-    spice_tier: Optional[str] = None
-    
-    breakdown: ScoringBreakdown
-    calculated_at: datetime = None
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        if not self.calculated_at:
-            self.calculated_at = datetime.utcnow()
-
-# ADD THIS AT THE END OF YOUR EXISTING models.py FILE
-
-
-# ============================================================
-# RESPONSE MODELS FOR PERSISTENCE
-# ============================================================
-
 class ScoreResponse(BaseModel):
     """Response from scoring endpoint with persisted data"""
     contact_id: str
-    mdcp_score: Optional[float] = None
-    mdcp_tier: Optional[str] = None
-    bant_score: Optional[float] = None
-    bant_tier: Optional[str] = None
-    spice_score: Optional[float] = None
-    spice_tier: Optional[str] = None
+    mdcp_score: float
+    mdcp_tier: str
+    bant_score: float
+    bant_tier: str
+    spice_score: float
+    spice_tier: str
+    overall_score: Optional[float] = None
     last_scored_at: Optional[datetime] = None
-    
+
     class Config:
         extra = "allow"
+
 
 class BatchScoringResponse(BaseModel):
     """Response from batch scoring endpoint"""

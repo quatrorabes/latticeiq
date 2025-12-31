@@ -1,10 +1,7 @@
-
-# ============================================================================
-# FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
-# ============================================================================
+# backend/app/main.py
 """
-Enterprise-grade FastAPI application for LatticeIQ
-Handles authentication, CRM imports, contact management, and scoring
+LatticeIQ Sales Intelligence API
+Enterprise-grade FastAPI application for lead scoring and enrichment
 """
 
 import os
@@ -13,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from functools import lru_cache
+
 import jwt
 import logging
 from fastapi import FastAPI, HTTPException, Header, status, Request
@@ -25,6 +23,7 @@ from pythonjsonlogger import jsonlogger
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
 # ============================================================================
+
 backend_dir = Path(__file__).parent.resolve()
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
@@ -33,6 +32,7 @@ if str(backend_dir) not in sys.path:
 # ============================================================================
 # CREATE APP FIRST
 # ============================================================================
+
 app = FastAPI(
     title="LatticeIQ Sales Intelligence API",
     version="3.0.0",
@@ -45,6 +45,7 @@ app = FastAPI(
 # ============================================================================
 # LOAD ENVIRONMENT & SUPABASE
 # ============================================================================
+
 class Settings(BaseModel):
     SUPABASE_URL: str = Field(default="", alias="SUPABASE_URL")
     SUPABASE_ANON_KEY: str = Field(default="", alias="SUPABASE_ANON_KEY")
@@ -70,15 +71,18 @@ class Settings(BaseModel):
             CORS_ALLOW_ORIGINS=os.getenv("CORS_ALLOW_ORIGINS", ""),
         )
 
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings.from_env()
+
 
 settings = get_settings()
 
 # ============================================================================
 # SETUP LOGGING
 # ============================================================================
+
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger = logging.getLogger("latticeiq")
     logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
@@ -90,11 +94,13 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger.propagate = False
     return logger
 
+
 logger = setup_logging(settings.LOG_LEVEL)
 
 # ============================================================================
 # CORS MIDDLEWARE - MUST BE FIRST
 # ============================================================================
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -109,11 +115,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # ============================================================================
 # INITIALIZE SUPABASE
 # ============================================================================
+
 def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning({"event": "supabase_not_configured"})
         return None
-    
+
     try:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
         logger.info({"event": "supabase_initialized"})
@@ -122,14 +129,17 @@ def initialize_supabase() -> Optional[Client]:
         logger.error({"event": "supabase_init_failed", "error": str(e)})
         return None
 
+
 supabase = initialize_supabase()
 
 # ============================================================================
 # DEFINE MODELS
 # ============================================================================
+
 class CurrentUser(BaseModel):
     id: str
     email: str
+
 
 class ContactCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
@@ -140,6 +150,7 @@ class ContactCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
+
 
 class ContactUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
@@ -155,9 +166,11 @@ class ContactUpdate(BaseModel):
     bant_score: Optional[int] = Field(None, ge=0, le=100)
     spice_score: Optional[int] = Field(None, ge=0, le=100)
 
+
 # ============================================================================
 # AUTH DEPENDENCY - JWT DECODE
 # ============================================================================
+
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
     if not authorization:
         raise HTTPException(
@@ -165,26 +178,28 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
             detail="Missing authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     try:
         parts = authorization.split(" ", 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization format")
-        
+
         token = parts[1]
         payload = jwt.decode(token, options={"verify_signature": False})
         user_id = payload.get("sub")
         email = payload.get("email", "")
-        
+
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
-        
+
         return CurrentUser(id=str(user_id), email=str(email))
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error({"event": "auth_error", "error_type": type(e).__name__, "error": str(e)})
         raise HTTPException(status_code=401, detail="Invalid token")
+
 
 # ============================================================================
 # IMPORT ROUTERS (with error handling)
@@ -253,14 +268,20 @@ try:
 except (ImportError, ModuleNotFoundError) as e:
     logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
 
-# Scoring Router - DISABLED (broken imports, causing app startup failure)
+# Scoring Router - NOW ENABLED
 scoring_router = None
 SCORING_AVAILABLE = False
-logger.warning({"event": "router_disabled", "router": "scoring", "reason": "import_error_deferred"})
+try:
+    from app.scoring.router import router as scoring_router
+    SCORING_AVAILABLE = True
+    logger.info({"event": "router_imported", "router": "scoring"})
+except (ImportError, ModuleNotFoundError) as e:
+    logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
 
 # ============================================================================
 # REGISTER ROUTERS
 # ============================================================================
+
 if CONTACTS_ROUTER_AVAILABLE and contacts_router:
     app.include_router(contacts_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "contacts", "prefix": "/api/v3"})
@@ -281,11 +302,15 @@ if SIMPLE_ENRICH_AVAILABLE and simple_enrich_router:
     app.include_router(simple_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrich_simple", "prefix": "/api/v3"})
 
-# NOTE: Scoring router NOT registered - will re-enable after fixing imports
+# SCORING ROUTER - NOW REGISTERED
+if SCORING_AVAILABLE and scoring_router:
+    app.include_router(scoring_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
 
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
+
 @app.get("/api/v3/icp-config")
 async def get_icp_config():
     return {
@@ -297,9 +322,11 @@ async def get_icp_config():
         "scoring_thresholds": {"high": 80, "medium": 60, "low": 40},
     }
 
+
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
 # ============================================================================
+
 @app.get("/health")
 async def health():
     return {
@@ -307,6 +334,7 @@ async def health():
         "timestamp": datetime.utcnow().isoformat(),
         "uptime": "running",
     }
+
 
 @app.get("/api/v3/health")
 async def health_v3():
@@ -316,8 +344,9 @@ async def health_v3():
         "timestamp": datetime.utcnow().isoformat(),
         "database": db_status,
         "enrichment": "available" if SIMPLE_ENRICH_AVAILABLE else "unavailable",
-        "scoring": "disabled_for_maintenance",
+        "scoring": "available" if SCORING_AVAILABLE else "unavailable",
     }
+
 
 @app.get("/api/routes")
 def list_routes(request: Request):
@@ -327,13 +356,30 @@ def list_routes(request: Request):
         key=lambda x: x["path"]
     )
 
+
 # ============================================================================
 # STARTUP / SHUTDOWN EVENTS
 # ============================================================================
+
 @app.on_event("startup")
 async def startup_event():
-    logger.info({"event": "startup", "message": "LatticeIQ API starting up..."})
+    logger.info({"event": "startup", "message": "LatticeIQ API starting up...", "scoring_enabled": SCORING_AVAILABLE})
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
+
+
+# ============================================================================
+# ROOT ENDPOINT
+# ============================================================================
+
+@app.get("/")
+async def root():
+    return {
+        "name": "LatticeIQ Sales Intelligence API",
+        "version": "3.0.0",
+        "docs": "/api/docs",
+        "status": "running"
+    }
