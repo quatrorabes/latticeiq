@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Contact, EnrichmentData } from '@typings/index'
+import { Contact, EnrichmentData } from '../types/index'
 import Modal from './Modal'
 import Button from './Button'
 import Badge from './Badge'

@@ -5,8 +5,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Plus, Search, Calculator, RefreshCw } from 'lucide-react';
 import { ContactsTable } from '../components/ContactsTable';
-import { ContactDetailModal } from '../components/ContactDetailModal';
-import { Contact } from '../types';
+import ContactDetailModal from '../components/ContactDetailModal';
+import { Contact } from '../types/index';
 import { supabase } from '../lib/supabaseClient';
 
 const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
@@ -223,12 +223,7 @@ export function ContactsPage() {
         <ContactDetailModal
           contact={selectedContact}
           isOpen={isModalOpen}
-          onClose={() => {
-            setIsModalOpen(false);
-            setSelectedContact(null);
-          }}
-          onEnrich={() => handleEnrichContact(selectedContact.id)}
-          isEnriching={enrichingIds.has(selectedContact.id)}
+          onClose={() => setIsModalOpen(false)}
         />
       )}
     </div>
@@ -236,3 +231,4 @@ export function ContactsPage() {
 }
 
 export default ContactsPage;
+
