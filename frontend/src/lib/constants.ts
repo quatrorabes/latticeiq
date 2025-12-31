@@ -8,8 +8,8 @@ export const API_ENDPOINTS = {
   contacts: '/api/v3/contacts',
   contact: (id: string) => `/api/v3/contacts/${id}`,
   
-  // Enrichment
-  ENRICH: (contactId: string) => `/api/v3/enrichment/enrich?contact_id=${contactId}`,
+  // Enrichment - POST body, not query param
+  ENRICH: '/api/v3/enrichment/enrich',
   ENRICH_STATUS: (contactId: string) => `/api/v3/enrichment/${contactId}/status`,
   enrich: '/api/v3/enrichment/enrich',
   enrichStatus: (id: string) => `/api/v3/enrichment/${id}/status`,
@@ -34,13 +34,13 @@ export const API_ENDPOINTS = {
   health: '/health',
 }
 
-// Scoring Frameworks data for ScoringPage
+// Scoring Frameworks
 export const FRAMEWORKS = [
   {
     id: 'mdcp',
     name: 'MDCP',
     full_name: 'Money, Decision-Maker, Champion, Process',
-    description: 'Best for enterprise SaaS with long sales cycles (90+ days). Focuses on budget confirmation, stakeholder mapping, internal advocacy, and deal timeline.',
+    description: 'Best for enterprise SaaS with long sales cycles (90+ days).',
     hot_threshold: 80,
     warm_threshold: 60,
     dimensions: ['Money', 'Decision-Maker', 'Champion', 'Process'],
@@ -49,7 +49,7 @@ export const FRAMEWORKS = [
     id: 'bant',
     name: 'BANT',
     full_name: 'Budget, Authority, Need, Timeline',
-    description: 'Best for mid-market with quick sales cycles (30-60 days). Classic qualification focusing on budget availability, decision authority, pain points, and urgency.',
+    description: 'Best for mid-market with quick sales cycles (30-60 days).',
     hot_threshold: 80,
     warm_threshold: 60,
     dimensions: ['Budget', 'Authority', 'Need', 'Timeline'],
@@ -58,7 +58,7 @@ export const FRAMEWORKS = [
     id: 'spice',
     name: 'SPICE',
     full_name: 'Situation, Problem, Implication, Consequence, Economics',
-    description: 'Best for consulting and complex solutions. Deep qualification focusing on current state, pain analysis, business impact, risk assessment, and ROI.',
+    description: 'Best for consulting and complex solutions.',
     hot_threshold: 85,
     warm_threshold: 65,
     dimensions: ['Situation', 'Problem', 'Implication', 'Consequence', 'Economics'],

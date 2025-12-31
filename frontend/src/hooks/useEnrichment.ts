@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { Contact } from '@typings/index'
 import { apiCall } from '@services/api'
-import { API_ENDPOINTS } from '@lib/constants'
 
 export function useEnrichment() {
   const [enriching, setEnriching] = useState<string | null>(null)
@@ -11,42 +9,35 @@ export function useEnrichment() {
     setEnriching(contactId)
     setError(null)
     try {
-      const response = await apiCall<Contact>(
-        API_ENDPOINTS.ENRICH(contactId),
-        {
-          method: 'POST',
-          body: {},
-        }
-      )
-      return response
+      const result = await apiCall<any>('/api/v3/enrichment/enrich', {
+        method: 'POST',
+        body: { contact_id: contactId },
+      })
+      return result
     } catch (err: any) {
-      const errorMsg = err.message || 'Failed to enrich contact'
-      setError(errorMsg)
+      setError(err.message || 'Failed to enrich contact')
       throw err
     } finally {
       setEnriching(null)
     }
   }
 
-  const checkStatus = async (contactId: string) => {
+  const getEnrichmentStatus = async (contactId: string) => {
     try {
-      const response = await apiCall<{
-        status: string
-        progress?: number
-      }>(API_ENDPOINTS.ENRICH_STATUS(contactId), {
+      const result = await apiCall<any>(`/api/v3/enrichment/${contactId}/status`, {
         method: 'GET',
       })
-      return response
+      return result
     } catch (err: any) {
-      console.error('Status check error:', err)
-      return null
+      setError(err.message || 'Failed to get enrichment status')
+      throw err
     }
   }
 
   return {
     enrich,
-    enriching,
+    enriching,  // string | null (the contact ID being enriched)
     error,
-    checkStatus,
+    getEnrichmentStatus,
   }
 }
