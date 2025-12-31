@@ -306,6 +306,14 @@ if SIMPLE_ENRICH_AVAILABLE and simple_enrich_router:
 if SCORING_AVAILABLE and scoring_router:
     app.include_router(scoring_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
+    
+# INITIALIZE SCORING ROUTER WITH SUPABASE CLIENT
+    
+# Pass the supabase client to scoring router after registration
+if SCORING_AVAILABLE and scoring_router:
+    from app.scoring.router import set_supabase_client
+    set_supabase_client(supabase)
+    logger.info({"event": "supabase_client_initialized", "router": "scoring"})
 
 # ============================================================================
 # ICP CONFIG ENDPOINT
@@ -383,3 +391,4 @@ async def root():
         "docs": "/api/docs",
         "status": "running"
     }
+    

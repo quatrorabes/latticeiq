@@ -1,12 +1,13 @@
 # backend/app/scoring/router.py
 """
 LatticeIQ Scoring Router
-API endpoints for MDCP, BANT, SPICE lead scoring
+API endpoints for MDCP, BANT, SPICE lead scoring with real database integration
 """
 
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 from typing import Optional, Dict, Any
+from supabase import Client
 
 from .models import ScoreResponse, BatchScoringResponse
 from .calculators import (
@@ -16,6 +17,15 @@ from .calculators import (
 )
 
 router = APIRouter(prefix="/scoring", tags=["scoring"])
+
+# Global supabase client (imported from main)
+supabase: Optional[Client] = None
+
+
+def set_supabase_client(client: Client):
+    """Set the supabase client (called from main.py)"""
+    global supabase
+    supabase = client
 
 
 # ==========================================
@@ -107,35 +117,22 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
     """Calculate all three scoring frameworks (MDCP, BANT, SPICE) for a contact"""
     
     try:
-        # Build mock contact object for testing
-        # In production, fetch from database:
-        # response = supabase.table("contacts").select("*").eq("id", contact_id).single().execute()
-        # contact = response.data
+        # 1. FETCH CONTACT FROM SUPABASE DATABASE
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Database not initialized")
         
-        contact = {
-            "id": contact_id,
-            "job_title": "VP Sales",
-            "company": "Acme Corp",
-            "enrichment_status": "completed",
-            "enriched_at": datetime.utcnow().isoformat(),
-            "enrichment_data": {
-                "bant": {
-                    "budget_confirmed": True,
-                    "need_identified": True
-                },
-                "spice": {
-                    "problem_identified": True,
-                    "decision_process_confirmed": True
-                }
-            }
-        }
+        response = supabase.table("contacts").select("*").eq("id", contact_id).single().execute()
+        contact = response.data
+        
+        if not contact:
+            raise HTTPException(status_code=404, detail=f"Contact {contact_id} not found")
 
-        # 1. GET CONFIGS
+        # 2. GET CONFIGS
         mdcp_config = await get_scoring_config("mdcp")
         bant_config = await get_scoring_config("bant")
         spice_config = await get_scoring_config("spice")
 
-        # 2. CALCULATE SCORES
+        # 3. CALCULATE SCORES
         mdcp_result = calculate_mdcp_score(contact, mdcp_config)
         bant_result = calculate_bant_score(contact, bant_config)
         spice_result = calculate_spice_score(contact, spice_config)
@@ -144,17 +141,34 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         bant_score = bant_result.get("score", 0)
         spice_score = spice_result.get("score", 0)
 
-        # 3. CALCULATE OVERALL SCORE (average of three frameworks)
+        # 4. CALCULATE OVERALL SCORE (average of three frameworks)
         overall_score = round((mdcp_score + bant_score + spice_score) / 3, 2)
 
-        # 4. DETERMINE TIERS
+        # 5. DETERMINE TIERS
         mdcp_tier = get_tier(mdcp_score)
         bant_tier = get_tier(bant_score)
         spice_tier = get_tier(spice_score)
 
-        # 5. PREPARE RESPONSE
+        # 6. PERSIST TO DATABASE
         now = datetime.utcnow()
+        update_payload = {
+            "mdcp_score": float(mdcp_score),
+            "mdcp_tier": mdcp_tier,
+            "bant_score": float(bant_score),
+            "bant_tier": bant_tier,
+            "spice_score": float(spice_score),
+            "spice_tier": spice_tier,
+            "overall_score": overall_score,
+            "last_scored_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }
+        
+        update_response = supabase.table("contacts").update(update_payload).eq("id", contact_id).execute()
+        
+        if not update_response.data:
+            raise HTTPException(status_code=500, detail="Failed to persist scores to database")
 
+        # 7. RETURN RESPONSE
         response = ScoreResponse(
             contact_id=contact_id,
             mdcp_score=round(float(mdcp_score), 2),
@@ -166,20 +180,6 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
             overall_score=overall_score,
             last_scored_at=now
         )
-
-        # 6. PERSIST TO DATABASE (when integrated)
-        # update_payload = {
-        #     "mdcp_score": float(mdcp_score),
-        #     "mdcp_tier": mdcp_tier,
-        #     "bant_score": float(bant_score),
-        #     "bant_tier": bant_tier,
-        #     "spice_score": float(spice_score),
-        #     "spice_tier": spice_tier,
-        #     "overall_score": overall_score,
-        #     "last_scored_at": now.isoformat(),
-        #     "updated_at": now.isoformat()
-        # }
-        # supabase.table("contacts").update(update_payload).eq("id", contact_id).execute()
 
         return response
 
@@ -200,25 +200,13 @@ async def score_all_contacts() -> BatchScoringResponse:
     """Score ALL contacts in workspace"""
     
     try:
-        # 1. GET ALL CONTACTS (mock data for testing)
-        # In production: contacts_response = supabase.table("contacts").select("*").execute()
-        contacts = [
-            {
-                "id": "contact-1",
-                "job_title": "CEO",
-                "company": "Company A",
-                "enrichment_status": "completed",
-                "enriched_at": datetime.utcnow().isoformat()
-            },
-            {
-                "id": "contact-2",
-                "job_title": "Director",
-                "company": "Company B",
-                "enrichment_status": "completed",
-                "enriched_at": datetime.utcnow().isoformat()
-            }
-        ]
-
+        # 1. GET ALL CONTACTS FROM DATABASE
+        if not supabase:
+            raise HTTPException(status_code=500, detail="Database not initialized")
+        
+        contacts_response = supabase.table("contacts").select("*").execute()
+        contacts = contacts_response.data
+        
         if not contacts:
             return BatchScoringResponse(
                 success=True,
@@ -254,37 +242,47 @@ async def score_all_contacts() -> BatchScoringResponse:
                 bant_tier = get_tier(bant_score)
                 spice_tier = get_tier(spice_score)
 
-                # Persist (when integrated with database)
-                # update_payload = {
-                #     "mdcp_score": float(mdcp_score),
-                #     "mdcp_tier": mdcp_tier,
-                #     "bant_score": float(bant_score),
-                #     "bant_tier": bant_tier,
-                #     "spice_score": float(spice_score),
-                #     "spice_tier": spice_tier,
-                #     "overall_score": overall_score,
-                #     "last_scored_at": now.isoformat(),
-                #     "updated_at": now.isoformat()
-                # }
-                # supabase.table("contacts").update(update_payload).eq("id", contact["id"]).execute()
-
-                scored_count += 1
+                # Persist to database
+                update_payload = {
+                    "mdcp_score": float(mdcp_score),
+                    "mdcp_tier": mdcp_tier,
+                    "bant_score": float(bant_score),
+                    "bant_tier": bant_tier,
+                    "spice_score": float(spice_score),
+                    "spice_tier": spice_tier,
+                    "overall_score": overall_score,
+                    "last_scored_at": now.isoformat(),
+                    "updated_at": now.isoformat()
+                }
+                
+                update_response = supabase.table("contacts").update(update_payload).eq("id", contact["id"]).execute()
+                
+                if update_response.data:
+                    scored_count += 1
+                else:
+                    errors.append({
+                        "contact_id": contact.get("id"),
+                        "error": "Failed to persist scores"
+                    })
 
             except Exception as e:
                 errors.append({
                     "contact_id": contact.get("id"),
                     "error": str(e)
                 })
+                print(f"Error scoring contact {contact.get('id')}: {str(e)}")
 
         # 4. RETURN BATCH RESPONSE
         return BatchScoringResponse(
-            success=True,
+            success=len(errors) == 0,
             scored_count=scored_count,
             total_contacts=len(contacts),
             errors=errors if errors else None,
             message=f"Successfully scored {scored_count}/{len(contacts)} contacts"
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
