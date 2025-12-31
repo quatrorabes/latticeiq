@@ -1,52 +1,12 @@
-
 import Card from '@components/Card'
 import { BarChart3, Users, Zap, TrendingUp } from 'lucide-react'
-import { useContacts } from '@hooks/useContacts'
-import { useMemo } from 'react'
 
 export default function DashboardPage() {
-  const { contacts } = useContacts()
-
-  const stats = useMemo(() => {
-    const totalContacts = contacts.length
-    const enrichedContacts = contacts.filter(c => c.enrichment_status === 'completed').length
-    const avgScore = contacts.length > 0
-      ? Math.round(contacts.reduce((sum, c) => sum + (c.apex_score || 0), 0) / contacts.length)
-      : 0
-    const hotLeads = contacts.filter(c => (c.apex_score || 0) >= 80).length
-
-    return { totalContacts, enrichedContacts, avgScore, hotLeads }
-  }, [contacts])
-
   const statCards = [
-    {
-      label: 'Total Contacts',
-      value: stats.totalContacts,
-      icon: Users,
-      color: 'text-primary-400',
-      bgColor: 'bg-primary-500/10',
-    },
-    {
-      label: 'Enriched',
-      value: stats.enrichedContacts,
-      icon: Zap,
-      color: 'text-success',
-      bgColor: 'bg-success/10',
-    },
-    {
-      label: 'Avg Score',
-      value: stats.avgScore,
-      icon: BarChart3,
-      color: 'text-warning',
-      bgColor: 'bg-warning/10',
-    },
-    {
-      label: 'Hot Leads',
-      value: stats.hotLeads,
-      icon: TrendingUp,
-      color: 'text-error',
-      bgColor: 'bg-error/10',
-    },
+    { label: 'Total Contacts', value: 0, icon: Users, color: 'text-cyan-400', bgColor: 'bg-cyan-500/10' },
+    { label: 'Enriched', value: 0, icon: Zap, color: 'text-green-400', bgColor: 'bg-green-500/10' },
+    { label: 'Avg Score', value: 0, icon: BarChart3, color: 'text-amber-400', bgColor: 'bg-amber-500/10' },
+    { label: 'Hot Leads', value: 0, icon: TrendingUp, color: 'text-red-400', bgColor: 'bg-red-500/10' },
   ]
 
   return (
@@ -77,9 +37,7 @@ export default function DashboardPage() {
 
       <Card variant="elevated">
         <h2 className="text-xl font-bold text-white mb-4">Recent Activity</h2>
-        <div className="text-slate-400 text-sm">
-          <p>Feature coming soon...</p>
-        </div>
+        <p className="text-slate-400 text-sm">Feature coming soon...</p>
       </Card>
     </div>
   )

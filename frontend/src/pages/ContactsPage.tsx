@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react'
-import { Contact } from '@types/index'
+import { Contact } from '@typings/index'
 import { useContacts } from '@hooks/useContacts'
 import { useEnrichment } from '@hooks/useEnrichment'
 import { apiCall } from '@services/api'

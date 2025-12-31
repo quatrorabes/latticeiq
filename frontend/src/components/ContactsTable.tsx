@@ -1,6 +1,6 @@
 
 import { useState, useMemo } from 'react'
-import { Contact } from '@types/index'
+import { Contact } from '@typings/index'
 import { formatDate, getInitials, getDisplayName, getScoreColor, getStatusColor } from '@lib/utils'
 import { Search, Trash2, Zap, ChevronUp, ChevronDown } from 'lucide-react'
 import Button from './Button'

@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react'
-import { Contact, EnrichmentData } from '@types/index'
+import { Contact, EnrichmentData } from '@typings/index'
 import Modal from './Modal'
 import Button from './Button'
 import Badge from './Badge'

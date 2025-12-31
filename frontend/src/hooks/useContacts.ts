@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Contact } from '@types/index'
+import { Contact } from '@typings/index'
 import { apiCall } from '@services/api'
 import { API_ENDPOINTS } from '@lib/constants'
 
