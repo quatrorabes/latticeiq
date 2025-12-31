@@ -1,4 +1,3 @@
-
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
@@ -12,6 +11,7 @@ import ContactsPage from './pages/ContactsPage'
 import EnrichmentPage from './pages/EnrichmentPage'
 import ScoringPage from './pages/ScoringPage'
 import SettingsPage from './pages/SettingsPage'
+import CRMPage from './pages/CRMPage'
 
 export default function App() {
   const { session, loading } = useAuth()
@@ -51,8 +51,8 @@ export default function App() {
         ) : (
           <Route
             element={
-              <Layout 
-                darkMode={darkMode} 
+              <Layout
+                darkMode={darkMode}
                 onToggleDarkMode={() => setDarkMode(!darkMode)}
               />
             }
@@ -63,6 +63,7 @@ export default function App() {
             <Route path="/enrichment" element={<EnrichmentPage />} />
             <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/crm" element={<CRMPage />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
           </Route>
         )}
