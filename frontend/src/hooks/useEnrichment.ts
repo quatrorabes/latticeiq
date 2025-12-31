@@ -1,105 +1,52 @@
-import { useState, useCallback, useRef } from 'react'
-import { 
-  enrichContact, 
-  getEnrichmentStatus, 
-  getEnrichmentProfile
-} from '../services/enrichmentService'
-import type { EnrichmentStatus, EnrichmentProfile } from '../services/enrichmentService'
+import { useState } from 'react'
+import { Contact } from '@types/index'
+import { apiCall } from '@services/api'
+import { API_ENDPOINTS } from '@lib/constants'
 
-interface UseEnrichmentOptions {
-  onComplete?: (profile: EnrichmentProfile) => void
-  onError?: (error: Error) => void
-  pollInterval?: number
-}
+export function useEnrichment() {
+  const [enriching, setEnriching] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-export function useEnrichment(options: UseEnrichmentOptions = {}) {
-  const { onComplete, onError, pollInterval = 2000 } = options
-  
-  const [isEnriching, setIsEnriching] = useState(false)
-  const [status, setStatus] = useState<EnrichmentStatus | null>(null)
-  const [profile, setProfile] = useState<EnrichmentProfile | null>(null)
-  const [error, setError] = useState<Error | null>(null)
-  
-  const pollRef = useRef<number | null>(null)
-  
-  const stopPolling = useCallback(() => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current)
-      pollRef.current = null
-    }
-  }, [])
-  
-  const startPolling = useCallback((contactId: number) => {
-    stopPolling()
-    
-    pollRef.current = window.setInterval(async () => {
-      try {
-        const statusResult = await getEnrichmentStatus(contactId)
-        setStatus(statusResult)
-        
-        if (statusResult.status === 'completed') {
-          stopPolling()
-          const profileResult = await getEnrichmentProfile(contactId)
-          setProfile(profileResult)
-          setIsEnriching(false)
-          onComplete?.(profileResult)
-        } else if (statusResult.status === 'failed') {
-          stopPolling()
-          setIsEnriching(false)
-          const err = new Error(statusResult.error || 'Enrichment failed')
-          setError(err)
-          onError?.(err)
-        }
-      } catch (err) {
-        stopPolling()
-        setIsEnriching(false)
-        const error = err instanceof Error ? err : new Error('Polling failed')
-        setError(error)
-        onError?.(error)
-      }
-    }, pollInterval)
-  }, [pollInterval, stopPolling, onComplete, onError])
-  
-  const enrich = useCallback(async (contactId: number) => {
-    setIsEnriching(true)
+  const enrich = async (contactId: string) => {
+    setEnriching(contactId)
     setError(null)
-    setStatus(null)
-    setProfile(null)
-    
     try {
-      const response = await enrichContact(contactId)
-      setStatus({
-        enrichment_id: response.enrichment_id,
-        contact_id: contactId,
-        status: 'processing',
-        progress: 0,
-        domains_completed: [],
-        domains_pending: ['COMPANY', 'PERSON', 'INDUSTRY', 'NEWS', 'OPEN_ENDED']
-      })
-      startPolling(contactId)
-    } catch (err) {
-      setIsEnriching(false)
-      const error = err instanceof Error ? err : new Error('Failed to start enrichment')
-      setError(error)
-      onError?.(error)
+      const response = await apiCall<Contact>(
+        API_ENDPOINTS.ENRICH(contactId),
+        {
+          method: 'POST',
+          body: {},
+        }
+      )
+      return response
+    } catch (err: any) {
+      const errorMsg = err.message || 'Failed to enrich contact'
+      setError(errorMsg)
+      throw err
+    } finally {
+      setEnriching(null)
     }
-  }, [startPolling, onError])
-  
-  const reset = useCallback(() => {
-    stopPolling()
-    setIsEnriching(false)
-    setStatus(null)
-    setProfile(null)
-    setError(null)
-  }, [stopPolling])
-  
+  }
+
+  const checkStatus = async (contactId: string) => {
+    try {
+      const response = await apiCall<{
+        status: string
+        progress?: number
+      }>(API_ENDPOINTS.ENRICH_STATUS(contactId), {
+        method: 'GET',
+      })
+      return response
+    } catch (err: any) {
+      console.error('Status check error:', err)
+      return null
+    }
+  }
+
   return {
     enrich,
-    reset,
-    isEnriching,
-    status,
-    profile,
+    enriching,
     error,
-    progress: status?.progress ?? 0
+    checkStatus,
   }
 }

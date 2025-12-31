@@ -1,63 +1,91 @@
-// frontend/src/components/Sidebar.tsx
 
-import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { LogOut } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom'
+import { useState } from 'react'
+import {
+  LayoutDashboard,
+  Users,
+  Zap,
+  BarChart3,
+  Settings,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react'
+import { cn } from '@lib/utils'
 
 interface SidebarProps {
-  onLogout: () => void;
+  onLogout: () => void
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ onLogout }) => {
-  const location = useLocation();
-
-  const isActive = (path: string) => location.pathname === path;
+export default function Sidebar({ onLogout }: SidebarProps) {
+  const [collapsed, setCollapsed] = useState(false)
+  const location = useLocation()
 
   const navItems = [
-    { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-    { path: '/contacts', label: 'Contacts', icon: '👥' },
-    { path: '/scoring-config', label: 'Scoring Config', icon: '⚙️' },
-    { path: '/settings', label: 'Settings', icon: '🔧' },
-  ];
+    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { path: '/contacts', label: 'Contacts', icon: Users },
+    { path: '/enrichment', label: 'Enrichment', icon: Zap },
+    { path: '/scoring', label: 'Scoring', icon: BarChart3 },
+    { path: '/settings', label: 'Settings', icon: Settings },
+  ]
+
+  const isActive = (path: string) => location.pathname === path
 
   return (
-    <aside className="fixed left-0 top-0 w-64 h-screen bg-gray-900 dark:bg-gray-950 border-r border-gray-800 dark:border-gray-900 flex flex-col">
-      {/* Header */}
-      <div className="p-6 border-b border-gray-800 dark:border-gray-900">
-        <h1 className="text-2xl font-bold text-white">LatticeIQ</h1>
-        <p className="text-xs text-gray-400 mt-1">Sales Intelligence</p>
+    <aside
+      className={cn(
+        'bg-slate-900 border-r border-slate-800 transition-all duration-300 flex flex-col',
+        collapsed ? 'w-20' : 'w-64'
+      )}
+    >
+      {/* Logo */}
+      <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+        {!collapsed && (
+          <h2 className="text-xl font-bold text-white">LatticeIQ</h2>
+        )}
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          className="p-2 hover:bg-slate-800 rounded-lg transition-colors"
+        >
+          {collapsed ? (
+            <ChevronRight className="w-5 h-5" />
+          ) : (
+            <ChevronLeft className="w-5 h-5" />
+          )}
+        </button>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
-        {navItems.map((item) => (
+      <nav className="flex-1 p-4 space-y-2">
+        {navItems.map(({ path, label, icon: Icon }) => (
           <Link
-            key={item.path}
-            to={item.path}
-            className={`flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-              isActive(item.path)
-                ? 'bg-blue-600 text-white font-medium'
-                : 'text-gray-300 hover:text-white hover:bg-gray-800 dark:hover:bg-gray-800'
-            }`}
+            key={path}
+            to={path}
+            className={cn(
+              'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
+              isActive(path)
+                ? 'bg-primary-500 text-white'
+                : 'text-slate-400 hover:bg-slate-800'
+            )}
+            title={collapsed ? label : ''}
           >
-            <span className="text-xl">{item.icon}</span>
-            <span className="text-sm">{item.label}</span>
+            <Icon className="w-5 h-5 flex-shrink-0" />
+            {!collapsed && <span className="font-medium">{label}</span>}
           </Link>
         ))}
       </nav>
 
-      {/* Logout Button */}
-      <div className="p-4 border-t border-gray-800 dark:border-gray-900">
+      {/* Logout */}
+      <div className="p-4 border-t border-slate-800">
         <button
           onClick={onLogout}
-          className="w-full flex items-center gap-2 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg transition"
+          className="w-full flex items-center gap-3 px-4 py-3 text-slate-400 hover:bg-slate-800 rounded-lg transition-colors"
+          title={collapsed ? 'Logout' : ''}
         >
-          <LogOut size={16} />
-          <span className="text-sm">Logout</span>
+          <LogOut className="w-5 h-5" />
+          {!collapsed && <span>Logout</span>}
         </button>
       </div>
     </aside>
-  );
-};
-
-export default Sidebar;
+  )
+}

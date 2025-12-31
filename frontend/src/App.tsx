@@ -1,90 +1,72 @@
-// frontend/src/App.tsx
 
-import { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { createPortal } from 'react-dom';
-import { supabase } from './lib/supabaseClient';
-import type { Session } from '@supabase/supabase-js';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { useAuth } from './hooks/useAuth'
+import Layout from './components/Layout'
+import LoadingSpinner from './components/LoadingSpinner'
 
 // Pages
-import Login from './pages/Login';
-import Signup from './pages/Signup';
-import Dashboard from './pages/Dashboard';
-import ContactsPage from './pages/ContactsPage';
-import ScoringConfigPage from './pages/ScoringConfigPage';
-import SettingsPage from './pages/SettingsPage';
+import LoginPage from './pages/LoginPage'
+import DashboardPage from './pages/DashboardPage'
+import ContactsPage from './pages/ContactsPage'
+import EnrichmentPage from './pages/EnrichmentPage'
+import ScoringPage from './pages/ScoringPage'
+import SettingsPage from './pages/SettingsPage'
 
-// Components
-import Sidebar from './components/Sidebar';
-import Loader from './components/Loader';
-
-function App() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+export default function App() {
+  const { session, loading } = useAuth()
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('darkMode') !== 'false'
+    }
+    return true
+  })
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-    setSession(null);
-  };
+    const html = document.documentElement
+    if (darkMode) {
+      html.classList.add('dark')
+    } else {
+      html.classList.remove('dark')
+    }
+    localStorage.setItem('darkMode', darkMode.toString())
+  }, [darkMode])
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
-        <Loader />
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <LoadingSpinner />
       </div>
-    );
-  }
-
-  if (!session) {
-    return (
-      <Router>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
-      </Router>
-    );
+    )
   }
 
   return (
     <Router>
-      <div className="flex min-h-screen bg-gray-950">
-        <Sidebar onLogout={handleLogout} />
-
-        <main className="ml-64 flex-1 p-8">
-          <Routes>
-            <Route path="/dashboard" element={<Dashboard />} />
+      <Routes>
+        {!session ? (
+          <>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </>
+        ) : (
+          <Route
+            element={
+              <Layout 
+                darkMode={darkMode} 
+                onToggleDarkMode={() => setDarkMode(!darkMode)}
+              />
+            }
+          >
+            <Route path="/" element={<Navigate to="/contacts" replace />} />
+            <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/scoring-config" element={<ScoringConfigPage />} />
+            <Route path="/enrichment" element={<EnrichmentPage />} />
+            <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          </Routes>
-        </main>
-      </div>
-
-      {/* ✅ Portal container for modals - renders at document.body */}
-      {createPortal(
-        <div id="modal-root" />,
-        document.body
-      )}
+            <Route path="*" element={<Navigate to="/contacts" replace />} />
+          </Route>
+        )}
+      </Routes>
     </Router>
-  );
+  )
 }
-
-export default App;

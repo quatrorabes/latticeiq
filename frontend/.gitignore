@@ -1,17 +1,28 @@
-.vercel
-# macOS
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing
+coverage/
+
+# Production
+dist/
+dist-ssr/
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
-# local virtualenvs
-backend/.venv/
-frontend/node_modules/
-
-# generated artifacts
-frontend/dist/
-
-# local notes/docs exports
-docs/*.pdf
-docs/*.docx
-docs/~$*.docx
-curl-other-statements.txt
-curl-other-statements.txt
+# Environment
+.env
+.env.local
+.env.*.local
