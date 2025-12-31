@@ -1,38 +1,55 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Contact } from '@typings/index'
 import { apiCall } from '@services/api'
 import { API_ENDPOINTS } from '@lib/constants'
+
+interface ContactsResponse {
+  contacts?: Contact[]
+  data?: Contact[]
+  total?: number
+}
 
 export function useContacts() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const fetchContacts = async () => {
+  const fetchContacts = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const data = await apiCall<Contact[]>(API_ENDPOINTS.CONTACTS_LIST, {
+      const response = await apiCall<Contact[] | ContactsResponse>(API_ENDPOINTS.CONTACTS_LIST, {
         method: 'GET',
       })
-      setContacts(data)
+      
+      // Handle both array and object responses
+      if (Array.isArray(response)) {
+        setContacts(response)
+      } else if (response && typeof response === 'object') {
+        // Backend returns {contacts: [...]} or {data: [...]}
+        const contactsArray = (response as ContactsResponse).contacts || (response as ContactsResponse).data || []
+        setContacts(Array.isArray(contactsArray) ? contactsArray : [])
+      } else {
+        setContacts([])
+      }
     } catch (err: any) {
       setError(err.message || 'Failed to fetch contacts')
+      setContacts([])
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchContacts()
-  }, [])
+  }, [fetchContacts])
 
   const deleteContact = async (id: string) => {
     try {
       await apiCall<void>(API_ENDPOINTS.CONTACTS_DELETE(id), {
         method: 'DELETE',
       })
-      setContacts(contacts.filter(c => c.id !== id))
+      setContacts(prev => prev.filter(c => c.id !== id))
     } catch (err: any) {
       setError(err.message || 'Failed to delete contact')
       throw err
@@ -45,7 +62,7 @@ export function useContacts() {
         method: 'POST',
         body: contact,
       })
-      setContacts([...contacts, newContact])
+      setContacts(prev => [...prev, newContact])
       return newContact
     } catch (err: any) {
       setError(err.message || 'Failed to create contact')
