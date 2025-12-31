@@ -1,3 +1,4 @@
+
 # ============================================================================
 # FILE: backend/app/main.py - LatticeIQ Sales Intelligence API
 # ============================================================================
@@ -27,7 +28,7 @@ from pythonjsonlogger import jsonlogger
 backend_dir = Path(__file__).parent.resolve()
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # ============================================================================
 # CREATE APP FIRST
@@ -112,6 +113,7 @@ def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning({"event": "supabase_not_configured"})
         return None
+    
     try:
         client = create_client(settings.SUPABASE_URL, settings.SUPABASE_ANON_KEY)
         logger.info({"event": "supabase_initialized"})
@@ -163,16 +165,20 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
             detail="Missing authorization header",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
     try:
         parts = authorization.split(" ", 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization format")
+        
         token = parts[1]
         payload = jwt.decode(token, options={"verify_signature": False})
         user_id = payload.get("sub")
         email = payload.get("email", "")
+        
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
+        
         return CurrentUser(id=str(user_id), email=str(email))
     except HTTPException:
         raise
@@ -227,7 +233,7 @@ except ImportError:
     except ImportError as e:
         logger.warning({"event": "router_import_failed", "router": "crm", "error": str(e)})
 
-# Enrichment Router (enrich_router.py)
+# Enrichment Router
 enrich_router = None
 ENRICH_ROUTER_AVAILABLE = False
 try:
@@ -237,21 +243,7 @@ try:
 except (ImportError, ModuleNotFoundError) as e:
     logger.warning({"event": "router_import_failed", "router": "enrichment", "error": str(e)})
 
-# Scoring Router
-scoring_router = None
-SCORING_AVAILABLE = False
-try:
-    from app.scoring.router import router as scoring_router
-    SCORING_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "scoring"})
-except ImportError:
-    try:
-        from scoring.router import router as scoring_router
-        SCORING_AVAILABLE = True
-    except ImportError as e:
-        logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
-
-# Simple Enrich Router (enrich_simple.py) - THIS IS THE KEY ONE
+# Simple Enrich Router (enrich_simple.py) - KEY ROUTER
 simple_enrich_router = None
 SIMPLE_ENRICH_AVAILABLE = False
 try:
@@ -261,8 +253,13 @@ try:
 except (ImportError, ModuleNotFoundError) as e:
     logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
 
+# Scoring Router - DISABLED (broken imports, causing app startup failure)
+scoring_router = None
+SCORING_AVAILABLE = False
+logger.warning({"event": "router_disabled", "router": "scoring", "reason": "import_error_deferred"})
+
 # ============================================================================
-# REGISTER ROUTERS (ONCE EACH)
+# REGISTER ROUTERS
 # ============================================================================
 if CONTACTS_ROUTER_AVAILABLE and contacts_router:
     app.include_router(contacts_router, prefix="/api/v3")
@@ -280,13 +277,11 @@ if ENRICH_ROUTER_AVAILABLE and enrich_router:
     app.include_router(enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrichment", "prefix": "/api/v3"})
 
-if SCORING_AVAILABLE and scoring_router:
-    app.include_router(scoring_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "scoring", "prefix": "/api/v3"})
-
 if SIMPLE_ENRICH_AVAILABLE and simple_enrich_router:
     app.include_router(simple_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrich_simple", "prefix": "/api/v3"})
+
+# NOTE: Scoring router NOT registered - will re-enable after fixing imports
 
 # ============================================================================
 # ICP CONFIG ENDPOINT
@@ -311,6 +306,17 @@ async def health():
         "status": "ok",
         "timestamp": datetime.utcnow().isoformat(),
         "uptime": "running",
+    }
+
+@app.get("/api/v3/health")
+async def health_v3():
+    db_status = "connected" if supabase else "disconnected"
+    return {
+        "status": "ok",
+        "timestamp": datetime.utcnow().isoformat(),
+        "database": db_status,
+        "enrichment": "available" if SIMPLE_ENRICH_AVAILABLE else "unavailable",
+        "scoring": "disabled_for_maintenance",
     }
 
 @app.get("/api/routes")
