@@ -1,7 +1,3 @@
-// ============================================================================
-// FILE: frontend/src/types/index.ts
-// TypeScript interfaces for LatticeIQ application
-// ============================================================================
 
 export type Contact = {
   id: string;

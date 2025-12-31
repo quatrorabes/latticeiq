@@ -1,7 +1,3 @@
-// ============================================================================
-// FILE: frontend/src/api/contacts.ts
-// API client for contacts CRUD operations
-// ============================================================================
 
 import { Contact } from '../types';
 
@@ -22,12 +18,8 @@ export async function fetchContacts(limit = 100, offset = 0): Promise<{ contacts
     },
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch contacts: ${response.statusText}`);
-  }
-
-  const data = await response.json();
-  return data;
+  if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
+  return response.json();
 }
 
 export async function createContact(contact: Partial<Contact>): Promise<Contact> {
@@ -41,10 +33,7 @@ export async function createContact(contact: Partial<Contact>): Promise<Contact>
     body: JSON.stringify(contact),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to create contact: ${response.statusText}`);
-  }
-
+  if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
   return response.json();
 }
 
@@ -59,10 +48,7 @@ export async function updateContact(contactId: string, updates: Partial<Contact>
     body: JSON.stringify(updates),
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to update contact: ${response.statusText}`);
-  }
-
+  if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
   return response.json();
 }
 
@@ -70,14 +56,9 @@ export async function deleteContact(contactId: string): Promise<boolean> {
   const token = await getAuthToken();
   const response = await fetch(`${API_BASE}/api/v3/contacts/${contactId}`, {
     method: 'DELETE',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-    },
+    headers: { 'Authorization': `Bearer ${token}` },
   });
 
-  if (!response.ok) {
-    throw new Error(`Failed to delete contact: ${response.statusText}`);
-  }
-
+  if (!response.ok) throw new Error(`Failed: ${response.statusText}`);
   return true;
 }
