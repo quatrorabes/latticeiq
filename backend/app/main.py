@@ -275,15 +275,15 @@ except ImportError:
     except ImportError as e:
         logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
 
-# Quick Enrich Router - FIXED PATH
-quick_enrich_router = None
-QUICK_ENRICH_AVAILABLE = False
+# Simple Enrich Router
+simple_enrich_router = None
+SIMPLE_ENRICH_AVAILABLE = False
 try:
-    from app.enrichment_v3.quick_enrich import router as quick_enrich_router
-    QUICK_ENRICH_AVAILABLE = True
-    logger.info({"event": "router_imported", "router": "quick_enrich"})
+    from app.enrichment_v3.enrich_simple import router as simple_enrich_router
+    SIMPLE_ENRICH_AVAILABLE = True
+    logger.info({"event": "router_imported", "router": "enrich_simple"})
 except (ImportError, ModuleNotFoundError) as e:
-    logger.warning({"event": "router_import_failed", "router": "quick_enrich", "error": str(e)})
+    logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
 
 # ============================================================================
 # REGISTER ROUTERS (ONCE EACH)
@@ -312,6 +312,9 @@ if QUICK_ENRICH_AVAILABLE and quick_enrich_router:
     app.include_router(quick_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "quick_enrich", "prefix": "/api/v3"})
 
+if SIMPLE_ENRICH_AVAILABLE and simple_enrich_router:
+    app.include_router(simple_enrich_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "enrich_simple", "prefix": "/api/v3"})
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
