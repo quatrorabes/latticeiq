@@ -49,7 +49,7 @@ export default function ContactDetailModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={getDisplayName(contact.first_name, contact.last_name)}
+      title={getDisplayName(contact.first_name || '', contact.last_name || '')}
       size="lg"
     >
       <div className="space-y-6">
@@ -166,7 +166,7 @@ export default function ContactDetailModal({
                       {Object.entries(enrichmentData.bant).map(([key, value]) => (
                         <div key={key} className="text-sm">
                           <p className="text-slate-400">{key.toUpperCase()}</p>
-                          <p className="text-white font-medium">{String(value) || '-'}</p>
+                          <p className="text-white font-medium">{String(value || '') || '-'}</p>
                         </div>
                       ))}
                     </div>
