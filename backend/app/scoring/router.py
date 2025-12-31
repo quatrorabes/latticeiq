@@ -1,15 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 from typing import Optional, Dict, Any
+
 from .models import (
     MDCPConfig, BANTConfig, SPICEConfig,
     ScoreResponse, BatchScoringResponse
 )
+
 from .calculators import (
     calculate_mdcp_score,
     calculate_bant_score,
     calculate_spice_score
 )
+
 from ..auth import get_current_user
 from ..db import supabase
 
@@ -30,21 +33,17 @@ def get_tier(score: float) -> str:
 # ==========================================
 # GET SCORING CONFIGS
 # ==========================================
-
 @router.get("/config/{framework}")
 async def get_scoring_config(
     framework: str,
     user: dict = Depends(get_current_user)
 ) -> Dict[str, Any]:
-    """
-    Get scoring configuration for a specific framework
-    (MDCP, BANT, SPICE)
-    """
-    framework_lower = framework.lower()
+    """Get scoring configuration for a specific framework (MDCP, BANT, SPICE)"""
     
+    framework_lower = framework.lower()
     if framework_lower not in ["mdcp", "bant", "spice"]:
         raise HTTPException(status_code=400, detail="Invalid framework")
-    
+
     # Return default config
     # TODO: Load from database scoring_configs table when created
     configs = {
@@ -103,58 +102,43 @@ async def get_scoring_config(
 # ==========================================
 # CALCULATE SCORES FOR SINGLE CONTACT
 # ==========================================
-
 @router.post("/calculate-all/{contact_id}")
 async def calculate_all_scores(
     contact_id: str,
     user: dict = Depends(get_current_user)
 ) -> ScoreResponse:
-    """
-    Calculate all three scoring frameworks (MDCP, BANT, SPICE) for a contact
-    and persist results to database.
+    """Calculate all three scoring frameworks (MDCP, BANT, SPICE) for a contact"""
     
-    Returns ScoreResponse with all scores and tiers.
-    """
     workspace_id = user.get("workspace_id")
     
     try:
-        # ============================================
         # 1. FETCH CONTACT FROM DATABASE
-        # ============================================
         response = supabase.table("contacts").select("*").eq("id", contact_id).eq("workspace_id", workspace_id).single().execute()
         contact = response.data
         
         if not contact:
             raise HTTPException(status_code=404, detail="Contact not found")
-        
-        # ============================================
+
         # 2. GET CONFIGS
-        # ============================================
         mdcp_config_response = await get_scoring_config("mdcp", user)
         bant_config_response = await get_scoring_config("bant", user)
         spice_config_response = await get_scoring_config("spice", user)
-        
-        # ============================================
+
         # 3. CALCULATE SCORES
-        # ============================================
         mdcp_result = calculate_mdcp_score(contact, mdcp_config_response)
         bant_result = calculate_bant_score(contact, bant_config_response)
         spice_result = calculate_spice_score(contact, spice_config_response)
-        
+
         mdcp_score = mdcp_result.get("score", 0)
         bant_score = bant_result.get("score", 0)
         spice_score = spice_result.get("score", 0)
-        
-        # ============================================
+
         # 4. DETERMINE TIERS
-        # ============================================
         mdcp_tier = get_tier(mdcp_score)
         bant_tier = get_tier(bant_score)
         spice_tier = get_tier(spice_score)
-        
-        # ============================================
+
         # 5. PERSIST TO DATABASE
-        # ============================================
         now = datetime.utcnow()
         update_payload = {
             "mdcp_score": round(float(mdcp_score), 2),
@@ -166,15 +150,13 @@ async def calculate_all_scores(
             "last_scored_at": now.isoformat(),
             "updated_at": now.isoformat()
         }
-        
+
         update_response = supabase.table("contacts").update(update_payload).eq("id", contact_id).eq("workspace_id", workspace_id).execute()
-        
+
         if not update_response.data:
             raise HTTPException(status_code=500, detail="Failed to persist scores")
-        
-        # ============================================
+
         # 6. RETURN RESPONSE
-        # ============================================
         return ScoreResponse(
             contact_id=contact_id,
             mdcp_score=round(float(mdcp_score), 2),
@@ -185,7 +167,7 @@ async def calculate_all_scores(
             spice_tier=spice_tier,
             last_scored_at=now
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -197,24 +179,19 @@ async def calculate_all_scores(
 # ==========================================
 # BATCH SCORE ALL CONTACTS
 # ==========================================
-
 @router.post("/score-all")
 async def score_all_contacts(
     user: dict = Depends(get_current_user)
 ) -> BatchScoringResponse:
-    """
-    Score ALL contacts in workspace.
-    Returns count of scored contacts.
-    """
+    """Score ALL contacts in workspace"""
+    
     workspace_id = user.get("workspace_id")
     
     try:
-        # ============================================
         # 1. GET ALL CONTACTS
-        # ============================================
         contacts_response = supabase.table("contacts").select("*").eq("workspace_id", workspace_id).execute()
         contacts = contacts_response.data
-        
+
         if not contacts:
             return BatchScoringResponse(
                 success=True,
@@ -222,37 +199,33 @@ async def score_all_contacts(
                 total_contacts=0,
                 message="No contacts to score"
             )
-        
-        # ============================================
+
         # 2. GET CONFIGS (ONCE)
-        # ============================================
         mdcp_config = await get_scoring_config("mdcp", user)
         bant_config = await get_scoring_config("bant", user)
         spice_config = await get_scoring_config("spice", user)
-        
-        # ============================================
+
         # 3. SCORE EACH CONTACT
-        # ============================================
         scored_count = 0
         errors = []
         now = datetime.utcnow()
-        
+
         for contact in contacts:
             try:
                 # Calculate
                 mdcp_result = calculate_mdcp_score(contact, mdcp_config)
                 bant_result = calculate_bant_score(contact, bant_config)
                 spice_result = calculate_spice_score(contact, spice_config)
-                
+
                 mdcp_score = mdcp_result.get("score", 0)
                 bant_score = bant_result.get("score", 0)
                 spice_score = spice_result.get("score", 0)
-                
+
                 # Determine tiers
                 mdcp_tier = get_tier(mdcp_score)
                 bant_tier = get_tier(bant_score)
                 spice_tier = get_tier(spice_score)
-                
+
                 # Persist
                 update_payload = {
                     "mdcp_score": round(float(mdcp_score), 2),
@@ -264,20 +237,18 @@ async def score_all_contacts(
                     "last_scored_at": now.isoformat(),
                     "updated_at": now.isoformat()
                 }
-                
+
                 supabase.table("contacts").update(update_payload).eq("id", contact["id"]).eq("workspace_id", workspace_id).execute()
                 scored_count += 1
-            
+
             except Exception as e:
                 errors.append({
                     "contact_id": contact.get("id"),
                     "error": str(e)
                 })
                 print(f"Error scoring contact {contact.get('id')}: {str(e)}")
-        
-        # ============================================
+
         # 4. RETURN BATCH RESPONSE
-        # ============================================
         return BatchScoringResponse(
             success=True,
             scored_count=scored_count,
@@ -285,7 +256,7 @@ async def score_all_contacts(
             errors=errors if errors else None,
             message=f"Successfully scored {scored_count}/{len(contacts)} contacts"
         )
-    
+
     except Exception as e:
         print(f"Error in batch scoring: {str(e)}")
         import traceback
