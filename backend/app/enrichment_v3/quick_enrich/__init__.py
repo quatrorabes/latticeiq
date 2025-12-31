@@ -1,2 +1,3 @@
-# Quick enrich module
-from .quick_enrich import *
+from .quick_enrich import router
+
+__all__ = ["router"]
