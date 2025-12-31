@@ -1,71 +1,66 @@
-export const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+export const API_URL = 'https://latticeiq-backend.onrender.com'
 
 export const API_ENDPOINTS = {
-  // Auth
-  AUTH_USER: '/auth/user',
-  
   // Contacts
   CONTACTS_LIST: '/api/v3/contacts',
-  CONTACTS_GET: (id: string) => `/api/v3/contacts/${id}`,
   CONTACTS_CREATE: '/api/v3/contacts',
-  CONTACTS_UPDATE: (id: string) => `/api/v3/contacts/${id}`,
   CONTACTS_DELETE: (id: string) => `/api/v3/contacts/${id}`,
+  contacts: '/api/v3/contacts',
+  contact: (id: string) => `/api/v3/contacts/${id}`,
   
   // Enrichment
-  ENRICH: (id: string) => `/api/v3/enrich/${id}`,
-  ENRICH_STATUS: (id: string) => `/api/v3/enrich/${id}/status`,
-  ENRICH_DATA: (id: string) => `/api/v3/enrich/${id}/data`,
+  ENRICH: (contactId: string) => `/api/v3/enrichment/enrich?contact_id=${contactId}`,
+  ENRICH_STATUS: (contactId: string) => `/api/v3/enrichment/${contactId}/status`,
+  enrich: '/api/v3/enrichment/enrich',
+  enrichStatus: (id: string) => `/api/v3/enrichment/${id}/status`,
+  enrichProfile: (id: string) => `/api/v3/enrichment/${id}/profile`,
   
   // Scoring
-  SCORE_MDCP: '/api/v3/scoring/mdcp',
-  SCORE_BANT: '/api/v3/scoring/bant',
-  SCORE_SPICE: '/api/v3/scoring/spice',
+  scoringConfig: (framework: string) => `/api/v3/scoring/config/${framework}`,
+  scoreAll: '/api/v3/scoring/score-all',
   
   // CRM Import
-  CRM_IMPORT: (type: string) => `/api/v3/crm/import/${type}`,
-  CRM_IMPORT_STATUS: (jobId: string) => `/api/v3/crm/import/status/${jobId}`,
-  CRM_SETTINGS: '/api/v3/settings/crm',
+  importHubSpot: '/api/v3/crm/import/hubspot',
+  importSalesforce: '/api/v3/crm/import/salesforce',
+  importPipedrive: '/api/v3/crm/import/pipedrive',
+  importCSV: '/api/v3/crm/import/csv',
+  importStatus: (jobId: string) => `/api/v3/crm/import/status/${jobId}`,
+  
+  // Settings
+  settingsCRM: '/api/v3/settings/crm/integrations',
+  testCRM: (crmType: string) => `/api/v3/settings/crm/integrations/${crmType}/test`,
   
   // Health
-  HEALTH: '/health',
+  health: '/health',
 }
 
-export const FRAMEWORKS = {
-  MDCP: {
+// Scoring Frameworks data for ScoringPage
+export const FRAMEWORKS = [
+  {
+    id: 'mdcp',
     name: 'MDCP',
-    full_name: 'Money, Decision-maker, Champion, Process',
-    description: 'Enterprise sales qualification framework',
+    full_name: 'Money, Decision-Maker, Champion, Process',
+    description: 'Best for enterprise SaaS with long sales cycles (90+ days). Focuses on budget confirmation, stakeholder mapping, internal advocacy, and deal timeline.',
     hot_threshold: 80,
     warm_threshold: 60,
+    dimensions: ['Money', 'Decision-Maker', 'Champion', 'Process'],
   },
-  BANT: {
+  {
+    id: 'bant',
     name: 'BANT',
     full_name: 'Budget, Authority, Need, Timeline',
-    description: 'Mid-market sales qualification framework',
+    description: 'Best for mid-market with quick sales cycles (30-60 days). Classic qualification focusing on budget availability, decision authority, pain points, and urgency.',
     hot_threshold: 80,
     warm_threshold: 60,
+    dimensions: ['Budget', 'Authority', 'Need', 'Timeline'],
   },
-  SPICE: {
+  {
+    id: 'spice',
     name: 'SPICE',
     full_name: 'Situation, Problem, Implication, Consequence, Economics',
-    description: 'Consultative sales qualification framework',
+    description: 'Best for consulting and complex solutions. Deep qualification focusing on current state, pain analysis, business impact, risk assessment, and ROI.',
     hot_threshold: 85,
     warm_threshold: 65,
+    dimensions: ['Situation', 'Problem', 'Implication', 'Consequence', 'Economics'],
   },
-}
-
-export const ENRICHMENT_STATUS = {
-  PENDING: 'pending',
-  PROCESSING: 'processing',
-  COMPLETED: 'completed',
-  FAILED: 'failed',
-} as const
-
-export const CRM_TYPES = ['hubspot', 'salesforce', 'pipedrive'] as const
-
-export const TOAST_DURATION = 3000
-
-export const PAGINATION = {
-  PAGE_SIZE: 25,
-  MAX_PAGES: 100,
-}
+]
