@@ -22,6 +22,10 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
 
   if (!isOpen) return null
 
+  // Type-safe access to enrichment data
+  const enrichmentData = contact.enrichment_data as Record<string, any> | undefined
+  const companyName = contact.company || (enrichmentData?.company_name as string | undefined) || 'Unknown Company'
+
   return (
     <div className="expanded-modal-overlay" onClick={onClose}>
       <div className="expanded-modal-content" onClick={(e) => e.stopPropagation()}>
@@ -29,7 +33,7 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
         <div className="expanded-header">
           <div className="header-main">
             <h2>{contact.first_name} {contact.last_name}</h2>
-            <p className="header-title">{contact.title} at {contact.company_name}</p>
+            <p className="header-title">{contact.title} at {companyName}</p>
           </div>
           <button className="close-btn" onClick={onClose}>×</button>
         </div>
@@ -112,7 +116,7 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
                 </div>
                 <div className="info-field">
                   <label>Company</label>
-                  <span className="info-value">{contact.company_name || 'N/A'}</span>
+                  <span className="info-value">{contact.company || 'N/A'}</span>
                 </div>
                 <div className="info-field">
                   <label>Enrichment Status</label>
@@ -126,11 +130,11 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
                 </div>
               </div>
 
-              {contact.enrichment_data?.key_talking_points && Array.isArray(contact.enrichment_data.key_talking_points) && contact.enrichment_data.key_talking_points.length > 0 && (
+              {enrichmentData?.key_talking_points && Array.isArray(enrichmentData.key_talking_points) && enrichmentData.key_talking_points.length > 0 && (
                 <div className="talking-points-section">
                   <h4>Key Talking Points</h4>
                   <ul className="talking-points-list">
-                    {contact.enrichment_data.key_talking_points.map((point: any, idx: number) => (
+                    {(enrichmentData.key_talking_points as string[]).map((point: string, idx: number) => (
                       <li key={idx}>{point}</li>
                     ))}
                   </ul>
@@ -144,13 +148,13 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
               <div className="info-grid">
                 <div className="info-field">
                   <label>Company Name</label>
-                  <span className="info-value">{contact.enrichment_data?.company_name || 'N/A'}</span>
+                  <span className="info-value">{(enrichmentData?.company_name as string | undefined) || contact.company || 'N/A'}</span>
                 </div>
                 <div className="info-field">
                   <label>Website</label>
                   <span className="info-value">
-                    {contact.enrichment_data?.company_website ? (
-                      <a href={contact.enrichment_data.company_website} target="_blank" rel="noopener noreferrer" className="link-button">
+                    {(enrichmentData?.company_website as string | undefined) ? (
+                      <a href={enrichmentData?.company_website as string} target="_blank" rel="noopener noreferrer" className="link-button">
                         Visit Site
                       </a>
                     ) : (
@@ -160,25 +164,25 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
                 </div>
                 <div className="info-field">
                   <label>Industry</label>
-                  <span className="info-value">{contact.enrichment_data?.industry || 'N/A'}</span>
+                  <span className="info-value">{(enrichmentData?.industry as string | undefined) || 'N/A'}</span>
                 </div>
                 <div className="info-field">
                   <label>Company Size</label>
-                  <span className="info-value">{contact.enrichment_data?.company_size || 'N/A'}</span>
+                  <span className="info-value">{(enrichmentData?.company_size as string | undefined) || 'N/A'}</span>
                 </div>
               </div>
 
-              {contact.enrichment_data?.company_description && (
+              {(enrichmentData?.company_description as string | undefined) && (
                 <div className="enrichment-section">
                   <h4>About Company</h4>
-                  <p>{contact.enrichment_data.company_description}</p>
+                  <p>{enrichmentData?.company_description as string}</p>
                 </div>
               )}
 
-              {contact.enrichment_data?.linkedin_company_url && (
+              {(enrichmentData?.linkedin_company_url as string | undefined) && (
                 <div className="enrichment-section">
                   <h4>LinkedIn Profile</h4>
-                  <a href={contact.enrichment_data.linkedin_company_url} target="_blank" rel="noopener noreferrer" className="link-button">
+                  <a href={enrichmentData?.linkedin_company_url as string} target="_blank" rel="noopener noreferrer" className="link-button">
                     View Company on LinkedIn
                   </a>
                 </div>
@@ -188,22 +192,22 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
 
           {activeTab === 'enrichment' && (
             <div className="tab-pane">
-              {Array.isArray(contact.enrichment_data?.tech_stack) && contact.enrichment_data.tech_stack.length > 0 && (
+              {Array.isArray(enrichmentData?.tech_stack) && enrichmentData.tech_stack.length > 0 && (
                 <div className="enrichment-section">
                   <h4>Tech Stack</h4>
                   <div className="tech-stack">
-                    {contact.enrichment_data.tech_stack.map((tech: any, idx: number) => (
+                    {(enrichmentData.tech_stack as string[]).map((tech: string, idx: number) => (
                       <span key={idx} className="tech-badge">{tech}</span>
                     ))}
                   </div>
                 </div>
               )}
 
-              {Array.isArray(contact.enrichment_data?.decision_makers) && contact.enrichment_data.decision_makers.length > 0 && (
+              {Array.isArray(enrichmentData?.decision_makers) && enrichmentData.decision_makers.length > 0 && (
                 <div className="enrichment-section">
                   <h4>Decision Makers</h4>
                   <div className="decision-makers-list">
-                    {contact.enrichment_data.decision_makers.map((dm: any, idx: number) => (
+                    {(enrichmentData.decision_makers as Array<{name: string; title: string; email: string}>).map((dm, idx: number) => (
                       <div key={idx} className="decision-maker">
                         <div className="dm-name">{dm.name}</div>
                         <div className="dm-title">{dm.title}</div>
@@ -214,21 +218,21 @@ export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
                 </div>
               )}
 
-              {Array.isArray(contact.enrichment_data?.buying_signals) && contact.enrichment_data.buying_signals.length > 0 && (
+              {Array.isArray(enrichmentData?.buying_signals) && enrichmentData.buying_signals.length > 0 && (
                 <div className="enrichment-section">
                   <h4>Buying Signals</h4>
                   <ul className="buying-signals-list">
-                    {contact.enrichment_data.buying_signals.map((signal: any, idx: number) => (
+                    {(enrichmentData.buying_signals as string[]).map((signal: string, idx: number) => (
                       <li key={idx}>{signal}</li>
                     ))}
                   </ul>
                 </div>
               )}
 
-              {contact.enrichment_data?.recent_news && (
+              {(enrichmentData?.recent_news as string | undefined) && (
                 <div className="enrichment-section">
                   <h4>Recent News</h4>
-                  <p className="news-content">{contact.enrichment_data.recent_news}</p>
+                  <p className="news-content">{enrichmentData?.recent_news as string}</p>
                 </div>
               )}
             </div>
