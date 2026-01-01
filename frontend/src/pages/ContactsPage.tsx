@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, RefreshCw, Upload, Trash2, Edit2, Sparkles, AlertCircle } from 'lucide-react';
 import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
 import { enrichContacts } from '../api/enrichment';
+import { ContactDetailModal } from '../components/ContactDetailModal';
 import '../styles/ContactsPage.css';
 
 export const ContactsPage: React.FC = () => {
@@ -12,6 +13,7 @@ export const ContactsPage: React.FC = () => {
   const [filterTier, setFilterTier] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
   useEffect(() => {
     loadContacts();
@@ -70,7 +72,6 @@ export const ContactsPage: React.FC = () => {
       await enrichContacts(contactIds);
       alert(`Started enriching ${contactIds.length} contacts. This may take a few minutes.`);
       
-      // Reload contacts after a delay
       setTimeout(() => {
         loadContacts();
       }, 3000);
@@ -235,8 +236,8 @@ export const ContactsPage: React.FC = () => {
             </thead>
             <tbody>
               {filteredContacts.map(contact => (
-                <tr key={contact.id}>
-                  <td>
+                <tr key={contact.id} onClick={() => setSelectedContact(contact)} style={{ cursor: 'pointer' }}>
+                  <td onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
                       checked={selectedContacts.has(contact.id)}
@@ -289,20 +290,10 @@ export const ContactsPage: React.FC = () => {
                       {contact.enrichment_status === 'completed' ? '✓ Enriched' : '⏳ Pending'}
                     </span>
                   </td>
-                  <td>
+                  <td onClick={(e) => e.stopPropagation()}>
                     <div className="action-buttons">
-                      <button className="btn-icon" title="Edit">
+                      <button className="btn-icon" title="View Details" onClick={() => setSelectedContact(contact)}>
                         <Edit2 size={16} />
-                      </button>
-                      <button 
-                        className="btn-icon" 
-                        title="Enrich"
-                        onClick={() => {
-                          setSelectedContacts(new Set([contact.id]));
-                          enrichSelected();
-                        }}
-                      >
-                        <Sparkles size={16} />
                       </button>
                     </div>
                   </td>
@@ -323,6 +314,18 @@ export const ContactsPage: React.FC = () => {
             </div>
           )}
         </div>
+      )}
+
+      {/* Contact Detail Modal */}
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          onClose={() => setSelectedContact(null)}
+          onUpdate={() => {
+            loadContacts();
+            setSelectedContact(null);
+          }}
+        />
       )}
     </div>
   );
