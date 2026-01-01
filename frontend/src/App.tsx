@@ -8,6 +8,8 @@ import LoadingSpinner from './components/LoadingSpinner'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ContactsPage from './pages/ContactsPage'
+import { ScoringSettingsPage } from "./pages/ScoringSettingsPage";
+import { ScoringSettingsPage } from "./pages/ScoringSettingsPage";
 import EnrichmentPage from './pages/EnrichmentPage'
 import ScoringPage from './pages/ScoringPage'
 import SettingsPage from './pages/SettingsPage'
@@ -61,6 +63,8 @@ export default function App() {
             <Route path="/" element={<Navigate to="/contacts" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
+            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
+            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
             <Route path="/enrichment" element={<EnrichmentPage />} />
             <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/settings" element={<SettingsPage />} />
@@ -68,6 +72,8 @@ export default function App() {
             <Route path="*" element={<Navigate to="/contacts" replace />} />
             <Route path="/premium/dashboard" element={<PremiumDashboard />} />
             <Route path="/contacts" element={<ContactsPage />} />
+            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
+            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
           </Route>
         )}
       </Routes>
