@@ -113,11 +113,12 @@ async def list_contacts(
     try:
         user_id = user["id"]
         
-        # FIXED: Use user_id (with underscore) instead of userid
-        query = client.table("contacts").select("*").eq("user_id", user_id)
+        query = client.table("contacts").select("*")
+        # Temporarily show all contacts (no user_id filter for MVP)
         query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
         
         result = query.execute()
+
         
         return {
             "contacts": result.data or [],
