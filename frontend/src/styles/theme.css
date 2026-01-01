@@ -1,0 +1,49 @@
+:root {
+  /* 🎨 PRIMARY BRAND COLORS */
+  --primary-500: #667eea;
+  --primary-600: #5568d3;
+  --primary-700: #764ba2;
+  
+  /* 🌑 DARK BACKGROUNDS */
+  --bg-primary: #0f172a;
+  --bg-secondary: #1f2937;
+  --bg-tertiary: #111827;
+  --bg-hover: #374151;
+  
+  /* 📝 TEXT COLORS */
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --text-tertiary: #6b7280;
+  
+  /* 🎯 STATUS COLORS */
+  --success: #10b981;
+  --warning: #fbbf24;
+  --danger: #ef4444;
+  --info: #3b82f6;
+  
+  /* 🔥 SCORE TIER COLORS */
+  --tier-hot: #ef4444;
+  --tier-warm: #f59e0b;
+  --tier-cold: #3b82f6;
+  
+  /* 🎭 GRADIENTS */
+  --gradient-primary: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-700) 100%);
+  --gradient-success: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  --gradient-danger: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+  
+  /* 📦 BORDERS & DIVIDERS */
+  --border-color: #374151;
+  --divider-color: #374151;
+  
+  /* 🌈 SHADOWS */
+  --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.4);
+  --shadow-primary: 0 6px 20px rgba(102, 126, 234, 0.4);
+  
+  /* 🎯 SPACING */
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
