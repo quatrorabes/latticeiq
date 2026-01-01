@@ -1,0 +1,108 @@
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  @apply transition-colors duration-200;
+}
+
+body {
+  @apply bg-slate-950 text-slate-50 font-sans;
+  font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-slate-900;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-700 rounded-full hover:bg-slate-600;
+}
+
+/* Focus States */
+:focus-visible {
+  @apply outline-2 outline-offset-2 outline-primary-400;
+}
+
+/* Animation Classes */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    transform: translateY(10px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.3s ease-in-out;
+}
+
+/* Form Inputs */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+textarea,
+select {
+  @apply w-full px-3 py-2 rounded-md bg-slate-800 border border-slate-700 text-slate-50 placeholder-slate-400;
+  @apply focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20;
+  @apply transition-all duration-200;
+}
+
+/* Tables */
+table {
+  @apply w-full border-collapse;
+}
+
+thead {
+  @apply bg-slate-900 border-b border-slate-700;
+}
+
+tbody tr {
+  @apply border-b border-slate-700 hover:bg-slate-800/50;
+}
+
+th {
+  @apply px-4 py-3 text-left text-sm font-semibold text-slate-200;
+}
+
+td {
+  @apply px-4 py-3 text-sm text-slate-300;
+}
+
+/* Buttons Base */
+button {
+  @apply font-medium transition-all duration-200;
+}
+
+/* Modal Backdrop */
+.modal-backdrop {
+  @apply fixed inset-0 bg-black/50 backdrop-blur-sm z-40;
+}
