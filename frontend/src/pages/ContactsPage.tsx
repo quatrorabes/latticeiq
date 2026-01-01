@@ -1,31 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, Filter, RefreshCw, Upload, Trash2, Edit2, Sparkles } from 'lucide-react';
+import { Users, Search, RefreshCw, Upload, Trash2, Edit2, Sparkles, AlertCircle } from 'lucide-react';
+import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
+import { enrichContacts } from '../api/enrichment';
 import '../styles/ContactsPage.css';
-
-interface Contact {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  company?: string;
-  title?: string;
-  phone?: string;
-  mdcp_score?: number;
-  mdcp_tier?: string;
-  bant_score?: number;
-  spice_score?: number;
-  overall_score?: number;
-  enrichment_status?: string;
-  pipeline_stage?: string;
-  created_at: string;
-}
 
 export const ContactsPage: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTier, setFilterTier] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [enriching, setEnriching] = useState(false);
 
   useEffect(() => {
     loadContacts();
@@ -33,79 +19,12 @@ export const ContactsPage: React.FC = () => {
 
   const loadContacts = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // In production: const response = await fetch('/api/v3/contacts');
-      // Mock data
-      await new Promise(resolve => setTimeout(resolve, 800));
-      
-      const mockContacts: Contact[] = [
-        {
-          id: '1',
-          first_name: 'John',
-          last_name: 'Smith',
-          email: 'john@acme.com',
-          company: 'Acme Inc',
-          title: 'VP Sales',
-          phone: '+1-555-0123',
-          mdcp_score: 85,
-          mdcp_tier: 'hot',
-          bant_score: 78,
-          spice_score: 82,
-          overall_score: 82,
-          enrichment_status: 'completed',
-          pipeline_stage: 'meeting',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '2',
-          first_name: 'Sarah',
-          last_name: 'Johnson',
-          email: 'sarah@techcorp.com',
-          company: 'TechCorp',
-          title: 'CEO',
-          phone: '+1-555-0124',
-          mdcp_score: 92,
-          mdcp_tier: 'hot',
-          bant_score: 88,
-          spice_score: 90,
-          overall_score: 90,
-          enrichment_status: 'completed',
-          pipeline_stage: 'qualified',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '3',
-          first_name: 'Mike',
-          last_name: 'Chen',
-          email: 'mike@startup.io',
-          company: 'Startup Inc',
-          title: 'Founder',
-          mdcp_score: 58,
-          mdcp_tier: 'warm',
-          bant_score: 52,
-          spice_score: 55,
-          overall_score: 55,
-          enrichment_status: 'completed',
-          pipeline_stage: 'new',
-          created_at: new Date().toISOString()
-        },
-        {
-          id: '4',
-          first_name: 'Emily',
-          last_name: 'Davis',
-          email: 'emily@corp.com',
-          company: 'Corp LLC',
-          title: 'Director',
-          mdcp_score: 28,
-          mdcp_tier: 'cold',
-          enrichment_status: 'pending',
-          pipeline_stage: 'new',
-          created_at: new Date().toISOString()
-        }
-      ];
-      
-      setContacts(mockContacts);
-    } catch (err) {
+      const response = await fetchContacts(1000, 0);
+      setContacts(response.contacts || []);
+    } catch (err: any) {
+      setError(err.message || 'Failed to load contacts');
       console.error('Failed to load contacts:', err);
     } finally {
       setLoading(false);
@@ -142,6 +61,45 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
+  const enrichSelected = async () => {
+    if (selectedContacts.size === 0) return;
+    
+    setEnriching(true);
+    try {
+      const contactIds = Array.from(selectedContacts);
+      await enrichContacts(contactIds);
+      alert(`Started enriching ${contactIds.length} contacts. This may take a few minutes.`);
+      
+      // Reload contacts after a delay
+      setTimeout(() => {
+        loadContacts();
+      }, 3000);
+      
+      setSelectedContacts(new Set());
+    } catch (err: any) {
+      alert(`Failed to enrich contacts: ${err.message}`);
+    } finally {
+      setEnriching(false);
+    }
+  };
+
+  const deleteSelected = async () => {
+    if (selectedContacts.size === 0) return;
+    
+    if (!confirm(`Delete ${selectedContacts.size} contact(s)? This cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      await deleteContacts(Array.from(selectedContacts));
+      alert('Contacts deleted successfully');
+      setSelectedContacts(new Set());
+      loadContacts();
+    } catch (err: any) {
+      alert(`Failed to delete contacts: ${err.message}`);
+    }
+  };
+
   const getScoreColor = (tier?: string) => {
     if (!tier) return '#6b7280';
     switch (tier.toLowerCase()) {
@@ -152,10 +110,21 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
-  const enrichSelected = async () => {
-    alert(`Enriching ${selectedContacts.size} contacts...`);
-    // In production: POST /api/v3/enrichment/batch
-  };
+  if (error) {
+    return (
+      <div className="contacts-page">
+        <div className="error-state">
+          <AlertCircle size={64} color="#ef4444" />
+          <h2>Failed to Load Contacts</h2>
+          <p>{error}</p>
+          <button className="btn-primary" onClick={loadContacts}>
+            <RefreshCw size={20} />
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="contacts-page">
@@ -165,12 +134,12 @@ export const ContactsPage: React.FC = () => {
           <Users size={32} />
           <div>
             <h1>Contacts</h1>
-            <p>Manage and enrich your contact database</p>
+            <p>Manage and enrich your contact database ({contacts.length} total)</p>
           </div>
         </div>
         <div className="header-actions">
-          <button className="btn-secondary" onClick={loadContacts}>
-            <RefreshCw size={20} />
+          <button className="btn-secondary" onClick={loadContacts} disabled={loading}>
+            <RefreshCw size={20} className={loading ? 'spin' : ''} />
             Refresh
           </button>
           <button className="btn-primary" onClick={() => window.location.href = '/crm'}>
@@ -222,11 +191,11 @@ export const ContactsPage: React.FC = () => {
         {selectedContacts.size > 0 && (
           <div className="bulk-actions">
             <span>{selectedContacts.size} selected</span>
-            <button className="btn-small" onClick={enrichSelected}>
+            <button className="btn-small" onClick={enrichSelected} disabled={enriching}>
               <Sparkles size={16} />
-              Enrich
+              {enriching ? 'Enriching...' : 'Enrich'}
             </button>
-            <button className="btn-small btn-danger">
+            <button className="btn-small btn-danger" onClick={deleteSelected}>
               <Trash2 size={16} />
               Delete
             </button>
@@ -325,7 +294,14 @@ export const ContactsPage: React.FC = () => {
                       <button className="btn-icon" title="Edit">
                         <Edit2 size={16} />
                       </button>
-                      <button className="btn-icon" title="Enrich">
+                      <button 
+                        className="btn-icon" 
+                        title="Enrich"
+                        onClick={() => {
+                          setSelectedContacts(new Set([contact.id]));
+                          enrichSelected();
+                        }}
+                      >
                         <Sparkles size={16} />
                       </button>
                     </div>
@@ -335,11 +311,15 @@ export const ContactsPage: React.FC = () => {
             </tbody>
           </table>
 
-          {filteredContacts.length === 0 && (
+          {filteredContacts.length === 0 && !loading && (
             <div className="empty-state">
               <Users size={64} />
               <h3>No contacts found</h3>
-              <p>Try adjusting your search or filters</p>
+              <p>Try adjusting your search or filters, or import contacts from the CRM Import page</p>
+              <button className="btn-primary" onClick={() => window.location.href = '/crm'}>
+                <Upload size={20} />
+                Import Contacts
+              </button>
             </div>
           )}
         </div>

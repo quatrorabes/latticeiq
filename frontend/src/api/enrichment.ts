@@ -1,99 +1,40 @@
-/**
- * Enrichment API
- * Handles contact enrichment calls
- */
+import { apiClient } from './client';
 
-import { getAuthToken } from './contacts';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-
-export interface QuickEnrichResponse {
-  status: string;
+export interface EnrichmentResult {
   contact_id: string;
-  enrichment_data: {
+  status: string;
+  result: {
     summary?: string;
+    opening_line?: string;
     persona_type?: string;
     vertical?: string;
     talking_points?: string[];
-    company_overview?: string;
-    recommended_approach?: string;
-    inferred_title?: string;
-    inferred_company_website?: string;
-    inferred_location?: string;
+    [key: string]: any;
   };
-  message: string;
+  scores?: {
+    mdcp_score: number;
+    mdcp_tier: string;
+    bant_score: number;
+    bant_tier: string;
+    spice_score: number;
+    spice_tier: string;
+    overall_score: number;
+    overall_tier: string;
+  };
+  raw_text?: string;
+  model: string;
 }
 
-export interface EnrichmentStatus {
-  contact_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  enriched_at?: string;
-  last_checked: string;
+export async function enrichContact(contactId: string): Promise<EnrichmentResult> {
+  return apiClient.post<EnrichmentResult>(`/api/v3/enrichment/quick-enrich/${contactId}`);
 }
 
-/**
- * Quick enrich a single contact using Perplexity AI
- */
-export async function quickEnrichContact(contactId: string): Promise<QuickEnrichResponse> {
-  const token = await getAuthToken();
-  
-  const response = await fetch(`${API_BASE}/api/v3/quick-enrich/${contactId}`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
+export async function enrichContacts(contactIds: string[]): Promise<{ results: EnrichmentResult[] }> {
+  return apiClient.post<{ results: EnrichmentResult[] }>('/api/v3/enrichment/batch', {
+    contact_ids: contactIds
   });
-
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Enrichment failed: ${error}`);
-  }
-  
-  return response.json();
 }
 
-/**
- * Get enrichment status for a contact
- */
-export async function getEnrichmentStatus(contactId: string): Promise<EnrichmentStatus> {
-  const token = await getAuthToken();
-  
-  const response = await fetch(`${API_BASE}/api/v3/quick-enrich/${contactId}/status`, {
-    method: 'GET',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Status check failed: ${response.statusText}`);
-  }
-  
-  return response.json();
+export async function getEnrichmentStatus(contactId: string): Promise<{ status: string; result?: any }> {
+  return apiClient.get<{ status: string; result?: any }>(`/api/v3/enrichment/${contactId}/status`);
 }
-
-/**
- * Bulk enrich multiple contacts
- * (For future full enrichment feature)
- */
-export async function bulkEnrichContacts(contactIds: string[]): Promise<{ queued: number; errors: string[] }> {
-  const token = await getAuthToken();
-  
-  const response = await fetch(`${API_BASE}/api/v3/enrich/bulk`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ contact_ids: contactIds }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Bulk enrichment failed: ${response.statusText}`);
-  }
-  
-  return response.json();
-}
-

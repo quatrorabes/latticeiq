@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Users, TrendingUp, DollarSign, Target, Sparkles, LayoutGrid, Clock, CheckCircle } from 'lucide-react';
+import { Users, TrendingUp, DollarSign, Target, Sparkles, LayoutGrid, Clock, CheckCircle, RefreshCw } from 'lucide-react';
+import { fetchContacts, Contact } from '../api/contacts';
 import '../styles/Dashboard.css';
 
 interface DashboardStats {
@@ -8,42 +9,90 @@ interface DashboardStats {
   hotLeads: number;
   pipelineValue: number;
   avgScore: number;
-  recentActivity: number;
-}
-
-interface RecentContact {
-  id: string;
-  name: string;
-  company: string;
-  score: number;
-  tier: string;
-  addedAt: string;
 }
 
 export const Dashboard: React.FC = () => {
   const [stats, setStats] = useState<DashboardStats>({
-    totalContacts: 234,
-    enriched: 156,
-    hotLeads: 42,
-    pipelineValue: 1250000,
-    avgScore: 68,
-    recentActivity: 24
+    totalContacts: 0,
+    enriched: 0,
+    hotLeads: 0,
+    pipelineValue: 0,
+    avgScore: 0
   });
+  const [recentContacts, setRecentContacts] = useState<Contact[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [recentContacts] = useState<RecentContact[]>([
-    { id: '1', name: 'John Smith', company: 'Acme Inc', score: 85, tier: 'hot', addedAt: '2 hours ago' },
-    { id: '2', name: 'Sarah Johnson', company: 'TechCorp', score: 92, tier: 'hot', addedAt: '5 hours ago' },
-    { id: '3', name: 'Mike Chen', company: 'Startup Inc', score: 58, tier: 'warm', addedAt: '1 day ago' },
-  ]);
+  useEffect(() => {
+    loadDashboardData();
+  }, []);
 
-  const getScoreColor = (tier: string) => {
-    switch (tier) {
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      const response = await fetchContacts(1000, 0);
+      const contacts = response.contacts || [];
+      
+      // Calculate stats
+      const enriched = contacts.filter(c => c.enrichment_status === 'completed').length;
+      const hotLeads = contacts.filter(c => c.mdcp_tier === 'hot').length;
+      const pipelineValue = contacts.reduce((sum, c) => sum + (c.deal_value || 0), 0);
+      const avgScore = contacts.length > 0 
+        ? Math.round(contacts.reduce((sum, c) => sum + (c.overall_score || 0), 0) / contacts.length)
+        : 0;
+
+      setStats({
+        totalContacts: contacts.length,
+        enriched,
+        hotLeads,
+        pipelineValue,
+        avgScore
+      });
+
+      // Get 5 most recent contacts
+      const recent = contacts
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 5);
+      setRecentContacts(recent);
+    } catch (err) {
+      console.error('Failed to load dashboard data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getScoreColor = (tier?: string) => {
+    if (!tier) return '#6b7280';
+    switch (tier?.toLowerCase()) {
       case 'hot': return '#ef4444';
       case 'warm': return '#f59e0b';
       case 'cold': return '#3b82f6';
       default: return '#6b7280';
     }
   };
+
+  const getTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
+  };
+
+  if (loading) {
+    return (
+      <div className="dashboard-page">
+        <div className="loading-state">
+          <RefreshCw className="spin" size={48} />
+          <p>Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="dashboard-page">
@@ -68,7 +117,7 @@ export const Dashboard: React.FC = () => {
           <div className="stat-content">
             <span className="stat-label">Total Contacts</span>
             <span className="stat-value">{stats.totalContacts}</span>
-            <span className="stat-change positive">+12% from last month</span>
+            <span className="stat-change positive">Live from database</span>
           </div>
         </div>
 
@@ -79,7 +128,9 @@ export const Dashboard: React.FC = () => {
           <div className="stat-content">
             <span className="stat-label">Enriched</span>
             <span className="stat-value">{stats.enriched}</span>
-            <span className="stat-change positive">{Math.round((stats.enriched / stats.totalContacts) * 100)}% coverage</span>
+            <span className="stat-change positive">
+              {stats.totalContacts > 0 ? Math.round((stats.enriched / stats.totalContacts) * 100) : 0}% coverage
+            </span>
           </div>
         </div>
 
@@ -90,7 +141,7 @@ export const Dashboard: React.FC = () => {
           <div className="stat-content">
             <span className="stat-label">Hot Leads</span>
             <span className="stat-value">{stats.hotLeads}</span>
-            <span className="stat-change positive">+8 this week</span>
+            <span className="stat-change positive">High priority</span>
           </div>
         </div>
 
@@ -101,7 +152,7 @@ export const Dashboard: React.FC = () => {
           <div className="stat-content">
             <span className="stat-label">Pipeline Value</span>
             <span className="stat-value">${(stats.pipelineValue / 1000).toFixed(0)}K</span>
-            <span className="stat-change positive">+18% growth</span>
+            <span className="stat-change positive">Total value</span>
           </div>
         </div>
       </div>
@@ -160,73 +211,35 @@ export const Dashboard: React.FC = () => {
             <a href="/contacts" className="view-all-link">View All →</a>
           </div>
           <div className="recent-contacts-list">
-            {recentContacts.map(contact => (
-              <div key={contact.id} className="recent-contact-card">
-                <div className="contact-avatar">
-                  {contact.name.split(' ').map(n => n[0]).join('')}
-                </div>
-                <div className="contact-info">
-                  <div className="contact-name">{contact.name}</div>
-                  <div className="contact-company">{contact.company}</div>
-                  <div className="contact-time">{contact.addedAt}</div>
-                </div>
-                <div className="contact-score">
-                  <div
-                    className="score-badge"
-                    style={{ backgroundColor: getScoreColor(contact.tier) }}
-                  >
-                    {contact.score}
+            {recentContacts.length > 0 ? (
+              recentContacts.map(contact => (
+                <div key={contact.id} className="recent-contact-card">
+                  <div className="contact-avatar">
+                    {contact.first_name?.[0]}{contact.last_name?.[0]}
                   </div>
-                  <span className="score-tier">{contact.tier.toUpperCase()}</span>
+                  <div className="contact-info">
+                    <div className="contact-name">{contact.first_name} {contact.last_name}</div>
+                    <div className="contact-company">{contact.company || 'No company'}</div>
+                    <div className="contact-time">{getTimeAgo(contact.created_at)}</div>
+                  </div>
+                  {contact.overall_score && (
+                    <div className="contact-score">
+                      <div
+                        className="score-badge"
+                        style={{ backgroundColor: getScoreColor(contact.mdcp_tier) }}
+                      >
+                        {contact.overall_score}
+                      </div>
+                      <span className="score-tier">{(contact.mdcp_tier || 'COLD').toUpperCase()}</span>
+                    </div>
+                  )}
                 </div>
+              ))
+            ) : (
+              <div className="empty-state-small">
+                <p>No contacts yet. Import some to get started!</p>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Score Distribution */}
-      <div className="dashboard-section score-distribution-section">
-        <h2>📊 Score Distribution</h2>
-        <div className="score-bars">
-          <div className="score-bar-item">
-            <div className="score-bar-label">
-              <span className="score-range">81-100</span>
-              <span className="score-count">42 contacts</span>
-            </div>
-            <div className="score-bar-track">
-              <div className="score-bar-fill hot" style={{ width: '42%' }}></div>
-            </div>
-          </div>
-
-          <div className="score-bar-item">
-            <div className="score-bar-label">
-              <span className="score-range">61-80</span>
-              <span className="score-count">68 contacts</span>
-            </div>
-            <div className="score-bar-track">
-              <div className="score-bar-fill warm" style={{ width: '68%' }}></div>
-            </div>
-          </div>
-
-          <div className="score-bar-item">
-            <div className="score-bar-label">
-              <span className="score-range">41-60</span>
-              <span className="score-count">89 contacts</span>
-            </div>
-            <div className="score-bar-track">
-              <div className="score-bar-fill medium" style={{ width: '89%' }}></div>
-            </div>
-          </div>
-
-          <div className="score-bar-item">
-            <div className="score-bar-label">
-              <span className="score-range">0-40</span>
-              <span className="score-count">35 contacts</span>
-            </div>
-            <div className="score-bar-track">
-              <div className="score-bar-fill cold" style={{ width: '35%' }}></div>
-            </div>
+            )}
           </div>
         </div>
       </div>
