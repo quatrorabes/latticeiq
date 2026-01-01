@@ -1,277 +1,93 @@
-/**
- * Layout.tsx - Premium Dark Sidebar Layout
- */
-
-import React, { useEffect, useState } from 'react';
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { injectAnimations } from '../styles';
-import { colors, gradients, spacing, radius, fontSizes, fontWeights, transitions } from '../styles/theme';
+import React, { useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import {
+  LayoutDashboard,
+  Users,
+  Upload,
+  ListFilter,
+  LayoutGrid,
+  Sparkles,
+  Zap,
+  Target,
+  Settings,
+  Menu,
+  X,
+  LogOut
+} from 'lucide-react';
+import { supabase } from '../supabaseClient';
+import '../styles/Layout.css';
 
 interface LayoutProps {
-  darkMode?: boolean;
-  onToggleDarkMode?: () => void;
+  children: React.ReactNode;
 }
 
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    display: 'flex',
-    minHeight: '100vh',
-    background: gradients.bgMain,
-  },
-  sidebar: {
-    width: '260px',
-    background: gradients.bgSidebar,
-    borderRight: `1px solid ${colors.borderSubtle}`,
-    height: '100vh',
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    display: 'flex',
-    flexDirection: 'column',
-    zIndex: 100,
-  },
-  logo: {
-    padding: spacing.lg,
-    borderBottom: `1px solid ${colors.borderSubtle}`,
-  },
-  logoText: {
-    fontSize: '24px',
-    fontWeight: fontWeights.extrabold,
-    background: gradients.textShine,
-    WebkitBackgroundClip: 'text',
-    WebkitTextFillColor: 'transparent',
-    backgroundClip: 'text',
-    margin: 0,
-    display: 'flex',
-    alignItems: 'center',
-    gap: spacing.sm,
-  },
-  nav: {
-    flex: 1,
-    padding: spacing.md,
-    overflowY: 'auto',
-  },
-  navSection: {
-    marginBottom: spacing.lg,
-  },
-  navSectionTitle: {
-    fontSize: fontSizes.xs,
-    fontWeight: fontWeights.semibold,
-    color: colors.textSubtle,
-    textTransform: 'uppercase',
-    letterSpacing: '1px',
-    padding: `${spacing.sm} ${spacing.md}`,
-    marginBottom: spacing.xs,
-  },
-  navItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: `${spacing.sm} ${spacing.md}`,
-    borderRadius: radius.md,
-    color: colors.textMuted,
-    textDecoration: 'none',
-    fontSize: fontSizes.md,
-    fontWeight: fontWeights.medium,
-    transition: transitions.fast,
-    marginBottom: '2px',
-  },
-  navItemActive: {
-    background: colors.accentLight,
-    color: colors.textPrimary,
-  },
-  navItemIcon: {
-    fontSize: '18px',
-    width: '24px',
-    textAlign: 'center',
-  },
-  footer: {
-    padding: spacing.md,
-    borderTop: `1px solid ${colors.borderSubtle}`,
-  },
-  userInfo: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: spacing.sm,
-    padding: spacing.sm,
-    borderRadius: radius.md,
-    marginBottom: spacing.sm,
-  },
-  userAvatar: {
-    width: '36px',
-    height: '36px',
-    borderRadius: radius.full,
-    background: gradients.accentPrimary,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: fontSizes.sm,
-    fontWeight: fontWeights.bold,
-    color: 'white',
-  },
-  userName: {
-    flex: 1,
-    overflow: 'hidden',
-  },
-  userNameText: {
-    fontSize: fontSizes.sm,
-    fontWeight: fontWeights.medium,
-    color: colors.textPrimary,
-    margin: 0,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  userEmail: {
-    fontSize: fontSizes.xs,
-    color: colors.textMuted,
-    margin: 0,
-    whiteSpace: 'nowrap',
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
-  },
-  logoutBtn: {
-    width: '100%',
-    padding: `${spacing.sm} ${spacing.md}`,
-    background: 'rgba(239, 68, 68, 0.1)',
-    border: '1px solid rgba(239, 68, 68, 0.2)',
-    borderRadius: radius.md,
-    color: colors.error,
-    fontSize: fontSizes.sm,
-    fontWeight: fontWeights.medium,
-    cursor: 'pointer',
-    transition: transitions.fast,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.sm,
-  },
-  main: {
-    flex: 1,
-    marginLeft: '260px',
-    padding: spacing.xl,
-    minHeight: '100vh',
-  },
-};
+const Layout: React.FC<LayoutProps> = ({ children }) => {
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
-interface NavItemDef {
-  path: string;
-  label: string;
-  icon: string;
-}
-
-const mainNavItems: NavItemDef[] = [
-  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { path: '/contacts', label: 'Contacts', icon: '👥' },
-  { path: '/premium/dashboard', label: 'Analytics', icon: '📈' },
-];
-
-const toolsNavItems: NavItemDef[] = [
-  { path: '/crm', label: 'Import Data', icon: '📥' },
-  { path: '/enrichment', label: 'Enrichment', icon: '✨' },
-  { path: '/scoring', label: 'Scoring', icon: '🎯' },
-];
-
-const settingsNavItems: NavItemDef[] = [
-  { path: '/settings', label: 'Settings', icon: '⚙️' },
-];
-
-const Layout: React.FC<LayoutProps> = ({ darkMode, onToggleDarkMode }) => {
-  const navigate = useNavigate();
-  const [userEmail, setUserEmail] = useState<string>('');
-
-  useEffect(() => {
-    injectAnimations();
-    // Try to get user email from various localStorage keys
-    try {
-      const keys = ['supabase.auth.token', 'sb-session', 'supabase_session'];
-      for (const key of keys) {
-        const stored = localStorage.getItem(key);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const email = parsed?.currentSession?.user?.email || 
-                       parsed?.user?.email || 
-                       parsed?.session?.user?.email || '';
-          if (email) {
-            setUserEmail(email);
-            break;
-          }
-        }
-      }
-    } catch {
-      // Ignore parse errors
-    }
-  }, []);
+  const navItems = [
+    { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+    { path: '/contacts', icon: Users, label: 'Contacts' },
+    { path: '/smart-lists', icon: ListFilter, label: 'Smart Lists' },
+    { path: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
+    { path: '/ai-writer', icon: Sparkles, label: 'AI Writer' },
+    { path: '/crm', icon: Upload, label: 'CRM Import' },
+    { path: '/integrations', icon: Zap, label: 'Integrations' },
+    { path: '/scoring', icon: Target, label: 'Scoring' },
+    { path: '/settings', icon: Settings, label: 'Settings' },
+  ];
 
   const handleLogout = async () => {
-    localStorage.removeItem('supabase.auth.token');
-    localStorage.removeItem('supabase_token');
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('sb-session');
-    navigate('/login');
-    window.location.reload();
+    await supabase.auth.signOut();
+    window.location.href = '/login';
   };
-
-  const getInitials = (): string => {
-    if (!userEmail) return '?';
-    return userEmail.slice(0, 2).toUpperCase();
-  };
-
-  const renderNavItem = (item: NavItemDef) => (
-    <NavLink
-      key={item.path}
-      to={item.path}
-      style={({ isActive }) => ({
-        ...styles.navItem,
-        ...(isActive ? styles.navItemActive : {}),
-      })}
-    >
-      <span style={styles.navItemIcon}>{item.icon}</span>
-      {item.label}
-    </NavLink>
-  );
 
   return (
-    <div style={styles.container}>
-      <aside style={styles.sidebar}>
-        <div style={styles.logo}>
-          <h1 style={styles.logoText}>
-            <span>💎</span> LatticeIQ
-          </h1>
+    <div className="layout">
+      {/* Sidebar */}
+      <aside className={`sidebar ${sidebarOpen ? 'open' : 'closed'}`}>
+        <div className="sidebar-header">
+          <div className="logo">
+            <div className="logo-icon">⚡</div>
+            {sidebarOpen && <span className="logo-text">LatticeIQ</span>}
+          </div>
+          <button className="toggle-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
+            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
+          </button>
         </div>
-        <nav style={styles.nav}>
-          <div style={styles.navSection}>
-            <div style={styles.navSectionTitle}>Main</div>
-            {mainNavItems.map(renderNavItem)}
-          </div>
-          <div style={styles.navSection}>
-            <div style={styles.navSectionTitle}>Tools</div>
-            {toolsNavItems.map(renderNavItem)}
-          </div>
-          <div style={styles.navSection}>
-            <div style={styles.navSectionTitle}>Account</div>
-            {settingsNavItems.map(renderNavItem)}
-          </div>
+
+        <nav className="sidebar-nav">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location.pathname === item.path;
+            
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`nav-item ${isActive ? 'active' : ''}`}
+              >
+                <Icon size={20} />
+                {sidebarOpen && <span>{item.label}</span>}
+              </Link>
+            );
+          })}
         </nav>
-        <div style={styles.footer}>
-          <div style={styles.userInfo}>
-            <div style={styles.userAvatar}>{getInitials()}</div>
-            <div style={styles.userName}>
-              <p style={styles.userNameText}>{userEmail?.split('@')[0] || 'User'}</p>
-              <p style={styles.userEmail}>{userEmail || 'Not signed in'}</p>
-            </div>
-          </div>
-          <button style={styles.logoutBtn} onClick={handleLogout}>
-            <span>🚪</span> Sign Out
+
+        <div className="sidebar-footer">
+          <button className="nav-item logout-btn" onClick={handleLogout}>
+            <LogOut size={20} />
+            {sidebarOpen && <span>Logout</span>}
           </button>
         </div>
       </aside>
-      <main style={styles.main}>
-        <Outlet />
+
+      {/* Main Content */}
+      <main className="main-content">
+        {children}
       </main>
     </div>
   );
 };
 
 export default Layout;
-

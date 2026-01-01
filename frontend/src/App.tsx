@@ -1,77 +1,85 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect, useState } from 'react'
-import { useAuth } from './hooks/useAuth'
-import Layout from './components/Layout'
-import LoadingSpinner from './components/LoadingSpinner'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { supabase } from './supabaseClient';
+import Layout from './components/Layout';
+import Dashboard from './pages/Dashboard';
+import ContactsPage from './pages/ContactsPage';
+import CRMPage from './pages/CRMPage';
+import ScoringPage from './pages/ScoringPage';
+import SettingsPage from './pages/SettingsPage';
+import SmartListsPage from './pages/SmartListsPage';
+import PipelinePage from './pages/PipelinePage';
+import AIWriterPage from './pages/AIWriterPage';
+import IntegrationsPage from './pages/IntegrationsPage';
+import LoginPage from './pages/LoginPage';
+import SignupPage from './pages/SignupPage';
 
-// Pages
-import LoginPage from './pages/LoginPage'
-import DashboardPage from './pages/DashboardPage'
-import ContactsPage from './pages/ContactsPage'
-import ScoringSettingsPage from "./pages/ScoringSettingsPage"
-import EnrichmentPage from './pages/EnrichmentPage'
-import ScoringPage from './pages/ScoringPage'
-import SettingsPage from './pages/SettingsPage'
-import CRMPage from './pages/CRMPage'
-import PremiumDashboard from './pages/PremiumDashboard';
-import ContactDetailsExpanded from './pages/ContactDetailsExpanded';
-export default function App() {
-  const { session, loading } = useAuth()
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('darkMode') !== 'false'
-    }
-    return true
-  })
+function App() {
+  const [session, setSession] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const html = document.documentElement
-    if (darkMode) {
-      html.classList.add('dark')
-    } else {
-      html.classList.remove('dark')
-    }
-    localStorage.setItem('darkMode', darkMode.toString())
-  }, [darkMode])
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      setLoading(false);
+    });
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <LoadingSpinner />
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        height: '100vh',
+        background: '#0f172a',
+        color: '#f9fafb'
+      }}>
+        <div>Loading...</div>
       </div>
-    )
+    );
+  }
+
+  if (!session) {
+    return (
+      <Router>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<SignupPage />} />
+          <Route path="*" element={<Navigate to="/login" replace />} />
+        </Routes>
+      </Router>
+    );
   }
 
   return (
     <Router>
-      <Routes>
-        {!session ? (
-          <>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </>
-        ) : (
-          <Route
-            element={
-              <Layout
-                darkMode={darkMode}
-                onToggleDarkMode={() => setDarkMode(!darkMode)}
-              />
-            }
-          >
-            <Route path="/" element={<Navigate to="/contacts" replace />} />
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/enrichment" element={<EnrichmentPage />} />
-            <Route path="/scoring" element={<ScoringPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/crm" element={<CRMPage />} />
-            <Route path="*" element={<Navigate to="/contacts" replace />} />
-            <Route path="/premium/dashboard" element={<PremiumDashboard />} />
-            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
-          </Route>
-        )}
-      </Routes>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/contacts" element={<ContactsPage />} />
+          <Route path="/crm" element={<CRMPage />} />
+          <Route path="/smart-lists" element={<SmartListsPage />} />
+          <Route path="/pipeline" element={<PipelinePage />} />
+          <Route path="/ai-writer" element={<AIWriterPage />} />
+          <Route path="/integrations" element={<IntegrationsPage />} />
+          <Route path="/scoring" element={<ScoringPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Layout>
     </Router>
-  )
+  );
 }
+
+export default App;
