@@ -1,4 +1,5 @@
 import { apiClient } from './client';
+import { supabase } from '../supabaseClient';
 
 export interface EnrichmentResult {
   contact_id: string;
@@ -25,16 +26,50 @@ export interface EnrichmentResult {
   model: string;
 }
 
+// Try backend first, fallback to marking as pending
 export async function enrichContact(contactId: string): Promise<EnrichmentResult> {
-  return apiClient.post<EnrichmentResult>(`/api/v3/enrichment/quick-enrich/${contactId}`);
+  try {
+    return await apiClient.post<EnrichmentResult>(`/api/v3/enrichment/quick-enrich/${contactId}`);
+  } catch (error) {
+    console.warn('Backend enrichment failed, marking as pending:', error);
+    
+    // Update contact to pending in Supabase
+    await supabase
+      .from('contacts')
+      .update({ enrichment_status: 'pending' })
+      .eq('id', contactId);
+    
+    throw new Error('Enrichment service temporarily unavailable. Contact marked as pending.');
+  }
 }
 
 export async function enrichContacts(contactIds: string[]): Promise<{ results: EnrichmentResult[] }> {
-  return apiClient.post<{ results: EnrichmentResult[] }>('/api/v3/enrichment/batch', {
-    contact_ids: contactIds
-  });
+  try {
+    return await apiClient.post<{ results: EnrichmentResult[] }>('/api/v3/enrichment/batch', {
+      contact_ids: contactIds
+    });
+  } catch (error) {
+    console.warn('Backend batch enrichment failed:', error);
+    
+    // Mark all as pending
+    await supabase
+      .from('contacts')
+      .update({ enrichment_status: 'pending' })
+      .in('id', contactIds);
+    
+    throw new Error('Enrichment service temporarily unavailable.');
+  }
 }
 
 export async function getEnrichmentStatus(contactId: string): Promise<{ status: string; result?: any }> {
-  return apiClient.get<{ status: string; result?: any }>(`/api/v3/enrichment/${contactId}/status`);
+  const { data } = await supabase
+    .from('contacts')
+    .select('enrichment_status, enrichment_data')
+    .eq('id', contactId)
+    .single();
+
+  return {
+    status: data?.enrichment_status || 'pending',
+    result: data?.enrichment_data
+  };
 }

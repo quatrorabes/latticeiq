@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import { supabase } from '../supabaseClient';
 
 export interface Contact {
   id: string;
@@ -33,31 +33,85 @@ export interface ContactsResponse {
   offset: number;
 }
 
+// Fetch contacts directly from Supabase
 export async function fetchContacts(limit = 100, offset = 0): Promise<ContactsResponse> {
   try {
-    return await apiClient.get<ContactsResponse>(`/api/v3/contacts?limit=${limit}&offset=${offset}`);
-  } catch (error) {
+    const { data, error, count } = await supabase
+      .from('contacts')
+      .select('*', { count: 'exact' })
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) {
+      console.error('Supabase error:', error);
+      throw new Error(error.message);
+    }
+
+    return {
+      contacts: data || [],
+      total: count || 0,
+      limit,
+      offset
+    };
+  } catch (error: any) {
     console.error('Failed to fetch contacts:', error);
     throw error;
   }
 }
 
 export async function fetchContact(id: string): Promise<Contact> {
-  return apiClient.get<Contact>(`/api/v3/contacts/${id}`);
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function createContact(contact: Partial<Contact>): Promise<Contact> {
-  return apiClient.post<Contact>('/api/v3/contacts', contact);
+  const { data: { user } } = await supabase.auth.getUser();
+  
+  const { data, error } = await supabase
+    .from('contacts')
+    .insert({
+      ...contact,
+      user_id: user?.id
+    })
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function updateContact(id: string, updates: Partial<Contact>): Promise<Contact> {
-  return apiClient.put<Contact>(`/api/v3/contacts/${id}`, updates);
+  const { data, error } = await supabase
+    .from('contacts')
+    .update(updates)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 export async function deleteContact(id: string): Promise<void> {
-  return apiClient.delete<void>(`/api/v3/contacts/${id}`);
+  const { error } = await supabase
+    .from('contacts')
+    .delete()
+    .eq('id', id);
+
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteContacts(ids: string[]): Promise<void> {
-  return apiClient.post<void>('/api/v3/contacts/bulk-delete', { contact_ids: ids });
+  const { error } = await supabase
+    .from('contacts')
+    .delete()
+    .in('id', ids);
+
+  if (error) throw new Error(error.message);
 }
