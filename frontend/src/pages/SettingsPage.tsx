@@ -1,10 +1,10 @@
-// frontend/src/pages/SettingsPage.tsx
-// COMPLETE FILE - Replace existing if present
+// frontend/src/pages/CRMPage.tsx
+// COMPLETE REPLACEMENT - CSV + HubSpot in one page
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabaseClient';
 import { Button } from '../components/ui/Button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/Tabs';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
 import { AlertCircle, CheckCircle2, Loader2, LogOut } from 'lucide-react';
 
@@ -14,7 +14,6 @@ interface HubSpotIntegration {
   is_connected: boolean;
   connected_email?: string;
   connected_at?: string;
-  refresh_token?: string;
 }
 
 interface ImportFilters {
@@ -52,12 +51,10 @@ const DEFAULT_HUBSPOT_PROPERTIES = [
   'annualrevenue',
   'lifecyclestage',
   'hs_lead_status',
-  'hs_analytics_last_touch_converting_campaign',
-  'hs_analytics_last_visit',
 ];
 
-export default function SettingsPage() {
-  const [activeTab, setActiveTab] = useState<string>('general');
+export default function CRMPage() {
+  const [crmTab, setCrmTab] = useState<string>('csv');
   const [hubspotIntegration, setHubspotIntegration] = useState<HubSpotIntegration | null>(null);
   const [loading, setLoading] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -79,7 +76,6 @@ export default function SettingsPage() {
     properties_to_import: DEFAULT_HUBSPOT_PROPERTIES,
   });
 
-  // Check HubSpot connection status on mount
   useEffect(() => {
     checkHubSpotConnection();
   }, []);
@@ -113,7 +109,6 @@ export default function SettingsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      // Get authorization URL from backend
       const response = await fetch(
         `${import.meta.env.VITE_API_URL}/api/v3/hubspot/auth/authorize`,
         {
@@ -127,7 +122,6 @@ export default function SettingsPage() {
 
       if (response.ok) {
         const data = await response.json();
-        // Redirect to HubSpot OAuth
         window.location.href = data.authorization_url;
       }
     } catch (error) {
@@ -181,7 +175,7 @@ export default function SettingsPage() {
               lifecycle_status_exclude: filters.lifecycle_status_exclude,
             },
             properties_to_import: filters.properties_to_import,
-            auto_enrich: true, // Enable quick-enrich
+            auto_enrich: true,
           }),
         }
       );
@@ -194,8 +188,6 @@ export default function SettingsPage() {
           imported: data.imported,
           enriched: data.enrichment_queued,
         });
-
-        // Refresh HubSpot status
         setTimeout(() => checkHubSpotConnection(), 2000);
       } else {
         const errorData = await response.json();
@@ -243,18 +235,30 @@ export default function SettingsPage() {
     <div className="min-h-screen bg-gray-50 p-8">
       <div className="max-w-4xl mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Settings</h1>
-          <p className="text-gray-600 mt-2">Manage your integrations and preferences</p>
+          <h1 className="text-3xl font-bold text-gray-900">CRM Import</h1>
+          <p className="text-gray-600 mt-2">Import contacts from CSV or HubSpot</p>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <Tabs value={crmTab} onValueChange={setCrmTab}>
           <TabsList>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="hubspot">HubSpot Integration</TabsTrigger>
-            <TabsTrigger value="privacy">Privacy</TabsTrigger>
+            <TabsTrigger value="csv">CSV Import</TabsTrigger>
+            <TabsTrigger value="hubspot">HubSpot Import</TabsTrigger>
           </TabsList>
 
-          {/* HubSpot Integration Tab */}
+          {/* CSV Import Tab */}
+          <TabsContent value="csv" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Upload CSV File</CardTitle>
+                <CardDescription>Import contacts from a CSV file</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-gray-600">CSV import functionality coming soon</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* HubSpot Import Tab */}
           <TabsContent value="hubspot" className="space-y-6">
             <Card>
               <CardHeader>
@@ -270,9 +274,6 @@ export default function SettingsPage() {
                       <p className="text-sm text-green-700">
                         Connected as: <span className="font-semibold">{hubspotIntegration.connected_email}</span>
                       </p>
-                      <p className="text-xs text-green-600 mt-1">
-                        Connected at: {hubspotIntegration.connected_at}
-                      </p>
                     </div>
                   </div>
                 ) : (
@@ -280,7 +281,7 @@ export default function SettingsPage() {
                     <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" />
                     <div>
                       <p className="font-medium text-blue-900">Not connected</p>
-                      <p className="text-sm text-blue-700">Click "Connect HubSpot" to authorize and start importing contacts</p>
+                      <p className="text-sm text-blue-700">Click "Connect HubSpot" to authorize</p>
                     </div>
                   </div>
                 )}
@@ -311,21 +312,17 @@ export default function SettingsPage() {
               </CardContent>
             </Card>
 
-            {/* Import Configuration */}
             {hubspotIntegration?.is_connected && (
               <>
                 <Card>
                   <CardHeader>
                     <CardTitle>Import Filters</CardTitle>
-                    <CardDescription>Configure which contacts to import from HubSpot</CardDescription>
+                    <CardDescription>Configure which contacts to import</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
-                    {/* Lead Status Filter */}
                     <div>
                       <h4 className="font-medium text-gray-900 mb-3">Lead Status (Exclude)</h4>
-                      <p className="text-sm text-gray-600 mb-3">
-                        Uncheck statuses you want to import (unchecked = import)
-                      </p>
+                      <p className="text-sm text-gray-600 mb-3">Unchecked = will be imported</p>
                       <div className="space-y-2">
                         {HUBSPOT_LEAD_STATUS_OPTIONS.map(status => (
                           <label key={status} className="flex items-center gap-3">
@@ -333,7 +330,7 @@ export default function SettingsPage() {
                               type="checkbox"
                               checked={filters.lead_status_exclude.includes(status)}
                               onChange={() => toggleLeadStatusFilter(status)}
-                              className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                              className="h-4 w-4 text-blue-600"
                             />
                             <span className="text-sm text-gray-700">{status}</span>
                           </label>
@@ -341,12 +338,9 @@ export default function SettingsPage() {
                       </div>
                     </div>
 
-                    {/* Lifecycle Stage Filter */}
                     <div className="border-t pt-6">
                       <h4 className="font-medium text-gray-900 mb-3">Lifecycle Stage (Exclude)</h4>
-                      <p className="text-sm text-gray-600 mb-3">
-                        Uncheck stages you want to import (unchecked = import)
-                      </p>
+                      <p className="text-sm text-gray-600 mb-3">Unchecked = will be imported</p>
                       <div className="space-y-2">
                         {HUBSPOT_LIFECYCLE_STATUS_OPTIONS.map(status => (
                           <label key={status} className="flex items-center gap-3">
@@ -354,7 +348,7 @@ export default function SettingsPage() {
                               type="checkbox"
                               checked={filters.lifecycle_status_exclude.includes(status)}
                               onChange={() => toggleLifecycleFilter(status)}
-                              className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                              className="h-4 w-4 text-blue-600"
                             />
                             <span className="text-sm text-gray-700">{status}</span>
                           </label>
@@ -364,35 +358,29 @@ export default function SettingsPage() {
                   </CardContent>
                 </Card>
 
-                {/* Import Progress */}
                 <Card>
                   <CardHeader>
                     <CardTitle>Import Status</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {importProgress.status === 'idle' && (
-                      <p className="text-sm text-gray-600">Click "Import Contacts" to start importing from HubSpot</p>
+                      <p className="text-sm text-gray-600">Click "Import Contacts" to start</p>
                     )}
 
                     {importProgress.status === 'importing' && (
                       <div className="flex items-center gap-3">
                         <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                        <div>
-                          <p className="font-medium text-gray-900">Importing contacts...</p>
-                          <p className="text-sm text-gray-600">This may take a few minutes</p>
-                        </div>
+                        <p className="font-medium">Importing contacts...</p>
                       </div>
                     )}
 
                     {importProgress.status === 'complete' && (
-                      <div className="space-y-3">
-                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                          <p className="font-medium text-green-900">Import completed successfully!</p>
-                          <div className="mt-3 space-y-2 text-sm text-green-700">
-                            <p>✓ Total contacts fetched: <span className="font-semibold">{importProgress.total}</span></p>
-                            <p>✓ Contacts imported: <span className="font-semibold">{importProgress.imported}</span></p>
-                            <p>✓ Quick-enrich queued: <span className="font-semibold">{importProgress.enriched}</span></p>
-                          </div>
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <p className="font-medium text-green-900">✓ Import completed!</p>
+                        <div className="mt-3 space-y-2 text-sm text-green-700">
+                          <p>Total: <span className="font-semibold">{importProgress.total}</span></p>
+                          <p>Imported: <span className="font-semibold">{importProgress.imported}</span></p>
+                          <p>Enrichment queued: <span className="font-semibold">{importProgress.enriched}</span></p>
                         </div>
                       </div>
                     )}
@@ -406,39 +394,15 @@ export default function SettingsPage() {
 
                     <Button
                       onClick={handleImportContacts}
-                      disabled={importing || !hubspotIntegration?.is_connected || importProgress.status === 'importing'}
-                      className="w-full flex items-center justify-center gap-2"
+                      disabled={importing || !hubspotIntegration?.is_connected}
+                      className="w-full"
                     >
-                      {importing && <Loader2 className="h-4 w-4 animate-spin" />}
                       {importing ? 'Importing...' : 'Import Contacts Now'}
                     </Button>
                   </CardContent>
                 </Card>
               </>
             )}
-          </TabsContent>
-
-          {/* Placeholder tabs */}
-          <TabsContent value="general">
-            <Card>
-              <CardHeader>
-                <CardTitle>General Settings</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">Coming soon</p>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="privacy">
-            <Card>
-              <CardHeader>
-                <CardTitle>Privacy & Security</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">Coming soon</p>
-              </CardContent>
-            </Card>
           </TabsContent>
         </Tabs>
       </div>
