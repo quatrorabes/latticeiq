@@ -12,7 +12,8 @@ import EnrichmentPage from './pages/EnrichmentPage'
 import ScoringPage from './pages/ScoringPage'
 import SettingsPage from './pages/SettingsPage'
 import CRMPage from './pages/CRMPage'
-
+import PremiumDashboard from './pages/PremiumDashboard';
+import ContactDetailsExpanded from './pages/ContactDetailsExpanded';
 export default function App() {
   const { session, loading } = useAuth()
   const [darkMode, setDarkMode] = useState(() => {
@@ -65,6 +66,7 @@ export default function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/crm" element={<CRMPage />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
+            <Route path="/premium/dashboard" element={<PremiumDashboard />} />
             <Route path="/contacts" element={<ContactsPage />} />
           </Route>
         )}
