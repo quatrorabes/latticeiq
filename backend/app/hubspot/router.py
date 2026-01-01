@@ -1,7 +1,7 @@
 # backend/app/hubspot/router.py
 # BEST PRACTICES VERSION - API key in request body, saves to Supabase
 
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 import aiohttp
@@ -9,6 +9,7 @@ import logging
 import uuid
 import os
 from datetime import datetime
+from supabase import create_client, Client
 
 logger = logging.getLogger(__name__)
 
@@ -17,8 +18,6 @@ router = APIRouter(prefix="/hubspot", tags=["hubspot"])
 # ============================================================================
 # SUPABASE CLIENT
 # ============================================================================
-
-from supabase import create_client, Client
 
 def get_supabase() -> Client:
     """Get Supabase client"""
@@ -29,7 +28,7 @@ def get_supabase() -> Client:
     return create_client(url, key)
 
 # ============================================================================
-# REQUEST MODELS (API key in body, not query params)
+# REQUEST MODELS
 # ============================================================================
 
 class TestConnectionRequest(BaseModel):
@@ -81,7 +80,6 @@ async def test_hubspot_connection(api_key: str) -> Dict[str, Any]:
     }
     
     async with aiohttp.ClientSession() as session:
-        # Test with contacts endpoint
         async with session.get(
             "https://api.hubapi.com/crm/v3/objects/contacts?limit=1",
             headers=headers
@@ -94,9 +92,8 @@ async def test_hubspot_connection(api_key: str) -> Dict[str, Any]:
                 text = await resp.text()
                 raise Exception(f"HubSpot API error: {resp.status} - {text}")
             
-            data = await resp.json()
-            
-        # Get total contact count
+            await resp.json()
+
         async with session.get(
             "https://api.hubapi.com/crm/v3/objects/contacts?limit=0",
             headers=headers
@@ -116,30 +113,39 @@ async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dic
         "Content-Type": "application/json"
     }
     
-    all_contacts = []
-    after = None
+    all_contacts: List[Dict[str, Any]] = []
+    after: Optional[str] = None
     remaining = batch_size
-    
-    properties = "firstname,lastname,email,company,phone,jobtitle,lifecyclestage,hs_lead_status"
     
     async with aiohttp.ClientSession() as session:
         while remaining > 0:
-            fetch_count = min(remaining, 100)  # HubSpot max is 100 per request
-            url = f"https://api.hubapi.com/crm/v3/objects/contacts?limit={fetch_count}&properties={properties}"
-            if after:
-                url += f"&after={after}"
+            fetch_count = min(remaining, 100)
             
-            async with session.get(url, headers=headers) as resp:
+            # Build URL with properties as query params
+            url = "https://api.hubapi.com/crm/v3/objects/contacts"
+            params: Dict[str, Any] = {
+                "limit": fetch_count,
+                "properties": ["firstname", "lastname", "email", "company", "phone", "jobtitle"]
+            }
+            if after:
+                params["after"] = after
+            
+            async with session.get(url, headers=headers, params=params) as resp:
                 if resp.status != 200:
                     text = await resp.text()
                     raise Exception(f"Failed to fetch contacts: {resp.status} - {text}")
                 
                 data = await resp.json()
                 contacts = data.get("results", [])
+                
+                logger.info(f"Fetched {len(contacts)} contacts from HubSpot")
+                if contacts:
+                    sample_props = contacts[0].get("properties", {})
+                    logger.info(f"Sample contact: email={sample_props.get('email')}, firstname={sample_props.get('firstname')}")
+                
                 all_contacts.extend(contacts)
                 remaining -= len(contacts)
                 
-                # Check for next page
                 paging = data.get("paging", {})
                 next_link = paging.get("next", {})
                 after = next_link.get("after") if next_link else None
@@ -159,17 +165,13 @@ async def hubspot_health():
     return {
         "status": "ok",
         "service": "hubspot",
-        "version": "2.0",
-        "features": ["test-connection", "import-batch"]
+        "version": "2.1",
+        "features": ["test-connection", "import-batch", "debug-fetch"]
     }
 
 @router.post("/test-connection", response_model=TestConnectionResponse)
 async def test_connection(request: TestConnectionRequest):
-    """
-    Test HubSpot API connection.
-    
-    Validates the API key and returns the number of contacts available.
-    """
+    """Test HubSpot API connection."""
     try:
         logger.info("Testing HubSpot connection...")
         result = await test_hubspot_connection(request.api_key)
@@ -183,18 +185,25 @@ async def test_connection(request: TestConnectionRequest):
         logger.error(f"HubSpot connection error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.post("/debug-fetch")
+async def debug_fetch(request: TestConnectionRequest):
+    """Debug: Show raw HubSpot contact data"""
+    try:
+        contacts = await fetch_hubspot_contacts(request.api_key, 5)
+        return {
+            "count": len(contacts),
+            "sample": contacts[:5]
+        }
+    except Exception as e:
+        logger.error(f"Debug fetch error: {str(e)}")
+        raise HTTPException(status_code=400, detail=str(e))
+
 @router.post("/import-batch", response_model=ImportResponse)
 async def import_batch(request: ImportRequest):
-    """
-    Import contacts from HubSpot and save to database.
-    
-    Fetches contacts from HubSpot API, transforms them, and inserts into Supabase.
-    Handles duplicates by email address.
-    """
+    """Import contacts from HubSpot and save to database."""
     try:
         logger.info(f"Importing {request.batch_size} contacts from HubSpot...")
         
-        # 1. Fetch contacts from HubSpot
         hubspot_contacts = await fetch_hubspot_contacts(request.api_key, request.batch_size)
         
         if not hubspot_contacts:
@@ -206,26 +215,25 @@ async def import_batch(request: ImportRequest):
                 contacts=[]
             )
         
-        # 2. Get Supabase client
         supabase = get_supabase()
         
-        # 3. Transform and save each contact
         imported_contacts: List[ImportedContact] = []
         duplicates_skipped = 0
         failed = 0
         
         for contact in hubspot_contacts:
             try:
-                props = contact.get("properties", {})
-                hubspot_id = contact.get("id")
+                props = contact.get("properties") or {}
+                hubspot_id = contact.get("id", "")
                 email = props.get("email")
                 
-                # Skip if no email (required field)
+                logger.info(f"Processing contact: hubspot_id={hubspot_id}, email={email}")
+                
                 if not email:
+                    logger.warning(f"Skipping contact {hubspot_id}: no email")
                     failed += 1
                     continue
                 
-                # Check for existing contact by email
                 if request.skip_duplicates:
                     existing = supabase.table("contacts").select("id").eq("email", email).execute()
                     
@@ -233,7 +241,7 @@ async def import_batch(request: ImportRequest):
                         duplicates_skipped += 1
                         imported_contacts.append(ImportedContact(
                             contact_id=existing.data[0]["id"],
-                            hubspot_id=hubspot_id or "",
+                            hubspot_id=hubspot_id,
                             email=email,
                             first_name=props.get("firstname"),
                             last_name=props.get("lastname"),
@@ -242,7 +250,6 @@ async def import_batch(request: ImportRequest):
                         ))
                         continue
                 
-                # Create new contact
                 contact_id = str(uuid.uuid4())
                 new_contact = {
                     "id": contact_id,
@@ -255,19 +262,18 @@ async def import_batch(request: ImportRequest):
                     "job_title": props.get("jobtitle") or "",
                     "source": "hubspot",
                     "hubspot_id": hubspot_id,
-                    "lifecycle_stage": props.get("lifecyclestage") or "",
-                    "lead_status": props.get("hs_lead_status") or "",
                     "created_at": datetime.utcnow().isoformat(),
                     "updated_at": datetime.utcnow().isoformat(),
                 }
                 
-                # Insert into Supabase
+                logger.info(f"Inserting contact: {email}")
                 result = supabase.table("contacts").insert(new_contact).execute()
                 
                 if result.data:
+                    logger.info(f"Successfully inserted: {email}")
                     imported_contacts.append(ImportedContact(
                         contact_id=contact_id,
-                        hubspot_id=hubspot_id or "",
+                        hubspot_id=hubspot_id,
                         email=email,
                         first_name=props.get("firstname"),
                         last_name=props.get("lastname"),
@@ -275,10 +281,11 @@ async def import_batch(request: ImportRequest):
                         status="success"
                     ))
                 else:
+                    logger.error(f"Insert returned no data for: {email}")
                     failed += 1
                     
             except Exception as e:
-                logger.error(f"Error saving contact {props.get('email', 'unknown')}: {str(e)}")
+                logger.error(f"Error saving contact: {str(e)}")
                 failed += 1
                 continue
         
@@ -300,4 +307,4 @@ async def import_batch(request: ImportRequest):
         logger.error(f"HubSpot import error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-logger.info("HubSpot router loaded (v2.0 - secure API key handling)")
+logger.info("HubSpot router loaded (v2.1 - with debug logging)")
