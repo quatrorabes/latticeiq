@@ -32,8 +32,9 @@ supabase: Optional[Client] = None
 if SUPABASE_URL and SUPABASE_KEY:
     try:
         supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-    except Exception:
-        pass
+        print(f"✅ Supabase connected for enrichment")
+    except Exception as e:
+        print(f"❌ Supabase connection failed: {e}")
 
 # Perplexity
 PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY", "")
@@ -76,8 +77,10 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token")
         return CurrentUser(id=str(user_id), email=str(email))
-    except Exception:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
 
 
 # Helpers
@@ -165,6 +168,8 @@ def _parse_json(raw: str) -> Dict[str, Any]:
 async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_current_user)):
     """Quick enrich a contact using Perplexity AI."""
     
+    print(f"🔄 Starting enrichment for contact {contact_id} by user {user.id}")
+    
     # Load contact from Supabase
     contact = None
     if supabase:
@@ -172,23 +177,34 @@ async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_
             result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
             if result.data:
                 contact = result.data[0]
-        except Exception:
-            pass
+                print(f"✅ Found contact: {contact.get('first_name')} {contact.get('last_name')}")
+            else:
+                print(f"⚠️ No contact found with id {contact_id} for user {user.id}")
+        except Exception as e:
+            print(f"❌ Failed to load contact: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to load contact: {e}")
+    else:
+        print(f"⚠️ Supabase not connected")
+        raise HTTPException(status_code=500, detail="Database not connected")
 
-    # Fallback if no contact found
+    # Must have a valid contact
     if not contact:
-        contact = {"id": contact_id, "first_name": "", "last_name": "", "email": "", "company": ""}
+        raise HTTPException(status_code=404, detail=f"Contact {contact_id} not found")
 
     # Mark processing
     if supabase:
         try:
             supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", contact_id).eq("user_id", user.id).execute()
-        except Exception:
-            pass
+            print(f"✅ Marked contact as processing")
+        except Exception as e:
+            print(f"⚠️ Failed to update processing status: {e}")
 
     # Call Perplexity
+    print(f"🔄 Calling Perplexity API...")
     prompt = _build_prompt(contact)
     raw_text = _call_perplexity(prompt)
+    print(f"✅ Perplexity response received ({len(raw_text)} chars)")
+    
     parsed = _parse_json(raw_text)
 
     enrichment = QuickEnrichResult(
@@ -224,10 +240,18 @@ async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_
             if not contact.get("website") and enrichment.inferred_company_website:
                 update_data["website"] = enrichment.inferred_company_website
 
-            supabase.table("contacts").update(update_data).eq("id", contact_id).eq("user_id", user.id).execute()
-        except Exception:
-            pass
+            result = supabase.table("contacts").update(update_data).eq("id", contact_id).eq("user_id", user.id).execute()
+            print(f"✅ Enrichment saved to DB for {contact_id}")
+            
+            if not result.data:
+                print(f"⚠️ Update returned no data - may not have matched any rows")
+                
+        except Exception as e:
+            print(f"❌ Failed to save enrichment for {contact_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to save enrichment: {str(e)}")
 
+    print(f"✅ Enrichment complete for {contact_id}")
+    
     return QuickEnrichResponse(
         contact_id=contact_id,
         status="completed",
@@ -235,3 +259,4 @@ async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_
         raw_text=raw_text,
         model=PERPLEXITY_MODEL,
     )
+
