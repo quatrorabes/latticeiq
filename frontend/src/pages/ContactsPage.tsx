@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Search, RefreshCw, Upload, Trash2, Edit2, Sparkles, AlertCircle } from 'lucide-react';
+import { Users, Search, RefreshCw, Upload, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
 import { enrichContacts } from '../api/enrichment';
 import { ContactDetailModal } from '../components/ContactDetailModal';
@@ -27,7 +27,6 @@ export const ContactsPage: React.FC = () => {
       setContacts(response.contacts || []);
     } catch (err: any) {
       setError(err.message || 'Failed to load contacts');
-      console.error('Failed to load contacts:', err);
     } finally {
       setLoading(false);
     }
@@ -40,18 +39,16 @@ export const ContactsPage: React.FC = () => {
       contact.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       contact.company?.toLowerCase().includes(searchQuery.toLowerCase());
     
-    const matchesTier = filterTier === 'all' || contact.mdcp_tier === filterTier;
+    const tier = contact.mdcp_tier || contact.overall_tier;
+    const matchesTier = filterTier === 'all' || tier === filterTier;
     
     return matchesSearch && matchesTier;
   });
 
   const toggleSelectContact = (id: string) => {
     const newSelected = new Set(selectedContacts);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
     setSelectedContacts(newSelected);
   };
 
@@ -65,20 +62,14 @@ export const ContactsPage: React.FC = () => {
 
   const enrichSelected = async () => {
     if (selectedContacts.size === 0) return;
-    
     setEnriching(true);
     try {
-      const contactIds = Array.from(selectedContacts);
-      await enrichContacts(contactIds);
-      alert(`Started enriching ${contactIds.length} contacts. This may take a few minutes.`);
-      
-      setTimeout(() => {
-        loadContacts();
-      }, 3000);
-      
+      await enrichContacts(Array.from(selectedContacts));
+      alert(`✅ Enriched ${selectedContacts.size} contacts with scores!`);
       setSelectedContacts(new Set());
+      loadContacts();
     } catch (err: any) {
-      alert(`Failed to enrich contacts: ${err.message}`);
+      alert(`❌ Failed: ${err.message}`);
     } finally {
       setEnriching(false);
     }
@@ -86,29 +77,29 @@ export const ContactsPage: React.FC = () => {
 
   const deleteSelected = async () => {
     if (selectedContacts.size === 0) return;
-    
-    if (!confirm(`Delete ${selectedContacts.size} contact(s)? This cannot be undone.`)) {
-      return;
-    }
-
+    if (!confirm(`Delete ${selectedContacts.size} contact(s)?`)) return;
     try {
       await deleteContacts(Array.from(selectedContacts));
-      alert('Contacts deleted successfully');
       setSelectedContacts(new Set());
       loadContacts();
     } catch (err: any) {
-      alert(`Failed to delete contacts: ${err.message}`);
+      alert(`❌ Failed: ${err.message}`);
     }
   };
 
   const getScoreColor = (tier?: string) => {
-    if (!tier) return '#6b7280';
-    switch (tier.toLowerCase()) {
+    switch (tier?.toLowerCase()) {
       case 'hot': return '#ef4444';
       case 'warm': return '#f59e0b';
       case 'cold': return '#3b82f6';
       default: return '#6b7280';
     }
+  };
+
+  const tierCounts = {
+    hot: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'hot').length,
+    warm: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'warm').length,
+    cold: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'cold').length,
   };
 
   if (error) {
@@ -119,8 +110,7 @@ export const ContactsPage: React.FC = () => {
           <h2>Failed to Load Contacts</h2>
           <p>{error}</p>
           <button className="btn-primary" onClick={loadContacts}>
-            <RefreshCw size={20} />
-            Retry
+            <RefreshCw size={20} /> Retry
           </button>
         </div>
       </div>
@@ -135,7 +125,7 @@ export const ContactsPage: React.FC = () => {
           <Users size={32} />
           <div>
             <h1>Contacts</h1>
-            <p>Manage and enrich your contact database ({contacts.length} total)</p>
+            <p>{contacts.length} contacts • {tierCounts.hot} hot • {tierCounts.warm} warm</p>
           </div>
         </div>
         <div className="header-actions">
@@ -163,29 +153,17 @@ export const ContactsPage: React.FC = () => {
         </div>
 
         <div className="filter-buttons">
-          <button
-            className={`filter-btn ${filterTier === 'all' ? 'active' : ''}`}
-            onClick={() => setFilterTier('all')}
-          >
+          <button className={`filter-btn ${filterTier === 'all' ? 'active' : ''}`} onClick={() => setFilterTier('all')}>
             All ({contacts.length})
           </button>
-          <button
-            className={`filter-btn ${filterTier === 'hot' ? 'active' : ''}`}
-            onClick={() => setFilterTier('hot')}
-          >
-            🔥 Hot ({contacts.filter(c => c.mdcp_tier === 'hot').length})
+          <button className={`filter-btn ${filterTier === 'hot' ? 'active' : ''}`} onClick={() => setFilterTier('hot')}>
+            🔥 Hot ({tierCounts.hot})
           </button>
-          <button
-            className={`filter-btn ${filterTier === 'warm' ? 'active' : ''}`}
-            onClick={() => setFilterTier('warm')}
-          >
-            ⭐ Warm ({contacts.filter(c => c.mdcp_tier === 'warm').length})
+          <button className={`filter-btn ${filterTier === 'warm' ? 'active' : ''}`} onClick={() => setFilterTier('warm')}>
+            ⭐ Warm ({tierCounts.warm})
           </button>
-          <button
-            className={`filter-btn ${filterTier === 'cold' ? 'active' : ''}`}
-            onClick={() => setFilterTier('cold')}
-          >
-            ❄️ Cold ({contacts.filter(c => c.mdcp_tier === 'cold').length})
+          <button className={`filter-btn ${filterTier === 'cold' ? 'active' : ''}`} onClick={() => setFilterTier('cold')}>
+            ❄️ Cold ({tierCounts.cold})
           </button>
         </div>
 
@@ -194,7 +172,7 @@ export const ContactsPage: React.FC = () => {
             <span>{selectedContacts.size} selected</span>
             <button className="btn-small" onClick={enrichSelected} disabled={enriching}>
               <Sparkles size={16} />
-              {enriching ? 'Enriching...' : 'Enrich'}
+              {enriching ? 'Enriching...' : 'Enrich + Score'}
             </button>
             <button className="btn-small btn-danger" onClick={deleteSelected}>
               <Trash2 size={16} />
@@ -204,7 +182,7 @@ export const ContactsPage: React.FC = () => {
         )}
       </div>
 
-      {/* Contacts Table */}
+      {/* Table */}
       {loading ? (
         <div className="loading-state">
           <RefreshCw className="spin" size={48} />
@@ -225,18 +203,20 @@ export const ContactsPage: React.FC = () => {
                 <th>Contact</th>
                 <th>Company</th>
                 <th>Title</th>
-                <th>Email</th>
                 <th>MDCP</th>
                 <th>BANT</th>
                 <th>SPICE</th>
                 <th>Overall</th>
                 <th>Status</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredContacts.map(contact => (
-                <tr key={contact.id} onClick={() => setSelectedContact(contact)} style={{ cursor: 'pointer' }}>
+                <tr 
+                  key={contact.id} 
+                  onClick={() => setSelectedContact(contact)}
+                  className="clickable-row"
+                >
                   <td onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -250,22 +230,16 @@ export const ContactsPage: React.FC = () => {
                         {contact.first_name?.[0]}{contact.last_name?.[0]}
                       </div>
                       <div>
-                        <div className="contact-name">
-                          {contact.first_name} {contact.last_name}
-                        </div>
-                        <div className="contact-phone">{contact.phone || '—'}</div>
+                        <div className="contact-name">{contact.first_name} {contact.last_name}</div>
+                        <div className="contact-email">{contact.email}</div>
                       </div>
                     </div>
                   </td>
                   <td>{contact.company || '—'}</td>
                   <td>{contact.title || '—'}</td>
-                  <td className="email-cell">{contact.email}</td>
                   <td>
                     {contact.mdcp_score ? (
-                      <span
-                        className="score-badge"
-                        style={{ backgroundColor: getScoreColor(contact.mdcp_tier) }}
-                      >
+                      <span className="score-badge" style={{ backgroundColor: getScoreColor(contact.mdcp_tier) }}>
                         {contact.mdcp_score}
                       </span>
                     ) : '—'}
@@ -282,44 +256,36 @@ export const ContactsPage: React.FC = () => {
                   </td>
                   <td>
                     {contact.overall_score ? (
-                      <span className="score-badge-overall">{contact.overall_score}</span>
+                      <span className="score-badge-overall" style={{ backgroundColor: getScoreColor(contact.overall_tier) }}>
+                        {contact.overall_score}
+                      </span>
                     ) : '—'}
                   </td>
                   <td>
-                    <span className={`status-badge status-${contact.enrichment_status}`}>
-                      {contact.enrichment_status === 'completed' ? '✓ Enriched' : '⏳ Pending'}
+                    <span className={`status-badge status-${contact.enrichment_status || 'pending'}`}>
+                      {contact.enrichment_status === 'completed' ? '✓' : '○'}
                     </span>
-                  </td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <div className="action-buttons">
-                      <button className="btn-icon" title="View Details" onClick={() => setSelectedContact(contact)}>
-                        <Edit2 size={16} />
-                      </button>
-                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
 
-          {filteredContacts.length === 0 && !loading && (
+          {filteredContacts.length === 0 && (
             <div className="empty-state">
               <Users size={64} />
               <h3>No contacts found</h3>
-              <p>Try adjusting your search or filters, or import contacts from the CRM Import page</p>
-              <button className="btn-primary" onClick={() => window.location.href = '/crm'}>
-                <Upload size={20} />
-                Import Contacts
-              </button>
+              <p>Try adjusting your search or import some contacts</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Contact Detail Modal */}
+      {/* Modal */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
+          isOpen={true}
           onClose={() => setSelectedContact(null)}
           onUpdate={() => {
             loadContacts();

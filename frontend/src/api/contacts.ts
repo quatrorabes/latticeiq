@@ -19,7 +19,7 @@ export interface Contact {
   overall_score?: number;
   overall_tier?: string;
   enrichment_status?: string;
-  enrichment_data?: any;
+  enrichment_data?: Record<string, any>;
   pipeline_stage?: string;
   deal_value?: number;
   created_at: string;
@@ -33,30 +33,21 @@ export interface ContactsResponse {
   offset: number;
 }
 
-// Fetch contacts directly from Supabase
 export async function fetchContacts(limit = 100, offset = 0): Promise<ContactsResponse> {
-  try {
-    const { data, error, count } = await supabase
-      .from('contacts')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(offset, offset + limit - 1);
+  const { data, error, count } = await supabase
+    .from('contacts')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(offset, offset + limit - 1);
 
-    if (error) {
-      console.error('Supabase error:', error);
-      throw new Error(error.message);
-    }
+  if (error) throw new Error(error.message);
 
-    return {
-      contacts: data || [],
-      total: count || 0,
-      limit,
-      offset
-    };
-  } catch (error: any) {
-    console.error('Failed to fetch contacts:', error);
-    throw error;
-  }
+  return {
+    contacts: data || [],
+    total: count || 0,
+    limit,
+    offset
+  };
 }
 
 export async function fetchContact(id: string): Promise<Contact> {
@@ -75,10 +66,7 @@ export async function createContact(contact: Partial<Contact>): Promise<Contact>
   
   const { data, error } = await supabase
     .from('contacts')
-    .insert({
-      ...contact,
-      user_id: user?.id
-    })
+    .insert({ ...contact, user_id: user?.id })
     .select()
     .single();
 
@@ -89,7 +77,7 @@ export async function createContact(contact: Partial<Contact>): Promise<Contact>
 export async function updateContact(id: string, updates: Partial<Contact>): Promise<Contact> {
   const { data, error } = await supabase
     .from('contacts')
-    .update(updates)
+    .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', id)
     .select()
     .single();
