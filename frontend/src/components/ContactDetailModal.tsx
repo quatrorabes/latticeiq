@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Mail, Phone, Building2, Briefcase, Globe, Linkedin, 
   Edit2, Save, Sparkles, Trash2, ExternalLink, User,
-  TrendingUp, DollarSign, Calendar, Activity, Award, BarChart3, Loader
+  TrendingUp, DollarSign, Calendar, Activity, Award, BarChart3, Loader, Target
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact } from '../api/contacts';
 import { mockEnrichContact } from '../api/enrichment';
