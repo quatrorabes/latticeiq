@@ -1,97 +1,260 @@
-import { Outlet, Link, useNavigate } from 'react-router-dom'
-import { Menu, X, Moon, Sun } from 'lucide-react'
-import { useState } from 'react'
-import { supabase } from '../lib/supabaseClient'
+/**
+ * Layout.tsx - Premium Dark Sidebar Layout
+ * Uses LatticeIQ Design System
+ */
 
-interface LayoutProps {
-  darkMode: boolean
-  onToggleDarkMode: () => void
+import React, { useEffect } from 'react';
+import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
+import { injectAnimations } from '../styles';
+import { colors, gradients, spacing, radius, typography, transitions } from '../styles/theme';
+
+const styles: { [key: string]: React.CSSProperties } = {
+  container: {
+    display: 'flex',
+    minHeight: '100vh',
+    background: gradients.bgMain,
+  },
+  sidebar: {
+    width: '260px',
+    background: gradients.bgSidebar,
+    borderRight: `1px solid ${colors.borderSubtle}`,
+    height: '100vh',
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    zIndex: 100,
+  },
+  logo: {
+    padding: spacing.lg,
+    borderBottom: `1px solid ${colors.borderSubtle}`,
+  },
+  logoText: {
+    fontSize: '24px',
+    fontWeight: typography.extrabold,
+    background: gradients.textShine,
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
+    backgroundClip: 'text',
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  nav: {
+    flex: 1,
+    padding: spacing.md,
+    overflowY: 'auto',
+  },
+  navSection: {
+    marginBottom: spacing.lg,
+  },
+  navSectionTitle: {
+    fontSize: typography.xs,
+    fontWeight: typography.semibold,
+    color: colors.textSubtle,
+    textTransform: 'uppercase',
+    letterSpacing: '1px',
+    padding: `${spacing.sm} ${spacing.md}`,
+    marginBottom: spacing.xs,
+  },
+  navItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: `${spacing.sm} ${spacing.md}`,
+    borderRadius: radius.md,
+    color: colors.textMuted,
+    textDecoration: 'none',
+    fontSize: typography.md,
+    fontWeight: typography.medium,
+    transition: transitions.fast,
+    marginBottom: '2px',
+  },
+  navItemActive: {
+    background: colors.accentLight,
+    color: colors.textPrimary,
+  },
+  navItemIcon: {
+    fontSize: '18px',
+    width: '24px',
+    textAlign: 'center',
+  },
+  footer: {
+    padding: spacing.md,
+    borderTop: `1px solid ${colors.borderSubtle}`,
+  },
+  userInfo: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: spacing.sm,
+    padding: spacing.sm,
+    borderRadius: radius.md,
+    marginBottom: spacing.sm,
+  },
+  userAvatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: radius.full,
+    background: gradients.accentPrimary,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: typography.sm,
+    fontWeight: typography.bold,
+    color: 'white',
+  },
+  userName: {
+    flex: 1,
+    overflow: 'hidden',
+  },
+  userNameText: {
+    fontSize: typography.sm,
+    fontWeight: typography.medium,
+    color: colors.textPrimary,
+    margin: 0,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  userEmail: {
+    fontSize: typography.xs,
+    color: colors.textMuted,
+    margin: 0,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+  },
+  logoutBtn: {
+    width: '100%',
+    padding: `${spacing.sm} ${spacing.md}`,
+    background: 'rgba(239, 68, 68, 0.1)',
+    border: `1px solid rgba(239, 68, 68, 0.2)`,
+    borderRadius: radius.md,
+    color: colors.error,
+    fontSize: typography.sm,
+    fontWeight: typography.medium,
+    cursor: 'pointer',
+    transition: transitions.fast,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  main: {
+    flex: 1,
+    marginLeft: '260px',
+    padding: spacing.xl,
+    minHeight: '100vh',
+  },
+};
+
+interface NavItem {
+  path: string;
+  label: string;
+  icon: string;
 }
 
-export default function Layout({ darkMode, onToggleDarkMode }: LayoutProps) {
-  const [sidebarOpen, setSidebarOpen] = useState(true)
-  const navigate = useNavigate()
+const mainNavItems: NavItem[] = [
+  { path: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { path: '/contacts', label: 'Contacts', icon: '👥' },
+  { path: '/analytics', label: 'Analytics', icon: '📈' },
+];
+
+const toolsNavItems: NavItem[] = [
+  { path: '/import', label: 'Import Data', icon: '📥' },
+  { path: '/hubspot', label: 'HubSpot Sync', icon: '🔄' },
+];
+
+const settingsNavItems: NavItem[] = [
+  { path: '/settings', label: 'Settings', icon: '⚙️' },
+];
+
+export const Layout: React.FC = () => {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    injectAnimations();
+  }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut()
-    navigate('/login')
-  }
+    await signOut();
+    navigate('/login');
+  };
 
-  const navItems = [
-    { label: 'Dashboard', path: '/dashboard' },
-    { label: 'Contacts', path: '/contacts' },
-    { label: '📊 Analytics', path: '/premium/dashboard' },
-    { label: 'Enrichment', path: '/enrichment' },
-    { label: 'Scoring', path: '/scoring' },
-    { label: 'CRM Import', path: '/crm' },
-    { label: 'Settings', path: '/settings' },
-  ]
+  const getInitials = () => {
+    if (!user?.email) return '?';
+    return user.email.slice(0, 2).toUpperCase();
+  };
+
+  const renderNavItem = (item: NavItem) => (
+    <NavLink
+      key={item.path}
+      to={item.path}
+      style={({ isActive }) => ({
+        ...styles.navItem,
+        ...(isActive ? styles.navItemActive : {}),
+      })}
+    >
+      <span style={styles.navItemIcon}>{item.icon}</span>
+      {item.label}
+    </NavLink>
+  );
 
   return (
-    <div className={`flex h-screen ${darkMode ? 'dark' : ''}`}>
+    <div style={styles.container}>
       {/* Sidebar */}
-      <div
-        className={`${
-          sidebarOpen ? 'w-64' : 'w-20'
-        } bg-gray-900 text-white transition-all duration-300 flex flex-col`}
-      >
-        {/* Logo/Header */}
-        <div className="p-4 border-b border-gray-800 flex items-center justify-between">
-          {sidebarOpen && <span className="font-bold text-lg">LatticeIQ</span>}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-1 hover:bg-gray-800 rounded"
-          >
-            {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
-
-        {/* Nav Items */}
-        <nav className="flex-1 p-4 space-y-2">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              to={item.path}
-              className="block px-4 py-2 rounded hover:bg-gray-800 transition-colors text-sm"
-              title={!sidebarOpen ? item.label : ''}
-            >
-              {sidebarOpen ? item.label : item.label.charAt(0)}
-            </Link>
-          ))}
-        </nav>
-
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-800 space-y-2">
-          <button
-            onClick={onToggleDarkMode}
-            className="w-full px-4 py-2 rounded hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
-          >
-            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            {sidebarOpen && <span className="text-sm">{darkMode ? 'Light' : 'Dark'}</span>}
-          </button>
-          <button
-            onClick={handleLogout}
-            className="w-full px-4 py-2 rounded bg-red-600 hover:bg-red-700 transition-colors text-sm"
-          >
-            {sidebarOpen ? 'Logout' : '←'}
-          </button>
-        </div>
-      </div>
-
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Bar */}
-        <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
-          <h1 className="text-xl font-bold text-gray-900 dark:text-white">
-            LatticeIQ - Sales Intelligence Platform
+      <aside style={styles.sidebar}>
+        {/* Logo */}
+        <div style={styles.logo}>
+          <h1 style={styles.logoText}>
+            <span>💎</span> LatticeIQ
           </h1>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-auto">
-          <Outlet />
+        {/* Navigation */}
+        <nav style={styles.nav}>
+          <div style={styles.navSection}>
+            <div style={styles.navSectionTitle}>Main</div>
+            {mainNavItems.map(renderNavItem)}
+          </div>
+
+          <div style={styles.navSection}>
+            <div style={styles.navSectionTitle}>Tools</div>
+            {toolsNavItems.map(renderNavItem)}
+          </div>
+
+          <div style={styles.navSection}>
+            <div style={styles.navSectionTitle}>Account</div>
+            {settingsNavItems.map(renderNavItem)}
+          </div>
+        </nav>
+
+        {/* Footer with user info */}
+        <div style={styles.footer}>
+          <div style={styles.userInfo}>
+            <div style={styles.userAvatar}>{getInitials()}</div>
+            <div style={styles.userName}>
+              <p style={styles.userNameText}>{user?.email?.split('@')[0] || 'User'}</p>
+              <p style={styles.userEmail}>{user?.email || 'Not signed in'}</p>
+            </div>
+          </div>
+          <button style={styles.logoutBtn} onClick={handleLogout}>
+            <span>🚪</span> Sign Out
+          </button>
         </div>
-      </div>
+      </aside>
+
+      {/* Main Content */}
+      <main style={styles.main}>
+        <Outlet />
+      </main>
     </div>
-  )
-}
+  );
+};
+
+export default Layout;
+
