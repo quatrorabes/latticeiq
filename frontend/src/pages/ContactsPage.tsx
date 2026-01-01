@@ -3,9 +3,9 @@
  * Clean, modern design using LatticeIQ Design System
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Contact } from '../types';
-import { fetchContacts } from '../api/contacts';
+import { fetchContacts, getAuthToken } from '../api/contacts';
 import ContactDetailModal from '../components/ContactDetailModal';
 import { injectAnimations } from '../styles';
 import { colors, gradients, spacing, radius, fontSizes, fontWeights, transitions, shadows } from '../styles/theme';
@@ -69,8 +69,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: spacing.sm,
     transition: transitions.normal,
   },
-  
-  // Stats Grid
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(6, 1fr)',
@@ -87,7 +85,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   statCardAccent: {
     background: gradients.accentSubtle,
-    border: `1px solid rgba(102, 126, 234, 0.3)`,
+    border: '1px solid rgba(102, 126, 234, 0.3)',
   },
   statIcon: {
     fontSize: '20px',
@@ -106,8 +104,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     textTransform: 'uppercase',
     letterSpacing: '0.5px',
   },
-  
-  // Filters
   filtersBar: {
     display: 'flex',
     gap: spacing.md,
@@ -155,8 +151,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     backgroundRepeat: 'no-repeat',
     backgroundPosition: 'right 12px center',
   },
-  
-  // Table
   tableContainer: {
     background: colors.bgCard,
     borderRadius: radius.xl,
@@ -198,8 +192,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.textSecondary,
     verticalAlign: 'middle',
   },
-  
-  // Contact cell
   contactCell: {
     display: 'flex',
     alignItems: 'center',
@@ -238,8 +230,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     overflow: 'hidden',
     textOverflow: 'ellipsis',
   },
-  
-  // Score badge
   scoreBadge: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -270,8 +260,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: colors.textMuted,
     border: `1px solid ${colors.borderSubtle}`,
   },
-  
-  // Status badge
   statusBadge: {
     display: 'inline-flex',
     alignItems: 'center',
@@ -293,8 +281,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     background: colors.errorBg,
     color: colors.error,
   },
-  
-  // View button
   viewBtn: {
     background: 'transparent',
     border: `1px solid ${colors.borderMedium}`,
@@ -311,16 +297,12 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderColor: colors.accentPrimary,
     color: colors.textPrimary,
   },
-  
-  // Checkbox
   checkbox: {
     width: '18px',
     height: '18px',
     accentColor: colors.accentPrimary,
     cursor: 'pointer',
   },
-  
-  // Pagination
   pagination: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -350,8 +332,6 @@ const styles: { [key: string]: React.CSSProperties } = {
     opacity: 0.5,
     cursor: 'not-allowed',
   },
-  
-  // Empty state
   emptyState: {
     padding: spacing.xxl,
     textAlign: 'center',
@@ -371,15 +351,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     fontSize: fontSizes.md,
     color: colors.textMuted,
   },
-  
-  // Loading
   loading: {
     padding: spacing.xxl,
     textAlign: 'center',
     color: colors.textMuted,
   },
-  
-  // Toolbar
   toolbar: {
     display: 'flex',
     justifyContent: 'space-between',
@@ -403,20 +379,13 @@ const styles: { [key: string]: React.CSSProperties } = {
 export const ContactsPage: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [enriching, setEnriching] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
-  
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
-  
-  const [filters, setFilters] = useState({
-    search: '',
-    tier: 'all',
-    status: 'all',
-  });
-  
+  const [filters, setFilters] = useState({ search: '', tier: 'all', status: 'all' });
   const [sort, setSort] = useState({ field: 'created_at', direction: 'desc' as 'asc' | 'desc' });
   const [pagination, setPagination] = useState({ page: 1, pageSize: 25, total: 0 });
 
@@ -433,7 +402,7 @@ export const ContactsPage: React.FC = () => {
       setContacts(arr);
       setPagination(p => ({ ...p, total: arr.length }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load');
+      console.error('Failed to load contacts:', err);
     } finally {
       setLoading(false);
     }
@@ -441,7 +410,6 @@ export const ContactsPage: React.FC = () => {
 
   const filteredContacts = useMemo(() => {
     let result = contacts;
-    
     if (filters.search) {
       const q = filters.search.toLowerCase();
       result = result.filter(c =>
@@ -451,7 +419,6 @@ export const ContactsPage: React.FC = () => {
         c.company?.toLowerCase().includes(q)
       );
     }
-    
     if (filters.tier !== 'all') {
       result = result.filter(c => {
         const s = c.mdcp_score || 0;
@@ -461,11 +428,9 @@ export const ContactsPage: React.FC = () => {
         return true;
       });
     }
-    
     if (filters.status !== 'all') {
       result = result.filter(c => c.enrichment_status === filters.status);
     }
-    
     return result;
   }, [contacts, filters]);
 
@@ -520,7 +485,7 @@ export const ContactsPage: React.FC = () => {
     return styles.statusPending;
   };
 
-  const getInitials = (c: Contact) => 
+  const getInitials = (c: Contact) =>
     `${c.first_name?.[0] || ''}${c.last_name?.[0] || ''}`.toUpperCase() || '?';
 
   const handleSort = (field: string) => {
@@ -556,9 +521,29 @@ export const ContactsPage: React.FC = () => {
     a.click();
   };
 
+  const handleBulkEnrich = async () => {
+    if (selectedContacts.size === 0) return;
+    setEnriching(true);
+    const token = await getAuthToken();
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+    let success = 0;
+    for (const id of selectedContacts) {
+      try {
+        const res = await fetch(`${API_BASE}/api/v3/quick-enrich/${id}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        });
+        if (res.ok) success++;
+      } catch { /* ignore */ }
+    }
+    setEnriching(false);
+    alert(`Enriched ${success}/${selectedContacts.size} contacts`);
+    setSelectedContacts(new Set());
+    loadContacts();
+  };
+
   return (
     <div style={styles.page}>
-      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerTop}>
           <div>
@@ -575,7 +560,6 @@ export const ContactsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Stats */}
         <div style={styles.statsGrid}>
           <div style={{...styles.statCard, ...styles.statCardAccent}}>
             <div style={styles.statIcon}>📊</div>
@@ -588,27 +572,6 @@ export const ContactsPage: React.FC = () => {
             <div style={styles.statLabel}>Hot Leads</div>
           </div>
           <div style={styles.statCard}>
-
-  const handleBulkEnrich = async () => {
-    if (selectedContacts.size === 0) return;
-    const { getAuthToken } = await import('../api/contacts');
-    const token = await getAuthToken();
-    const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-    let success = 0;
-    for (const id of selectedContacts) {
-      try {
-        const res = await fetch(`${API_BASE}/api/v3/quick-enrich/${id}`, {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-        });
-        if (res.ok) success++;
-      } catch {}
-    }
-    alert(`Enriched ${success}/${selectedContacts.size} contacts`);
-    setSelectedContacts(new Set());
-    loadContacts();
-  };
-
             <div style={styles.statIcon}>⭐</div>
             <div style={{...styles.statValue, color: colors.tierWarm}}>{stats.warm}</div>
             <div style={styles.statLabel}>Warm Leads</div>
@@ -631,7 +594,6 @@ export const ContactsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters */}
       <div style={styles.filtersBar}>
         <div style={styles.searchContainer}>
           <span style={styles.searchIcon}>🔍</span>
@@ -665,12 +627,17 @@ export const ContactsPage: React.FC = () => {
         </select>
       </div>
 
-      {/* Selection toolbar */}
       {selectedContacts.size > 0 && (
         <div style={styles.toolbar}>
           <span style={styles.toolbarText}>{selectedContacts.size} selected</span>
           <div style={styles.toolbarActions}>
-            <button style={styles.btnPrimary}>⚡ Enrich Selected</button>
+            <button 
+              style={styles.btnPrimary} 
+              onClick={handleBulkEnrich}
+              disabled={enriching}
+            >
+              {enriching ? '⏳ Enriching...' : '⚡ Enrich Selected'}
+            </button>
             <button style={styles.btnSecondary} onClick={() => setSelectedContacts(new Set())}>
               Clear
             </button>
@@ -678,7 +645,6 @@ export const ContactsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Table */}
       <div style={styles.tableContainer}>
         <table style={styles.table}>
           <thead style={styles.thead}>
@@ -762,7 +728,7 @@ export const ContactsPage: React.FC = () => {
                   </td>
                   <td style={{...styles.td, textAlign: 'center'}}>
                     <span style={{...styles.statusBadge, ...getStatusStyle(contact.enrichment_status)}}>
-                      {contact.enrichment_status === 'completed' ? '✓ Enriched' : 
+                      {contact.enrichment_status === 'completed' ? '✓ Enriched' :
                        contact.enrichment_status === 'failed' ? '✕ Failed' : '○ Pending'}
                     </span>
                   </td>
@@ -782,7 +748,6 @@ export const ContactsPage: React.FC = () => {
           </tbody>
         </table>
 
-        {/* Pagination */}
         {!loading && paginatedContacts.length > 0 && (
           <div style={styles.pagination}>
             <div style={styles.paginationInfo}>
@@ -808,7 +773,6 @@ export const ContactsPage: React.FC = () => {
         )}
       </div>
 
-      {/* Modal */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
@@ -825,3 +789,4 @@ export const ContactsPage: React.FC = () => {
 };
 
 export default ContactsPage;
+
