@@ -1,13 +1,12 @@
 /**
  * Layout.tsx - Premium Dark Sidebar Layout
- * Uses LatticeIQ Design System
  */
 
 import React, { useEffect } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
 import { injectAnimations } from '../styles';
-import { colors, gradients, spacing, radius, typography, transitions } from '../styles/theme';
+import { colors, gradients, spacing, radius, fontSizes, fontWeights, transitions } from '../styles/theme';
+import { supabase } from '../lib/supabase';
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
@@ -33,7 +32,7 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
   logoText: {
     fontSize: '24px',
-    fontWeight: typography.extrabold,
+    fontWeight: fontWeights.extrabold,
     background: gradients.textShine,
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
@@ -52,8 +51,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     marginBottom: spacing.lg,
   },
   navSectionTitle: {
-    fontSize: typography.xs,
-    fontWeight: typography.semibold,
+    fontSize: fontSizes.xs,
+    fontWeight: fontWeights.semibold,
     color: colors.textSubtle,
     textTransform: 'uppercase',
     letterSpacing: '1px',
@@ -68,8 +67,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     borderRadius: radius.md,
     color: colors.textMuted,
     textDecoration: 'none',
-    fontSize: typography.md,
-    fontWeight: typography.medium,
+    fontSize: fontSizes.md,
+    fontWeight: fontWeights.medium,
     transition: transitions.fast,
     marginBottom: '2px',
   },
@@ -102,8 +101,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    fontSize: typography.sm,
-    fontWeight: typography.bold,
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.bold,
     color: 'white',
   },
   userName: {
@@ -111,8 +110,8 @@ const styles: { [key: string]: React.CSSProperties } = {
     overflow: 'hidden',
   },
   userNameText: {
-    fontSize: typography.sm,
-    fontWeight: typography.medium,
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.medium,
     color: colors.textPrimary,
     margin: 0,
     whiteSpace: 'nowrap',
@@ -120,7 +119,7 @@ const styles: { [key: string]: React.CSSProperties } = {
     textOverflow: 'ellipsis',
   },
   userEmail: {
-    fontSize: typography.xs,
+    fontSize: fontSizes.xs,
     color: colors.textMuted,
     margin: 0,
     whiteSpace: 'nowrap',
@@ -131,11 +130,11 @@ const styles: { [key: string]: React.CSSProperties } = {
     width: '100%',
     padding: `${spacing.sm} ${spacing.md}`,
     background: 'rgba(239, 68, 68, 0.1)',
-    border: `1px solid rgba(239, 68, 68, 0.2)`,
+    border: '1px solid rgba(239, 68, 68, 0.2)',
     borderRadius: radius.md,
     color: colors.error,
-    fontSize: typography.sm,
-    fontWeight: typography.medium,
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.medium,
     cursor: 'pointer',
     transition: transitions.fast,
     display: 'flex',
@@ -173,21 +172,24 @@ const settingsNavItems: NavItem[] = [
 ];
 
 export const Layout: React.FC = () => {
-  const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [userEmail, setUserEmail] = React.useState<string>('');
 
   useEffect(() => {
     injectAnimations();
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email || '');
+    });
   }, []);
 
   const handleLogout = async () => {
-    await signOut();
+    await supabase.auth.signOut();
     navigate('/login');
   };
 
   const getInitials = () => {
-    if (!user?.email) return '?';
-    return user.email.slice(0, 2).toUpperCase();
+    if (!userEmail) return '?';
+    return userEmail.slice(0, 2).toUpperCase();
   };
 
   const renderNavItem = (item: NavItem) => (
@@ -206,40 +208,32 @@ export const Layout: React.FC = () => {
 
   return (
     <div style={styles.container}>
-      {/* Sidebar */}
       <aside style={styles.sidebar}>
-        {/* Logo */}
         <div style={styles.logo}>
           <h1 style={styles.logoText}>
             <span>💎</span> LatticeIQ
           </h1>
         </div>
-
-        {/* Navigation */}
         <nav style={styles.nav}>
           <div style={styles.navSection}>
             <div style={styles.navSectionTitle}>Main</div>
             {mainNavItems.map(renderNavItem)}
           </div>
-
           <div style={styles.navSection}>
             <div style={styles.navSectionTitle}>Tools</div>
             {toolsNavItems.map(renderNavItem)}
           </div>
-
           <div style={styles.navSection}>
             <div style={styles.navSectionTitle}>Account</div>
             {settingsNavItems.map(renderNavItem)}
           </div>
         </nav>
-
-        {/* Footer with user info */}
         <div style={styles.footer}>
           <div style={styles.userInfo}>
             <div style={styles.userAvatar}>{getInitials()}</div>
             <div style={styles.userName}>
-              <p style={styles.userNameText}>{user?.email?.split('@')[0] || 'User'}</p>
-              <p style={styles.userEmail}>{user?.email || 'Not signed in'}</p>
+              <p style={styles.userNameText}>{userEmail?.split('@')[0] || 'User'}</p>
+              <p style={styles.userEmail}>{userEmail || 'Not signed in'}</p>
             </div>
           </div>
           <button style={styles.logoutBtn} onClick={handleLogout}>
@@ -247,8 +241,6 @@ export const Layout: React.FC = () => {
           </button>
         </div>
       </aside>
-
-      {/* Main Content */}
       <main style={styles.main}>
         <Outlet />
       </main>
@@ -257,4 +249,3 @@ export const Layout: React.FC = () => {
 };
 
 export default Layout;
-
