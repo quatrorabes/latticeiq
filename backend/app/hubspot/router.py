@@ -37,7 +37,7 @@ class TestConnectionRequest(BaseModel):
 class ImportRequest(BaseModel):
     api_key: str = Field(..., min_length=10, description="HubSpot Private App Token")
     batch_size: int = Field(default=50, ge=1, le=500, description="Number of contacts to import")
-    workspace_id: str = Field(default="default", description="Workspace ID for multi-tenant isolation")
+    workspace_id: Optional[str] = Field(default=None, description="Workspace UUID for multi-tenant isolation")
     skip_duplicates: bool = Field(default=True, description="Skip contacts that already exist by email")
 
 # ============================================================================
@@ -121,7 +121,6 @@ async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dic
         while remaining > 0:
             fetch_count = min(remaining, 100)
             
-            # Build URL with properties as query params
             url = "https://api.hubapi.com/crm/v3/objects/contacts"
             params: Dict[str, Any] = {
                 "limit": fetch_count,
@@ -165,7 +164,7 @@ async def hubspot_health():
     return {
         "status": "ok",
         "service": "hubspot",
-        "version": "2.1",
+        "version": "2.2",
         "features": ["test-connection", "import-batch", "debug-fetch"]
     }
 
@@ -253,7 +252,7 @@ async def import_batch(request: ImportRequest):
                 contact_id = str(uuid.uuid4())
                 new_contact = {
                     "id": contact_id,
-                    "workspace_id": request.workspace_id,
+                    "workspace_id": None,  # workspace_id is UUID type, use NULL for now
                     "email": email,
                     "first_name": props.get("firstname") or "",
                     "last_name": props.get("lastname") or "",
@@ -307,4 +306,4 @@ async def import_batch(request: ImportRequest):
         logger.error(f"HubSpot import error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-logger.info("HubSpot router loaded (v2.1 - with debug logging)")
+logger.info("HubSpot router loaded (v2.2 - workspace_id fix)")
