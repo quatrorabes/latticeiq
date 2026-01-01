@@ -671,7 +671,9 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
       
       // Call the API
       const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-      const token = localStorage.getItem('supabase_token') || localStorage.getItem('access_token');
+      const { getAuthToken } = await import('../api/contacts');
+      const token = await getAuthToken();
+
       
       const response = await fetch(`${API_BASE}/api/v3/enrichment/quick-enrich/${contact.id}`, {
         method: 'POST',
@@ -709,7 +711,9 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
       setError(null);
       
       const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-      const token = localStorage.getItem('supabase_token') || localStorage.getItem('access_token');
+      const { getAuthToken } = await import('../api/contacts');
+      const token = await getAuthToken();
+
       
       const response = await fetch(`${API_BASE}/api/v3/contacts/${editData.id}`, {
         method: 'PATCH',
