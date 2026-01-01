@@ -69,6 +69,20 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: spacing.sm,
     transition: transitions.normal,
   },
+  btnSuccess: {
+    background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+    color: 'white',
+    border: 'none',
+    borderRadius: radius.md,
+    padding: `${spacing.sm} ${spacing.lg}`,
+    fontSize: fontSizes.sm,
+    fontWeight: fontWeights.semibold,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    gap: spacing.sm,
+    transition: transitions.normal,
+  },
   statsGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(6, 1fr)',
@@ -380,6 +394,7 @@ export const ContactsPage: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
+  const [scoring, setScoring] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
@@ -464,10 +479,10 @@ export const ContactsPage: React.FC = () => {
     const total = contacts.length;
     const hot = contacts.filter(c => (c.mdcp_score || 0) >= 71).length;
     const warm = contacts.filter(c => (c.mdcp_score || 0) >= 40 && (c.mdcp_score || 0) < 71).length;
-    const cold = total - hot - warm;
+    const cold = contacts.filter(c => (c.mdcp_score || 0) > 0 && (c.mdcp_score || 0) < 40).length;
     const enriched = contacts.filter(c => c.enrichment_status === 'completed').length;
-    const avgScore = total ? Math.round(contacts.reduce((s, c) => s + (c.mdcp_score || 0), 0) / total) : 0;
-    return { total, hot, warm, cold, enriched, avgScore };
+    const scored = contacts.filter(c => c.mdcp_score && c.mdcp_score > 0).length;
+    return { total, hot, warm, cold, enriched, scored };
   }, [contacts]);
 
   const totalPages = Math.ceil(sortedContacts.length / pagination.pageSize);
@@ -504,12 +519,14 @@ export const ContactsPage: React.FC = () => {
   };
 
   const handleExport = () => {
-    const headers = ['Name', 'Email', 'Company', 'MDCP', 'Status'];
+    const headers = ['Name', 'Email', 'Company', 'MDCP', 'BANT', 'SPICE', 'Status'];
     const rows = sortedContacts.map(c => [
       `${c.first_name} ${c.last_name}`,
       c.email,
       c.company || '',
       c.mdcp_score || '',
+      c.bant_score || '',
+      c.spice_score || '',
       c.enrichment_status || ''
     ]);
     const csv = [headers.join(','), ...rows.map(r => r.map(v => `"${v}"`).join(','))].join('\n');
@@ -537,9 +554,35 @@ export const ContactsPage: React.FC = () => {
       } catch { /* ignore */ }
     }
     setEnriching(false);
-    alert(`Enriched ${success}/${selectedContacts.size} contacts`);
+    alert(`Enriched & scored ${success}/${selectedContacts.size} contacts`);
     setSelectedContacts(new Set());
     loadContacts();
+  };
+
+  const handleBulkScore = async () => {
+    if (selectedContacts.size === 0) return;
+    setScoring(true);
+    const token = await getAuthToken();
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+    let success = 0;
+    for (const id of selectedContacts) {
+      try {
+        const res = await fetch(`${API_BASE}/api/v3/enrichment/score/${id}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        });
+        if (res.ok) success++;
+      } catch { /* ignore */ }
+    }
+    setScoring(false);
+    alert(`Scored ${success}/${selectedContacts.size} contacts`);
+    setSelectedContacts(new Set());
+    loadContacts();
+  };
+
+  const handleEnrichAndScore = async () => {
+    // Enrich includes scoring now, so just call enrich
+    await handleBulkEnrich();
   };
 
   return (
@@ -548,7 +591,7 @@ export const ContactsPage: React.FC = () => {
         <div style={styles.headerTop}>
           <div>
             <h1 style={styles.title}>Contacts</h1>
-            <p style={styles.subtitle}>Manage and enrich your contact database</p>
+            <p style={styles.subtitle}>Manage, enrich, and score your contact database</p>
           </div>
           <div style={styles.headerActions}>
             <button style={styles.btnSecondary} onClick={handleExport}>
@@ -587,9 +630,9 @@ export const ContactsPage: React.FC = () => {
             <div style={styles.statLabel}>Enriched</div>
           </div>
           <div style={styles.statCard}>
-            <div style={styles.statIcon}>📈</div>
-            <div style={styles.statValue}>{stats.avgScore}</div>
-            <div style={styles.statLabel}>Avg Score</div>
+            <div style={styles.statIcon}>🎯</div>
+            <div style={styles.statValue}>{stats.scored}</div>
+            <div style={styles.statLabel}>Scored</div>
           </div>
         </div>
       </div>
@@ -632,11 +675,18 @@ export const ContactsPage: React.FC = () => {
           <span style={styles.toolbarText}>{selectedContacts.size} selected</span>
           <div style={styles.toolbarActions}>
             <button 
-              style={styles.btnPrimary} 
-              onClick={handleBulkEnrich}
+              style={styles.btnSuccess} 
+              onClick={handleEnrichAndScore}
               disabled={enriching}
             >
-              {enriching ? '⏳ Enriching...' : '⚡ Enrich Selected'}
+              {enriching ? '⏳ Processing...' : '✨ Enrich & Score'}
+            </button>
+            <button 
+              style={styles.btnPrimary} 
+              onClick={handleBulkScore}
+              disabled={scoring}
+            >
+              {scoring ? '⏳ Scoring...' : '🎯 Re-Score'}
             </button>
             <button style={styles.btnSecondary} onClick={() => setSelectedContacts(new Set())}>
               Clear
@@ -789,4 +839,3 @@ export const ContactsPage: React.FC = () => {
 };
 
 export default ContactsPage;
-
