@@ -529,7 +529,7 @@ export const ContactsPage: React.FC = () => {
     let success = 0;
     for (const id of selectedContacts) {
       try {
-        const res = await fetch(`${API_BASE}/api/v3/quick-enrich/${id}`, {
+        const res = await fetch(`${API_BASE}/api/v3/enrichment/quick-enrich/${id}`, {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         });
