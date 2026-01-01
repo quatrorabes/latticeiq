@@ -1,5 +1,5 @@
 # backend/app/hubspot/router.py
-# COMPLETE FILE - Simple API key based HubSpot import
+# COMPLETE SELF-CONTAINED FILE - NO EXTERNAL DEPENDENCIES
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -8,74 +8,9 @@ import aiohttp
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Router with prefix - will be mounted at /api/v3/hubspot
 router = APIRouter(prefix="/hubspot", tags=["hubspot"])
-
-# ============================================================================
-# HUBSPOT CLIENT (inline for simplicity)
-# ============================================================================
-
-class HubSpotClient:
-    def __init__(self, api_key: str):
-        self.api_key = api_key
-        self.base_url = "https://api.hubapi.com"
-        self.headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        }
-
-    async def test_connection(self) -> Dict[str, Any]:
-        """Test the API connection"""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.base_url}/crm/v3/objects/contacts?limit=1",
-                headers=self.headers
-            ) as resp:
-                if resp.status == 401:
-                    raise Exception("Invalid API key")
-                if resp.status == 200:
-                    data = await resp.json()
-                    total = data.get("total", 0)
-                    return {"authenticated": True, "contact_count": total}
-                text = await resp.text()
-                raise Exception(f"Connection failed: {resp.status} - {text}")
-
-    async def get_contacts(self, limit: int = 100, after: Optional[str] = None) -> Dict[str, Any]:
-        """Fetch contacts from HubSpot"""
-        url = f"{self.base_url}/crm/v3/objects/contacts"
-        params = {
-            "limit": min(limit, 100),  # HubSpot max is 100 per request
-            "properties": "firstname,lastname,email,company,phone,jobtitle,lifecyclestage,hs_lead_status"
-        }
-        if after:
-            params["after"] = after
-
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self.headers, params=params) as resp:
-                if resp.status == 200:
-                    return await resp.json()
-                text = await resp.text()
-                raise Exception(f"Failed to fetch contacts: {resp.status} - {text}")
-
-    async def get_contacts_batch(self, batch_size: int = 50) -> List[Dict[str, Any]]:
-        """Fetch a batch of contacts"""
-        all_contacts = []
-        after = None
-        remaining = batch_size
-
-        while remaining > 0:
-            fetch_count = min(remaining, 100)  # HubSpot max per request
-            data = await self.get_contacts(limit=fetch_count, after=after)
-            contacts = data.get("results", [])
-            all_contacts.extend(contacts)
-            remaining -= len(contacts)
-
-            # Check for next page
-            paging = data.get("paging", {})
-            after = paging.get("next", {}).get("after")
-            if not after or len(contacts) == 0:
-                break
-
-        return all_contacts[:batch_size]  # Ensure we don't exceed batch_size
 
 # ============================================================================
 # RESPONSE MODELS
@@ -86,11 +21,85 @@ class TestConnectionResponse(BaseModel):
     message: str
     contact_count: Optional[int] = None
 
+class ContactData(BaseModel):
+    hubspot_id: Optional[str] = None
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    company: Optional[str] = None
+    phone: Optional[str] = None
+    job_title: Optional[str] = None
+
 class ImportResponse(BaseModel):
     success: bool
     message: str
     total_fetched: int
     contacts: List[Dict[str, Any]]
+
+# ============================================================================
+# HUBSPOT API FUNCTIONS
+# ============================================================================
+
+async def test_hubspot_connection(api_key: str) -> Dict[str, Any]:
+    """Test the HubSpot API connection"""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            "https://api.hubapi.com/crm/v3/objects/contacts?limit=1",
+            headers=headers
+        ) as resp:
+            if resp.status == 401:
+                raise Exception("Invalid API key - check your HubSpot Private App token")
+            if resp.status == 403:
+                raise Exception("Access forbidden - ensure your Private App has 'crm.objects.contacts.read' scope")
+            if resp.status == 200:
+                data = await resp.json()
+                return {"authenticated": True, "contact_count": data.get("total", 0)}
+            text = await resp.text()
+            raise Exception(f"HubSpot API error: {resp.status} - {text}")
+
+async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dict[str, Any]]:
+    """Fetch contacts from HubSpot API"""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    all_contacts = []
+    after = None
+    remaining = batch_size
+    
+    async with aiohttp.ClientSession() as session:
+        while remaining > 0:
+            # Build URL with params
+            fetch_count = min(remaining, 100)  # HubSpot max is 100 per request
+            url = f"https://api.hubapi.com/crm/v3/objects/contacts?limit={fetch_count}&properties=firstname,lastname,email,company,phone,jobtitle"
+            if after:
+                url += f"&after={after}"
+            
+            async with session.get(url, headers=headers) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise Exception(f"Failed to fetch contacts: {resp.status} - {text}")
+                
+                data = await resp.json()
+                contacts = data.get("results", [])
+                all_contacts.extend(contacts)
+                remaining -= len(contacts)
+                
+                # Check for next page
+                paging = data.get("paging", {})
+                next_link = paging.get("next", {})
+                after = next_link.get("after") if next_link else None
+                
+                if not after or len(contacts) == 0:
+                    break
+    
+    return all_contacts[:batch_size]
 
 # ============================================================================
 # ENDPOINTS
@@ -99,17 +108,17 @@ class ImportResponse(BaseModel):
 @router.get("/health")
 async def hubspot_health():
     """HubSpot router health check"""
-    return {"status": "ok", "service": "hubspot"}
+    return {"status": "ok", "service": "hubspot", "version": "1.0"}
 
 @router.post("/test-connection")
-async def test_connection(api_key: str = Query(..., description="HubSpot API Key")):
+async def test_connection(api_key: str = Query(..., description="HubSpot Private App API Key")):
     """Test HubSpot API key connection"""
     try:
-        client = HubSpotClient(api_key=api_key)
-        result = await client.test_connection()
+        logger.info(f"Testing HubSpot connection...")
+        result = await test_hubspot_connection(api_key)
         return TestConnectionResponse(
             success=True,
-            message="Connected to HubSpot successfully",
+            message="Connected to HubSpot successfully!",
             contact_count=result.get("contact_count", 0)
         )
     except Exception as e:
@@ -118,17 +127,25 @@ async def test_connection(api_key: str = Query(..., description="HubSpot API Key
 
 @router.post("/import-batch")
 async def import_batch(
-    api_key: str = Query(..., description="HubSpot API Key"),
+    api_key: str = Query(..., description="HubSpot Private App API Key"),
     batch_size: int = Query(50, ge=10, le=500, description="Number of contacts to import")
 ):
     """Import a batch of contacts from HubSpot"""
     try:
-        client = HubSpotClient(api_key=api_key)
+        logger.info(f"Importing {batch_size} contacts from HubSpot...")
         
-        # Fetch contacts
-        contacts = await client.get_contacts_batch(batch_size=batch_size)
+        # Fetch contacts from HubSpot
+        contacts = await fetch_hubspot_contacts(api_key, batch_size)
         
-        # Transform contacts to simple format
+        if not contacts:
+            return ImportResponse(
+                success=True,
+                message="No contacts found in HubSpot",
+                total_fetched=0,
+                contacts=[]
+            )
+        
+        # Transform to simple format
         transformed = []
         for contact in contacts:
             props = contact.get("properties", {})
@@ -140,9 +157,9 @@ async def import_batch(
                 "company": props.get("company"),
                 "phone": props.get("phone"),
                 "job_title": props.get("jobtitle"),
-                "lifecycle_stage": props.get("lifecyclestage"),
-                "lead_status": props.get("hs_lead_status"),
             })
+        
+        logger.info(f"Successfully fetched {len(transformed)} contacts")
         
         return ImportResponse(
             success=True,
@@ -154,3 +171,6 @@ async def import_batch(
     except Exception as e:
         logger.error(f"HubSpot import error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
+
+# Log when module loads
+logger.info("HubSpot router module loaded successfully")
