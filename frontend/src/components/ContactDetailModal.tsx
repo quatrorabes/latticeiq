@@ -1171,7 +1171,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 <div style={styles.activityContent}>
                   <div style={styles.activityTitle}>📥 Contact Created</div>
                   <div style={styles.activityDesc}>
-                    Added to workspace from {contact.source || 'manual entry'}
+                    Added to workspace from import
                   </div>
                   <div style={styles.activityTime}>
                     {new Date(contact.created_at).toLocaleDateString('en-US', {
