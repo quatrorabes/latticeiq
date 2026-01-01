@@ -1,19 +1,10 @@
 /**
  * ContactDetailModal.tsx - PREMIUM VERSION
  * Modern glassmorphism design with full enrichment integration
- * 
- * Features:
- * - Beautiful animated modal with backdrop blur
- * - Tabbed interface with smooth transitions
- * - Real-time enrichment with progress indicator
- * - Score visualization with gauges
- * - Quick actions toolbar
- * - Activity timeline
- * - Responsive design
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Contact, EnrichmentData } from '../types';
+import { Contact } from '../types';
 
 interface ContactDetailModalProps {
   contact: Contact;
@@ -25,7 +16,25 @@ interface ContactDetailModalProps {
 
 type TabType = 'overview' | 'enrichment' | 'scoring' | 'activity';
 
-// Inline styles for the premium modal
+// Quick enrich data structure from our API
+interface QuickEnrichData {
+  summary?: string;
+  opening_line?: string;
+  persona_type?: string;
+  vertical?: string;
+  inferred_title?: string;
+  inferred_company_website?: string;
+  inferred_location?: string;
+  talking_points?: string[];
+}
+
+interface EnrichmentDataStructure {
+  quick_enrich?: QuickEnrichData;
+  provider?: string;
+  model?: string;
+  generated_at?: string;
+}
+
 const styles: { [key: string]: React.CSSProperties } = {
   overlay: {
     position: 'fixed',
@@ -310,6 +319,34 @@ const styles: { [key: string]: React.CSSProperties } = {
     color: 'rgba(255, 255, 255, 0.8)',
     lineHeight: 1.6,
   },
+  badge: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    padding: '6px 12px',
+    borderRadius: '20px',
+    fontSize: '13px',
+    fontWeight: '600',
+  },
+  badgeDecisionMaker: {
+    background: 'rgba(239, 68, 68, 0.2)',
+    color: '#f87171',
+    border: '1px solid rgba(239, 68, 68, 0.3)',
+  },
+  badgeChampion: {
+    background: 'rgba(251, 191, 36, 0.2)',
+    color: '#fbbf24',
+    border: '1px solid rgba(251, 191, 36, 0.3)',
+  },
+  badgeInfluencer: {
+    background: 'rgba(59, 130, 246, 0.2)',
+    color: '#60a5fa',
+    border: '1px solid rgba(59, 130, 246, 0.3)',
+  },
+  badgeDefault: {
+    background: 'rgba(156, 163, 175, 0.2)',
+    color: '#9ca3af',
+    border: '1px solid rgba(156, 163, 175, 0.3)',
+  },
   scoreGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(3, 1fr)',
@@ -548,13 +585,15 @@ const styles: { [key: string]: React.CSSProperties } = {
     display: 'flex',
     alignItems: 'flex-start',
     gap: '10px',
-    marginBottom: '10px',
+    marginBottom: '12px',
     fontSize: '14px',
-    color: 'rgba(255, 255, 255, 0.8)',
+    color: 'rgba(255, 255, 255, 0.85)',
+    lineHeight: 1.5,
   },
   talkingPointIcon: {
     color: '#667eea',
     marginTop: '2px',
+    flexShrink: 0,
   },
   errorBanner: {
     background: 'rgba(239, 68, 68, 0.1)',
@@ -592,7 +631,6 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
 };
 
-// Animation keyframes (injected into head)
 const injectStyles = () => {
   const styleId = 'contact-modal-animations';
   if (document.getElementById(styleId)) return;
@@ -607,10 +645,6 @@ const injectStyles = () => {
     @keyframes slideUp {
       from { opacity: 0; transform: translateY(20px) scale(0.98); }
       to { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.5; }
     }
     @keyframes spin {
       from { transform: rotate(0deg); }
@@ -645,7 +679,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     setActiveTab('overview');
   }, [contact]);
 
-  // Simulate enrichment progress
   useEffect(() => {
     if (isEnriching) {
       const interval = setInterval(() => {
@@ -669,11 +702,9 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
       setError(null);
       setEnrichProgress(0);
       
-      // Call the API
       const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
       const { getAuthToken } = await import('../api/contacts');
       const token = await getAuthToken();
-
       
       const response = await fetch(`${API_BASE}/api/v3/enrichment/quick-enrich/${contact.id}`, {
         method: 'POST',
@@ -690,12 +721,10 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
 
       setEnrichProgress(100);
       
-      // Notify parent to refresh
       if (onEnrich) {
         await onEnrich(contact.id);
       }
       
-      // Small delay to show completion
       await new Promise(resolve => setTimeout(resolve, 500));
       
     } catch (err) {
@@ -713,7 +742,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
       const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
       const { getAuthToken } = await import('../api/contacts');
       const token = await getAuthToken();
-
       
       const response = await fetch(`${API_BASE}/api/v3/contacts/${editData.id}`, {
         method: 'PATCH',
@@ -747,8 +775,10 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
 
   if (!isOpen) return null;
 
-  const enrichment = (contact.enrichment_data || {}) as EnrichmentData;
-  const hasEnrichment = contact.enrichment_status === 'completed' && Object.keys(enrichment).length > 0;
+  // Parse enrichment data with proper structure
+  const enrichmentRaw = contact.enrichment_data as EnrichmentDataStructure | undefined;
+  const quickEnrich = enrichmentRaw?.quick_enrich || {};
+  const hasEnrichment = contact.enrichment_status === 'completed' && Object.keys(quickEnrich).length > 0;
   
   const getInitials = () => {
     return `${contact.first_name?.[0] || ''}${contact.last_name?.[0] || ''}`.toUpperCase() || '?';
@@ -787,6 +817,15 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
     }
   };
 
+  const getPersonaBadgeStyle = (persona?: string) => {
+    if (!persona) return styles.badgeDefault;
+    const p = persona.toLowerCase();
+    if (p.includes('decision')) return styles.badgeDecisionMaker;
+    if (p.includes('champion')) return styles.badgeChampion;
+    if (p.includes('influencer')) return styles.badgeInfluencer;
+    return styles.badgeDefault;
+  };
+
   const tabs: { id: TabType; label: string; icon: string }[] = [
     { id: 'overview', label: 'Overview', icon: '👤' },
     { id: 'enrichment', label: 'Enrichment', icon: '✨' },
@@ -815,7 +854,9 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 <h2 style={styles.name}>
                   {contact.first_name} {contact.last_name}
                 </h2>
-                {contact.title && <p style={styles.title}>{contact.title}</p>}
+                {(contact.title || quickEnrich.inferred_title) && (
+                  <p style={styles.title}>{contact.title || quickEnrich.inferred_title}</p>
+                )}
                 <p style={styles.company}>
                   <span>🏢</span> {contact.company || 'No company'}
                 </p>
@@ -835,11 +876,11 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 {getStatusText()}
               </span>
             </div>
-            {contact.mdcp_tier && (
+            {quickEnrich.persona_type && (
               <div style={styles.quickStat}>
-                <span style={styles.quickStatLabel}>Tier</span>
-                <span style={{...styles.scoreTier, ...getTierStyle(contact.mdcp_tier)}}>
-                  {contact.mdcp_tier.toUpperCase()}
+                <span style={styles.quickStatLabel}>Persona</span>
+                <span style={{...styles.badge, ...getPersonaBadgeStyle(quickEnrich.persona_type)}}>
+                  {quickEnrich.persona_type}
                 </span>
               </div>
             )}
@@ -866,7 +907,6 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
 
         {/* Body */}
         <div style={styles.body}>
-          {/* Error Banner */}
           {error && (
             <div style={styles.errorBanner}>
               <span style={styles.errorText}>
@@ -935,7 +975,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                         onChange={e => setEditData({...editData, title: e.target.value})}
                       />
                     ) : (
-                      <div style={styles.infoValue}>{contact.title || '—'}</div>
+                      <div style={styles.infoValue}>{contact.title || quickEnrich.inferred_title || '—'}</div>
                     )}
                   </div>
                 </div>
@@ -944,37 +984,10 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
               {hasEnrichment && (
                 <div style={styles.section}>
                   <h3 style={styles.sectionTitle}>
-                    <span>🏢</span> Company Insights
+                    <span>🎯</span> AI Summary
                   </h3>
-                  <div style={styles.infoGrid}>
-                    {enrichment.industry && (
-                      <div style={styles.infoCard}>
-                        <div style={styles.infoLabel}>Industry</div>
-                        <div style={styles.infoValue}>{enrichment.industry}</div>
-                      </div>
-                    )}
-                    {enrichment.company_size && (
-                      <div style={styles.infoCard}>
-                        <div style={styles.infoLabel}>Company Size</div>
-                        <div style={styles.infoValue}>{enrichment.company_size}</div>
-                      </div>
-                    )}
-                    {enrichment.website && (
-                      <div style={styles.infoCard}>
-                        <div style={styles.infoLabel}>Website</div>
-                        <a href={enrichment.website} target="_blank" rel="noopener noreferrer" style={styles.infoLink}>
-                          {enrichment.website.replace(/^https?:\/\//, '')}
-                        </a>
-                      </div>
-                    )}
-                    {enrichment.linkedin_url && (
-                      <div style={styles.infoCard}>
-                        <div style={styles.infoLabel}>LinkedIn</div>
-                        <a href={enrichment.linkedin_url} target="_blank" rel="noopener noreferrer" style={styles.infoLink}>
-                          View Profile →
-                        </a>
-                      </div>
-                    )}
+                  <div style={{...styles.enrichmentCard, ...styles.enrichmentCardFull}}>
+                    <div style={styles.enrichmentCardValue}>{quickEnrich.summary}</div>
                   </div>
                 </div>
               )}
@@ -991,7 +1004,7 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                     Unlock Contact Intelligence
                   </h3>
                   <p style={{ color: 'rgba(255,255,255,0.7)', margin: '0 0 20px', fontSize: '14px' }}>
-                    Enrich this contact to get company info, social profiles, and personalized talking points.
+                    Enrich this contact to get AI-powered insights, talking points, and personalized openers.
                   </p>
                   <button
                     style={{
@@ -1026,65 +1039,119 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                 </div>
               ) : (
                 <div style={styles.enrichmentGrid}>
-                  {enrichment.company_description && (
+                  {/* Summary */}
+                  {quickEnrich.summary && (
                     <div style={{...styles.enrichmentCard, ...styles.enrichmentCardFull}}>
                       <div style={styles.enrichmentCardHeader}>
                         <div style={styles.enrichmentCardIcon}>📝</div>
-                        <h4 style={styles.enrichmentCardTitle}>Company Description</h4>
+                        <h4 style={styles.enrichmentCardTitle}>AI Summary</h4>
                       </div>
-                      <div style={styles.enrichmentCardValue}>{enrichment.company_description}</div>
+                      <div style={styles.enrichmentCardValue}>{quickEnrich.summary}</div>
                     </div>
                   )}
                   
-                  {enrichment.industry && (
-                    <div style={styles.enrichmentCard}>
-                      <div style={styles.enrichmentCardHeader}>
-                        <div style={styles.enrichmentCardIcon}>🏭</div>
-                        <h4 style={styles.enrichmentCardTitle}>Industry</h4>
-                      </div>
-                      <div style={styles.enrichmentCardValue}>{enrichment.industry}</div>
-                    </div>
-                  )}
-                  
-                  {enrichment.company_size && (
-                    <div style={styles.enrichmentCard}>
-                      <div style={styles.enrichmentCardHeader}>
-                        <div style={styles.enrichmentCardIcon}>👥</div>
-                        <h4 style={styles.enrichmentCardTitle}>Company Size</h4>
-                      </div>
-                      <div style={styles.enrichmentCardValue}>{enrichment.company_size}</div>
-                    </div>
-                  )}
-                  
-                  {enrichment.talking_points && (
+                  {/* Opening Line */}
+                  {quickEnrich.opening_line && (
                     <div style={{...styles.enrichmentCard, ...styles.enrichmentCardFull}}>
                       <div style={styles.enrichmentCardHeader}>
                         <div style={styles.enrichmentCardIcon}>💬</div>
+                        <h4 style={styles.enrichmentCardTitle}>Personalized Opener</h4>
+                      </div>
+                      <div style={{...styles.enrichmentCardValue, fontStyle: 'italic', color: '#a5b4fc'}}>
+                        "{quickEnrich.opening_line}"
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Persona & Vertical */}
+                  {quickEnrich.persona_type && (
+                    <div style={styles.enrichmentCard}>
+                      <div style={styles.enrichmentCardHeader}>
+                        <div style={styles.enrichmentCardIcon}>👤</div>
+                        <h4 style={styles.enrichmentCardTitle}>Persona Type</h4>
+                      </div>
+                      <span style={{...styles.badge, ...getPersonaBadgeStyle(quickEnrich.persona_type)}}>
+                        {quickEnrich.persona_type}
+                      </span>
+                    </div>
+                  )}
+                  
+                  {quickEnrich.vertical && (
+                    <div style={styles.enrichmentCard}>
+                      <div style={styles.enrichmentCardHeader}>
+                        <div style={styles.enrichmentCardIcon}>🏭</div>
+                        <h4 style={styles.enrichmentCardTitle}>Vertical</h4>
+                      </div>
+                      <div style={styles.enrichmentCardValue}>{quickEnrich.vertical}</div>
+                    </div>
+                  )}
+
+                  {/* Inferred Data */}
+                  {quickEnrich.inferred_title && (
+                    <div style={styles.enrichmentCard}>
+                      <div style={styles.enrichmentCardHeader}>
+                        <div style={styles.enrichmentCardIcon}>💼</div>
+                        <h4 style={styles.enrichmentCardTitle}>Inferred Title</h4>
+                      </div>
+                      <div style={styles.enrichmentCardValue}>{quickEnrich.inferred_title}</div>
+                    </div>
+                  )}
+                  
+                  {quickEnrich.inferred_location && (
+                    <div style={styles.enrichmentCard}>
+                      <div style={styles.enrichmentCardHeader}>
+                        <div style={styles.enrichmentCardIcon}>📍</div>
+                        <h4 style={styles.enrichmentCardTitle}>Location</h4>
+                      </div>
+                      <div style={styles.enrichmentCardValue}>{quickEnrich.inferred_location}</div>
+                    </div>
+                  )}
+
+                  {quickEnrich.inferred_company_website && (
+                    <div style={styles.enrichmentCard}>
+                      <div style={styles.enrichmentCardHeader}>
+                        <div style={styles.enrichmentCardIcon}>🌐</div>
+                        <h4 style={styles.enrichmentCardTitle}>Company Website</h4>
+                      </div>
+                      <a 
+                        href={quickEnrich.inferred_company_website} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        style={styles.infoLink}
+                      >
+                        {quickEnrich.inferred_company_website.replace(/^https?:\/\//, '')}
+                      </a>
+                    </div>
+                  )}
+                  
+                  {/* Talking Points */}
+                  {quickEnrich.talking_points && quickEnrich.talking_points.length > 0 && (
+                    <div style={{...styles.enrichmentCard, ...styles.enrichmentCardFull}}>
+                      <div style={styles.enrichmentCardHeader}>
+                        <div style={styles.enrichmentCardIcon}>🎯</div>
                         <h4 style={styles.enrichmentCardTitle}>Talking Points</h4>
                       </div>
                       <ul style={styles.talkingPoints}>
-                        {(Array.isArray(enrichment.talking_points)
-                          ? enrichment.talking_points
-                          : String(enrichment.talking_points).split(';')
-                        ).map((point: string, i: number) => (
+                        {quickEnrich.talking_points.map((point, i) => (
                           <li key={i} style={styles.talkingPoint}>
                             <span style={styles.talkingPointIcon}>→</span>
-                            <span>{point.trim()}</span>
+                            <span>{point}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
                   )}
-                  
-                  {enrichment.recent_news && (
-                    <div style={{...styles.enrichmentCard, ...styles.enrichmentCardFull}}>
-                      <div style={styles.enrichmentCardHeader}>
-                        <div style={styles.enrichmentCardIcon}>📰</div>
-                        <h4 style={styles.enrichmentCardTitle}>Recent News</h4>
-                      </div>
-                      <div style={styles.enrichmentCardValue}>{enrichment.recent_news}</div>
+
+                  {/* Provider Info */}
+                  <div style={{...styles.enrichmentCard, ...styles.enrichmentCardFull, opacity: 0.7}}>
+                    <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)', display: 'flex', gap: '16px' }}>
+                      <span>Provider: {enrichmentRaw?.provider || 'perplexity'}</span>
+                      <span>Model: {enrichmentRaw?.model || 'sonar-pro'}</span>
+                      {enrichmentRaw?.generated_at && (
+                        <span>Generated: {new Date(enrichmentRaw.generated_at).toLocaleDateString()}</span>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
               )}
             </>
@@ -1163,9 +1230,13 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
                   <div style={styles.activityContent}>
                     <div style={styles.activityTitle}>✨ Contact Enriched</div>
                     <div style={styles.activityDesc}>
-                      Company data, social profiles, and talking points added
+                      AI-powered insights, talking points, and opener generated
                     </div>
-                    <div style={styles.activityTime}>Recently</div>
+                    <div style={styles.activityTime}>
+                      {enrichmentRaw?.generated_at 
+                        ? new Date(enrichmentRaw.generated_at).toLocaleString()
+                        : 'Recently'}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1255,3 +1326,4 @@ export const ContactDetailModal: React.FC<ContactDetailModalProps> = ({
 };
 
 export default ContactDetailModal;
+
