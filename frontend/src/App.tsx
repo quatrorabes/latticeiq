@@ -63,16 +63,12 @@ export default function App() {
             <Route path="/" element={<Navigate to="/contacts" replace />} />
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
-            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
             <Route path="/enrichment" element={<EnrichmentPage />} />
             <Route path="/scoring" element={<ScoringPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/crm" element={<CRMPage />} />
             <Route path="*" element={<Navigate to="/contacts" replace />} />
             <Route path="/premium/dashboard" element={<PremiumDashboard />} />
-            <Route path="/contacts" element={<ContactsPage />} />
-            <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
             <Route path="/settings/scoring" element={<ScoringSettingsPage />} />
           </Route>
         )}
