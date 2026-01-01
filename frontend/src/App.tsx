@@ -8,7 +8,7 @@ import LoadingSpinner from './components/LoadingSpinner'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ContactsPage from './pages/ContactsPage'
-import { ScoringSettingsPage } from "./pages/ScoringSettingsPage";
+import ScoringSettingsPage from "./pages/ScoringSettingsPage"
 import EnrichmentPage from './pages/EnrichmentPage'
 import ScoringPage from './pages/ScoringPage'
 import SettingsPage from './pages/SettingsPage'
