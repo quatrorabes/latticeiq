@@ -214,9 +214,6 @@ except Exception as e:
 # Contacts Router
 try:
     from app.contacts_router import router as contacts_router
-from app.routers.settings_router import router as settings_router
-    app.include_router(contacts_router, prefix="/api/v3")
-app.include_router(settings_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "contacts"})
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "contacts", "error": str(e)})
