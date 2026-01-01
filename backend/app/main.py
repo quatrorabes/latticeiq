@@ -10,6 +10,7 @@ from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from functools import lru_cache
+from app.hubspot.router import router as hubspot_router
 
 
 import jwt
@@ -389,6 +390,7 @@ if SCORING_AVAILABLE and scoring_router:
     set_supabase_client(supabase)
     logger.info({"event": "supabase_client_initialized", "router": "scoring"})
 
+    app.include_router(hubspot_router)
 
 # ============================================================================
 # ICP CONFIG ENDPOINT
