@@ -214,7 +214,9 @@ except Exception as e:
 # Contacts Router
 try:
     from app.contacts_router import router as contacts_router
+from app.routers.settings_router import router as settings_router
     app.include_router(contacts_router, prefix="/api/v3")
+app.include_router(settings_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "contacts"})
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "contacts", "error": str(e)})
@@ -312,3 +314,39 @@ async def root():
         "docs": "/api/docs",
         "status": "running"
     }
+
+# Premium Feature Routers
+try:
+    from app.routers.ai_writer_router import router as ai_writer_router
+    app.include_router(ai_writer_router, prefix="/api/v3")
+    print("✅ AI Writer router loaded")
+except Exception as e:
+    print(f"⚠️ AI Writer router not loaded: {e}")
+
+try:
+    from app.routers.smart_lists_router import router as smart_lists_router
+    app.include_router(smart_lists_router, prefix="/api/v3")
+    print("✅ Smart Lists router loaded")
+except Exception as e:
+    print(f"⚠️ Smart Lists router not loaded: {e}")
+
+try:
+    from app.routers.pipeline_router import router as pipeline_router
+    app.include_router(pipeline_router, prefix="/api/v3")
+    print("✅ Pipeline router loaded")
+except Exception as e:
+    print(f"⚠️ Pipeline router not loaded: {e}")
+
+try:
+    from app.routers.integrations_router import router as integrations_router
+    app.include_router(integrations_router, prefix="/api/v3")
+    print("✅ Integrations router loaded")
+except Exception as e:
+    print(f"⚠️ Integrations router not loaded: {e}")
+
+try:
+    from app.routers.import_router import router as import_router
+    app.include_router(import_router, prefix="/api/v3")
+    print("✅ Import router loaded")
+except Exception as e:
+    print(f"⚠️ Import router not loaded: {e}")
