@@ -2,11 +2,15 @@
  * Layout.tsx - Premium Dark Sidebar Layout
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { injectAnimations } from '../styles';
 import { colors, gradients, spacing, radius, fontSizes, fontWeights, transitions } from '../styles/theme';
-import { supabase } from '../lib/supabase';
+
+interface LayoutProps {
+  darkMode?: boolean;
+  onToggleDarkMode?: () => void;
+}
 
 const styles: { [key: string]: React.CSSProperties } = {
   container: {
@@ -150,49 +154,70 @@ const styles: { [key: string]: React.CSSProperties } = {
   },
 };
 
-interface NavItem {
+interface NavItemDef {
   path: string;
   label: string;
   icon: string;
 }
 
-const mainNavItems: NavItem[] = [
+const mainNavItems: NavItemDef[] = [
   { path: '/dashboard', label: 'Dashboard', icon: '📊' },
   { path: '/contacts', label: 'Contacts', icon: '👥' },
-  { path: '/analytics', label: 'Analytics', icon: '📈' },
+  { path: '/premium/dashboard', label: 'Analytics', icon: '📈' },
 ];
 
-const toolsNavItems: NavItem[] = [
-  { path: '/import', label: 'Import Data', icon: '📥' },
-  { path: '/hubspot', label: 'HubSpot Sync', icon: '🔄' },
+const toolsNavItems: NavItemDef[] = [
+  { path: '/crm', label: 'Import Data', icon: '📥' },
+  { path: '/enrichment', label: 'Enrichment', icon: '✨' },
+  { path: '/scoring', label: 'Scoring', icon: '🎯' },
 ];
 
-const settingsNavItems: NavItem[] = [
+const settingsNavItems: NavItemDef[] = [
   { path: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
-export const Layout: React.FC = () => {
+const Layout: React.FC<LayoutProps> = ({ darkMode, onToggleDarkMode }) => {
   const navigate = useNavigate();
-  const [userEmail, setUserEmail] = React.useState<string>('');
+  const [userEmail, setUserEmail] = useState<string>('');
 
   useEffect(() => {
     injectAnimations();
-    supabase.auth.getUser().then(({ data }) => {
-      setUserEmail(data.user?.email || '');
-    });
+    // Try to get user email from various localStorage keys
+    try {
+      const keys = ['supabase.auth.token', 'sb-session', 'supabase_session'];
+      for (const key of keys) {
+        const stored = localStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const email = parsed?.currentSession?.user?.email || 
+                       parsed?.user?.email || 
+                       parsed?.session?.user?.email || '';
+          if (email) {
+            setUserEmail(email);
+            break;
+          }
+        }
+      }
+    } catch {
+      // Ignore parse errors
+    }
   }, []);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    localStorage.removeItem('supabase.auth.token');
+    localStorage.removeItem('supabase_token');
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('sb-session');
     navigate('/login');
+    window.location.reload();
   };
 
-  const getInitials = () => {
+  const getInitials = (): string => {
     if (!userEmail) return '?';
     return userEmail.slice(0, 2).toUpperCase();
   };
 
-  const renderNavItem = (item: NavItem) => (
+  const renderNavItem = (item: NavItemDef) => (
     <NavLink
       key={item.path}
       to={item.path}
@@ -249,3 +274,4 @@ export const Layout: React.FC = () => {
 };
 
 export default Layout;
+
