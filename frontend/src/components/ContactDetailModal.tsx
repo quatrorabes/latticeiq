@@ -2,11 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Mail, Phone, Building2, Briefcase, Globe, Linkedin, 
   Edit2, Save, Sparkles, Trash2, ExternalLink, User,
-  TrendingUp, DollarSign, Calendar, MessageSquare,
-  Target, Activity, Award, BarChart3
+  TrendingUp, DollarSign, Calendar, Activity, Award, BarChart3, Loader
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact } from '../api/contacts';
-import { enrichContact } from '../api/enrichment';
+import { mockEnrichContact } from '../api/enrichment';
 import '../styles/ContactDetailModal.css';
 
 interface Props {
@@ -32,9 +31,9 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
       await updateContact(contact.id, editData);
       setIsEditing(false);
       onUpdate();
-      alert('Contact updated successfully!');
+      alert('✅ Contact updated successfully!');
     } catch (err: any) {
-      alert(`Failed to update: ${err.message}`);
+      alert(`❌ Failed to update: ${err.message}`);
     } finally {
       setSaving(false);
     }
@@ -43,13 +42,12 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
   const handleEnrich = async () => {
     setEnriching(true);
     try {
-      await enrichContact(contact.id);
-      alert('Enrichment started! This may take a minute.');
-      setTimeout(() => {
-        onUpdate();
-      }, 3000);
+      // Use mock enrichment for now (replace with real API when ready)
+      await mockEnrichContact(contact.id);
+      alert('✅ Enrichment completed! The contact has been updated with AI insights.');
+      onUpdate();
     } catch (err: any) {
-      alert(`Enrichment failed: ${err.message}`);
+      alert(`❌ Enrichment failed: ${err.message}`);
     } finally {
       setEnriching(false);
     }
@@ -62,11 +60,11 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
 
     try {
       await deleteContact(contact.id);
-      alert('Contact deleted successfully');
+      alert('✅ Contact deleted successfully');
       onClose();
       onUpdate();
     } catch (err: any) {
-      alert(`Failed to delete: ${err.message}`);
+      alert(`❌ Failed to delete: ${err.message}`);
     }
   };
 
@@ -191,7 +189,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
                       Edit
                     </button>
                     <button className="btn-action btn-glow" onClick={handleEnrich} disabled={isEnriching}>
-                      <Sparkles size={20} />
+                      {isEnriching ? <Loader size={20} className="spin" /> : <Sparkles size={20} />}
                       {isEnriching ? 'Enriching...' : 'Enrich'}
                     </button>
                     <button className="btn-action btn-danger" onClick={handleDelete}>
@@ -281,7 +279,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
             onClick={() => setActiveTab('enrichment')}
           >
             <Sparkles size={18} />
-            Enrichment
+            Enrichment {contact.enrichment_status === 'completed' && '✓'}
           </button>
           <button 
             className={`tab ${activeTab === 'activity' ? 'active' : ''}`}
@@ -442,7 +440,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
 
                   {enrichment.opening_line && (
                     <div className="enrichment-card feature glow">
-                      <h4>💬 Opening Line</h4>
+                      <h4>💬 AI-Generated Opening Line</h4>
                       <p className="opening-line">{enrichment.opening_line}</p>
                     </div>
                   )}
@@ -498,10 +496,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact, onClose, onUpdate
                 <div className="empty-enrichment">
                   <Sparkles size={64} />
                   <h3>No enrichment data available</h3>
-                  <p>Click the "Enrich" button to gather intelligence about this contact</p>
+                  <p>Click the "Enrich" button to gather AI-powered intelligence about this contact</p>
                   <button className="btn-enrich-large" onClick={handleEnrich} disabled={isEnriching}>
-                    <Sparkles size={20} />
-                    {isEnriching ? 'Enriching...' : 'Enrich Contact'}
+                    {isEnriching ? <Loader size={20} className="spin" /> : <Sparkles size={20} />}
+                    {isEnriching ? 'Enriching Contact...' : 'Enrich Contact Now'}
                   </button>
                 </div>
               )}
