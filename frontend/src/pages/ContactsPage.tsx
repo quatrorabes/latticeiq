@@ -588,6 +588,27 @@ export const ContactsPage: React.FC = () => {
             <div style={styles.statLabel}>Hot Leads</div>
           </div>
           <div style={styles.statCard}>
+
+  const handleBulkEnrich = async () => {
+    if (selectedContacts.size === 0) return;
+    const { getAuthToken } = await import('../api/contacts');
+    const token = await getAuthToken();
+    const API_BASE = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+    let success = 0;
+    for (const id of selectedContacts) {
+      try {
+        const res = await fetch(`${API_BASE}/api/v3/quick-enrich/${id}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+        });
+        if (res.ok) success++;
+      } catch {}
+    }
+    alert(`Enriched ${success}/${selectedContacts.size} contacts`);
+    setSelectedContacts(new Set());
+    loadContacts();
+  };
+
             <div style={styles.statIcon}>⭐</div>
             <div style={{...styles.statValue, color: colors.tierWarm}}>{stats.warm}</div>
             <div style={styles.statLabel}>Warm Leads</div>
