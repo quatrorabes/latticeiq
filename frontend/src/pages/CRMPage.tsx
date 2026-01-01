@@ -1,410 +1,234 @@
 // frontend/src/pages/CRMPage.tsx
-// COMPLETE REPLACEMENT - CSV + HubSpot in one page
+// SIMPLIFIED VERSION - Just API key input + batch size
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import React, { useState } from 'react';
 import { Button } from '../components/ui/Button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
-import { AlertCircle, CheckCircle2, Loader2, LogOut } from 'lucide-react';
-
-interface HubSpotIntegration {
-  id: string;
-  provider: string;
-  is_connected: boolean;
-  connected_email?: string;
-  connected_at?: string;
-}
-
-interface ImportFilters {
-  lead_status_exclude: string[];
-  lifecycle_status_exclude: string[];
-  properties_to_import: string[];
-}
-
-const HUBSPOT_LEAD_STATUS_OPTIONS = [
-  'Unqualified',
-  'Do Not Contact',
-  'Unsubscribed',
-  'Subscriber',
-  'Qualified',
-];
-
-const HUBSPOT_LIFECYCLE_STATUS_OPTIONS = [
-  'Unqualified',
-  'Lead',
-  'Customer',
-  'Evangelist',
-];
-
-const DEFAULT_HUBSPOT_PROPERTIES = [
-  'firstname',
-  'lastname',
-  'email',
-  'company',
-  'phone',
-  'mobilephone',
-  'linkedinurl',
-  'jobtitle',
-  'industry',
-  'numberofemployees',
-  'annualrevenue',
-  'lifecyclestage',
-  'hs_lead_status',
-];
+import { AlertCircle, CheckCircle2, Loader2 } from 'lucide-react';
 
 export default function CRMPage() {
-  const [crmTab, setCrmTab] = useState<string>('csv');
-  const [hubspotIntegration, setHubspotIntegration] = useState<HubSpotIntegration | null>(null);
+  const [crmTab, setCrmTab] = useState<string>('hubspot');
+  const [apiKey, setApiKey] = useState<string>('');
+  const [batchSize, setBatchSize] = useState<number>(50);
   const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{
-    status: 'idle' | 'importing' | 'enriching' | 'complete' | 'error';
-    total: number;
-    imported: number;
-    enriched: number;
-    error?: string;
+  const [testing, setTesting] = useState(false);
+  const [importStatus, setImportStatus] = useState<{
+    status: 'idle' | 'testing' | 'importing' | 'complete' | 'error';
+    message: string;
+    imported?: number;
+    total?: number;
   }>({
     status: 'idle',
-    total: 0,
-    imported: 0,
-    enriched: 0,
-  });
-  const [filters, setFilters] = useState<ImportFilters>({
-    lead_status_exclude: ['Unqualified', 'Do Not Contact', 'Unsubscribed'],
-    lifecycle_status_exclude: ['Unqualified'],
-    properties_to_import: DEFAULT_HUBSPOT_PROPERTIES,
+    message: '',
   });
 
-  useEffect(() => {
-    checkHubSpotConnection();
-  }, []);
-
-  const checkHubSpotConnection = async () => {
-    try {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/integration-status`,
-        {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setHubspotIntegration(data);
-      }
-    } catch (error) {
-      console.error('Error checking HubSpot connection:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleConnectHubSpot = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/auth/authorize`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        window.location.href = data.authorization_url;
-      }
-    } catch (error) {
-      console.error('Error initiating HubSpot connection:', error);
-    }
-  };
-
-  const handleDisconnectHubSpot = async () => {
-    try {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/disconnect`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }
-      );
-
-      if (response.ok) {
-        setHubspotIntegration(null);
-      }
-    } catch (error) {
-      console.error('Error disconnecting HubSpot:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleImportContacts = async () => {
-    try {
-      setImporting(true);
-      setImportProgress({ status: 'importing', total: 0, imported: 0, enriched: 0 });
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/import`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            filters: {
-              lead_status_exclude: filters.lead_status_exclude,
-              lifecycle_status_exclude: filters.lifecycle_status_exclude,
-            },
-            properties_to_import: filters.properties_to_import,
-            auto_enrich: true,
-          }),
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setImportProgress({
-          status: 'complete',
-          total: data.total_contacts,
-          imported: data.imported,
-          enriched: data.enrichment_queued,
-        });
-        setTimeout(() => checkHubSpotConnection(), 2000);
-      } else {
-        const errorData = await response.json();
-        setImportProgress({
-          status: 'error',
-          total: 0,
-          imported: 0,
-          enriched: 0,
-          error: errorData.detail || 'Import failed',
-        });
-      }
-    } catch (error) {
-      console.error('Error importing contacts:', error);
-      setImportProgress({
+  const handleTestConnection = async () => {
+    if (!apiKey.trim()) {
+      setImportStatus({
         status: 'error',
-        total: 0,
-        imported: 0,
-        enriched: 0,
-        error: String(error),
+        message: 'Please enter your HubSpot API key',
+      });
+      return;
+    }
+
+    try {
+      setTesting(true);
+      setImportStatus({ status: 'testing', message: 'Testing connection...' });
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/test-connection?api_key=${encodeURIComponent(apiKey)}`
+      , {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setImportStatus({
+          status: 'complete',
+          message: `✓ Connected! Found ${data.result?.contact_count || 0} contacts in HubSpot`,
+        });
+      } else {
+        const error = await response.json();
+        setImportStatus({
+          status: 'error',
+          message: error.detail || 'Connection failed',
+        });
+      }
+    } catch (error) {
+      setImportStatus({
+        status: 'error',
+        message: String(error),
       });
     } finally {
-      setImporting(false);
+      setTesting(false);
     }
   };
 
-  const toggleLeadStatusFilter = (status: string) => {
-    setFilters(prev => ({
-      ...prev,
-      lead_status_exclude: prev.lead_status_exclude.includes(status)
-        ? prev.lead_status_exclude.filter(s => s !== status)
-        : [...prev.lead_status_exclude, status],
-    }));
-  };
+  const handleImport = async () => {
+    if (!apiKey.trim()) {
+      setImportStatus({
+        status: 'error',
+        message: 'Please enter your HubSpot API key',
+      });
+      return;
+    }
 
-  const toggleLifecycleFilter = (status: string) => {
-    setFilters(prev => ({
-      ...prev,
-      lifecycle_status_exclude: prev.lifecycle_status_exclude.includes(status)
-        ? prev.lifecycle_status_exclude.filter(s => s !== status)
-        : [...prev.lifecycle_status_exclude, status],
-    }));
+    try {
+      setLoading(true);
+      setImportStatus({ status: 'importing', message: 'Importing contacts...' });
+
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/import-batch?api_key=${encodeURIComponent(apiKey)}&batch_size=${batchSize}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setImportStatus({
+          status: 'complete',
+          message: `✓ Success! Imported ${data.imported} of ${data.total} contacts`,
+          imported: data.imported,
+          total: data.total,
+        });
+      } else {
+        const error = await response.json();
+        setImportStatus({
+          status: 'error',
+          message: error.detail || 'Import failed',
+        });
+      }
+    } catch (error) {
+      setImportStatus({
+        status: 'error',
+        message: String(error),
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-2xl mx-auto">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900">CRM Import</h1>
-          <p className="text-gray-600 mt-2">Import contacts from CSV or HubSpot</p>
+          <p className="text-gray-600 mt-2">Import contacts from HubSpot</p>
         </div>
 
-        <Tabs value={crmTab} onValueChange={setCrmTab}>
-          <TabsList>
-            <TabsTrigger value="csv">CSV Import</TabsTrigger>
-            <TabsTrigger value="hubspot">HubSpot Import</TabsTrigger>
-          </TabsList>
+        <Card>
+          <CardHeader>
+            <CardTitle>HubSpot API Connection</CardTitle>
+            <CardDescription>
+              Enter your HubSpot API key to import contacts
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* API Key Input */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                HubSpot API Key
+              </label>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(e) => setApiKey(e.target.value)}
+                placeholder="pat-na1-xxxxxxxxxxxxx"
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              />
+              <p className="text-xs text-gray-600 mt-2">
+                Get your API key from HubSpot: Settings → Integrations → Private Apps
+              </p>
+            </div>
 
-          {/* CSV Import Tab */}
-          <TabsContent value="csv" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Upload CSV File</CardTitle>
-                <CardDescription>Import contacts from a CSV file</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">CSV import functionality coming soon</p>
-              </CardContent>
-            </Card>
-          </TabsContent>
+            {/* Test Connection Button */}
+            <div>
+              <Button
+                onClick={handleTestConnection}
+                disabled={testing || !apiKey.trim()}
+                variant="outline"
+                className="w-full"
+              >
+                {testing && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Test Connection
+              </Button>
+            </div>
 
-          {/* HubSpot Import Tab */}
-          <TabsContent value="hubspot" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>HubSpot Connection</CardTitle>
-                <CardDescription>Connect your HubSpot account to import contacts</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {hubspotIntegration?.is_connected ? (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-green-900">Connected to HubSpot</p>
-                      <p className="text-sm text-green-700">
-                        Connected as: <span className="font-semibold">{hubspotIntegration.connected_email}</span>
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-                    <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-blue-900">Not connected</p>
-                      <p className="text-sm text-blue-700">Click "Connect HubSpot" to authorize</p>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex gap-3">
+            {/* Batch Size Control */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Batch Size: <span className="font-bold text-blue-600">{batchSize}</span>
+              </label>
+              <div className="flex gap-2">
+                {[50, 100, 200].map(size => (
                   <Button
-                    onClick={handleConnectHubSpot}
-                    disabled={loading || hubspotIntegration?.is_connected}
-                    className="flex items-center gap-2"
+                    key={size}
+                    variant={batchSize === size ? 'default' : 'outline'}
+                    onClick={() => setBatchSize(size)}
+                    className="flex-1"
                   >
-                    {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {hubspotIntegration?.is_connected ? 'Connected' : 'Connect HubSpot'}
+                    {size}
                   </Button>
+                ))}
+              </div>
+              <p className="text-xs text-gray-600 mt-2">
+                Number of contacts to import per batch (use smaller sizes for testing)
+              </p>
+            </div>
 
-                  {hubspotIntegration?.is_connected && (
-                    <Button
-                      onClick={handleDisconnectHubSpot}
-                      disabled={loading}
-                      variant="outline"
-                      className="flex items-center gap-2"
-                    >
-                      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                      <LogOut className="h-4 w-4" />
-                      Disconnect
-                    </Button>
+            {/* Import Button */}
+            <div>
+              <Button
+                onClick={handleImport}
+                disabled={loading || !apiKey.trim() || importStatus.status === 'testing'}
+                className="w-full bg-green-600 hover:bg-green-700"
+              >
+                {loading && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+                Import Contacts (Batch: {batchSize})
+              </Button>
+            </div>
+
+            {/* Status Messages */}
+            {importStatus.status === 'testing' && (
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
+                <Loader2 className="h-5 w-5 text-blue-600 animate-spin flex-shrink-0 mt-0.5" />
+                <p className="text-blue-700">{importStatus.message}</p>
+              </div>
+            )}
+
+            {importStatus.status === 'complete' && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
+                <CheckCircle2 className="h-5 w-5 text-green-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-green-900">{importStatus.message}</p>
+                  {importStatus.imported && importStatus.total && (
+                    <p className="text-sm text-green-700 mt-2">
+                      {importStatus.imported} / {importStatus.total} imported successfully
+                    </p>
                   )}
                 </div>
-              </CardContent>
-            </Card>
-
-            {hubspotIntegration?.is_connected && (
-              <>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Import Filters</CardTitle>
-                    <CardDescription>Configure which contacts to import</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-3">Lead Status (Exclude)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Unchecked = will be imported</p>
-                      <div className="space-y-2">
-                        {HUBSPOT_LEAD_STATUS_OPTIONS.map(status => (
-                          <label key={status} className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={filters.lead_status_exclude.includes(status)}
-                              onChange={() => toggleLeadStatusFilter(status)}
-                              className="h-4 w-4 text-blue-600"
-                            />
-                            <span className="text-sm text-gray-700">{status}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="border-t pt-6">
-                      <h4 className="font-medium text-gray-900 mb-3">Lifecycle Stage (Exclude)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Unchecked = will be imported</p>
-                      <div className="space-y-2">
-                        {HUBSPOT_LIFECYCLE_STATUS_OPTIONS.map(status => (
-                          <label key={status} className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={filters.lifecycle_status_exclude.includes(status)}
-                              onChange={() => toggleLifecycleFilter(status)}
-                              className="h-4 w-4 text-blue-600"
-                            />
-                            <span className="text-sm text-gray-700">{status}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Import Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {importProgress.status === 'idle' && (
-                      <p className="text-sm text-gray-600">Click "Import Contacts" to start</p>
-                    )}
-
-                    {importProgress.status === 'importing' && (
-                      <div className="flex items-center gap-3">
-                        <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                        <p className="font-medium">Importing contacts...</p>
-                      </div>
-                    )}
-
-                    {importProgress.status === 'complete' && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <p className="font-medium text-green-900">✓ Import completed!</p>
-                        <div className="mt-3 space-y-2 text-sm text-green-700">
-                          <p>Total: <span className="font-semibold">{importProgress.total}</span></p>
-                          <p>Imported: <span className="font-semibold">{importProgress.imported}</span></p>
-                          <p>Enrichment queued: <span className="font-semibold">{importProgress.enriched}</span></p>
-                        </div>
-                      </div>
-                    )}
-
-                    {importProgress.status === 'error' && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                        <p className="font-medium text-red-900">Import failed</p>
-                        <p className="text-sm text-red-700 mt-2">{importProgress.error}</p>
-                      </div>
-                    )}
-
-                    <Button
-                      onClick={handleImportContacts}
-                      disabled={importing || !hubspotIntegration?.is_connected}
-                      className="w-full"
-                    >
-                      {importing ? 'Importing...' : 'Import Contacts Now'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </>
+              </div>
             )}
-          </TabsContent>
-        </Tabs>
+
+            {importStatus.status === 'error' && (
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-red-900">Error</p>
+                  <p className="text-sm text-red-700 mt-1">{importStatus.message}</p>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
