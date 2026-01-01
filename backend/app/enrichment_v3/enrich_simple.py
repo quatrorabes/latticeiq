@@ -174,7 +174,7 @@ async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_
     contact = None
     if supabase:
         try:
-            result = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
+            result = supabase.table("contacts").select("*").eq("id", contact_id).execute()
             if result.data:
                 contact = result.data[0]
                 print(f"✅ Found contact: {contact.get('first_name')} {contact.get('last_name')}")
@@ -194,7 +194,7 @@ async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_
     # Mark processing
     if supabase:
         try:
-            supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", contact_id).eq("user_id", user.id).execute()
+            supabase.table("contacts").update({"enrichment_status": "processing"}).eq("id", contact_id).execute()
             print(f"✅ Marked contact as processing")
         except Exception as e:
             print(f"⚠️ Failed to update processing status: {e}")
@@ -240,7 +240,7 @@ async def quick_enrich_contact(contact_id: str, user: CurrentUser = Depends(get_
             if not contact.get("website") and enrichment.inferred_company_website:
                 update_data["website"] = enrichment.inferred_company_website
 
-            result = supabase.table("contacts").update(update_data).eq("id", contact_id).eq("user_id", user.id).execute()
+            result = supabase.table("contacts").update(update_data).eq("id", contact_id).execute()
             print(f"✅ Enrichment saved to DB for {contact_id}")
             
             if not result.data:
