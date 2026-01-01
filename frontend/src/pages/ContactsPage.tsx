@@ -281,11 +281,10 @@ export const ContactsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Modal - NO isOpen prop needed */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
-          isOpen={true}
           onClose={() => setSelectedContact(null)}
           onUpdate={() => {
             loadContacts();
