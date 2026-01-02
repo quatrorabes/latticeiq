@@ -15,6 +15,7 @@ import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ICPsPage from './pages/ICPsPage';
 import CampaignsPage from './pages/CampaignsPage';
+import TemplatesPage from './pages/TemplatesPage';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -80,6 +81,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
           <Route path="/icps" element={<ICPsPage />} />
           <Route path="/campaigns" element={<CampaignsPage />} />
+          <Route path="/templates" element={<TemplatesPage />} />
         </Routes>
       </Layout>
     </Router>
