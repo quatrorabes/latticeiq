@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import Layout from './components/Layout';
-import Dashboard from './pages/Dashboard';
+import PremiumDashboard from './pages/PremiumDashboard';  // CHANGE THIS LINE
 import ContactsPage from './pages/ContactsPage';
 import CRMPage from './pages/CRMPage';
 import ScoringPage from './pages/ScoringPage';
@@ -69,7 +69,7 @@ function App() {
     <Router>
       <Layout>
         <Routes>
-          <Route path="/" element={<Dashboard />} />
+          <Route path="/" element={<PremiumDashboard />} />
           <Route path="/contacts" element={<ContactsPage />} />
           <Route path="/crm" element={<CRMPage />} />
           <Route path="/smart-lists" element={<SmartListsPage />} />
