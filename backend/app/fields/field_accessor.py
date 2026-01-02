@@ -31,7 +31,7 @@ class FieldAccessor:
     Caches contact data in-memory to avoid repeated queries for same contact.
     """
     
-    # Field name → denormalized column mapping
+        # Field name → denormalized column mapping
     FIELD_MAP = {
         # Core contact fields
         "first_name": "first_name",
@@ -41,18 +41,18 @@ class FieldAccessor:
         "phone": "phone",
         "job_title": "job_title",
         
-        # Enrichment fields (denormalized)
-        "company_name": "enrichment_company_name",
-        "company_industry": "enrichment_company_industry",
+        # Enrichment fields - CHECK BASE COLUMNS FIRST
+        "company_name": "company",  # Try base column first
+        "company_industry": "company_industry",  # Base column (populated by enrichment)
         "company_revenue": "enrichment_company_revenue",
         "company_employees": "enrichment_company_employees",
-        "person_title": "enrichment_person_title",
+        "person_title": "job_title",  # Base column
         "person_background": "enrichment_person_background",
         "company_growth": "enrichment_company_growth_yoy",
-        "data_quality_score": "enrichment_data_quality_score",
+        "data_quality_score": "data_quality_score",
         
-        # Kernel analysis fields (denormalized)
-        "persona": "kernel_who_persona",
+        # Kernel analysis fields
+        "persona": "persona",  # Base column (populated by enrichment)
         "influence": "kernel_who_influence",
         "urgency": "kernel_when_urgency",
         "timing_signal": "kernel_when_timing_signal",
@@ -67,6 +67,7 @@ class FieldAccessor:
         "product": "assigned_product",
         "icp_score": "icp_match_score",
     }
+
     
     # JSONB fallback paths (column, *keys)
     JSONB_FALLBACK = {
