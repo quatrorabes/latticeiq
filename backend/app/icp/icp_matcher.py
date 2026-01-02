@@ -44,7 +44,7 @@ class ICPMatcher:
         """
         self.supabase = supabase_client
         self.field_accessor = field_accessor
-        self._icp_cache: Dict[str, Dict[str, Any]] = {}  # icp_id -> icp data
+        self._icp_cache: Dict[str, Dict[str, Any]] = {}
     
     def match_contact_to_icp(self, contact_id: UUID, icp_id: UUID) -> int:
         """
@@ -60,22 +60,17 @@ class ICPMatcher:
         Side Effects:
             Updates contacts.icp_match_score and contacts.icp_id in database
         """
-        # Load ICP criteria
         icp = self._get_icp(icp_id)
         if not icp:
             logger.warning(f"ICP not found: {icp_id}")
             return 0
         
-        # Get relevant contact fields
         contact_fields = self.field_accessor.get_multiple_fields(
             contact_id,
             ["company_industry", "persona", "company_employees", "influence"]
         )
         
-        # Calculate score
         score = self._calculate_score(contact_fields, icp)
-        
-        # Update contact with score
         self._update_contact_icp(contact_id, icp_id, score)
         
         logger.info(f"Contact {contact_id} matched to ICP {icp_id} with score {score}")
@@ -134,7 +129,6 @@ class ICPMatcher:
         """
         results = {}
         
-        # Load ICP once
         icp = self._get_icp(icp_id)
         if not icp:
             logger.warning(f"ICP not found for bulk match: {icp_id}")
@@ -180,7 +174,7 @@ class ICPMatcher:
     
     def _calculate_score(self, contact_fields: Dict[str, Optional[str]], icp: Dict[str, Any]) -> int:
         """
-        Calculate weighted ICP match score.
+        Calculate weighted ICP match score with fuzzy matching.
         
         Scoring:
         - Industry match: 30 points (default)
@@ -193,29 +187,25 @@ class ICPMatcher:
         criteria = icp.get("criteria", {})
         weights = icp.get("scoring_weights", {})
         
-        # Industry match (default 30 points)
+        # Industry match with fuzzy logic (default 30 points)
         target_industries = criteria.get("industries", [])
         if target_industries:
             industry_weight = weights.get("industry_weight", 30)
             max_score += industry_weight
             
-            contact_industry = (contact_fields.get("company_industry") or "").lower()
-            target_industries_lower = [i.lower() for i in target_industries]
-            
-            if contact_industry and contact_industry in target_industries_lower:
+            contact_industry = contact_fields.get("company_industry")
+            if self._match_industry(contact_industry, target_industries):
                 score += industry_weight
                 logger.debug(f"Industry match: {contact_industry}")
         
-        # Persona match (default 40 points)
+        # Persona match with fuzzy logic (default 40 points)
         target_personas = criteria.get("personas", [])
         if target_personas:
             persona_weight = weights.get("persona_weight", 40)
             max_score += persona_weight
             
-            contact_persona = (contact_fields.get("persona") or "").lower()
-            target_personas_lower = [p.lower() for p in target_personas]
-            
-            if contact_persona and contact_persona in target_personas_lower:
+            contact_persona = contact_fields.get("persona")
+            if self._match_persona(contact_persona, target_personas):
                 score += persona_weight
                 logger.debug(f"Persona match: {contact_persona}")
         
@@ -229,7 +219,6 @@ class ICPMatcher:
             employees_str = contact_fields.get("company_employees")
             if employees_str:
                 try:
-                    # Parse employee count (handle formats like "50-200", "50+", "500")
                     employees = self._parse_employee_count(employees_str)
                     if employees and min_size <= employees <= max_size:
                         score += size_weight
@@ -243,7 +232,60 @@ class ICPMatcher:
         else:
             final_score = 0
         
-        return min(final_score, 100)  # Cap at 100
+        return min(final_score, 100)
+    
+    def _match_industry(self, contact_industry: Optional[str], icp_industries: List[str]) -> bool:
+        """Match industry with fuzzy/substring logic."""
+        if not contact_industry or not icp_industries:
+            return False
+        
+        contact_industry_lower = contact_industry.lower().strip()
+        
+        for icp_industry in icp_industries:
+            icp_lower = icp_industry.lower().strip()
+            
+            # Exact match
+            if contact_industry_lower == icp_lower:
+                return True
+            
+            # Substring match (either direction)
+            if icp_lower in contact_industry_lower or contact_industry_lower in icp_lower:
+                return True
+            
+            # Word-level match (e.g., "Technology" matches "Technology & Software")
+            contact_words = set(contact_industry_lower.split())
+            icp_words = set(icp_lower.split())
+            if contact_words & icp_words:  # Any word overlap
+                return True
+        
+        return False
+    
+    def _match_persona(self, contact_persona: Optional[str], icp_personas: List[str]) -> bool:
+        """Match persona with fuzzy/substring logic."""
+        if not contact_persona or not icp_personas:
+            return False
+        
+        contact_persona_lower = contact_persona.lower().strip()
+        
+        for icp_persona in icp_personas:
+            icp_lower = icp_persona.lower().strip()
+            
+            # Exact match
+            if contact_persona_lower == icp_lower:
+                return True
+            
+            # Substring match (either direction)
+            if icp_lower in contact_persona_lower or contact_persona_lower in icp_lower:
+                return True
+            
+            # Keyword match (e.g., "Manager" in "Senior Vice President" won't match, but "VP" would)
+            # Check for common role keywords
+            keywords = ["executive", "manager", "director", "vp", "president", "ceo", "cfo", "cto", "decision"]
+            for keyword in keywords:
+                if keyword in contact_persona_lower and keyword in icp_lower:
+                    return True
+        
+        return False
     
     def _parse_employee_count(self, value: str) -> Optional[int]:
         """Parse employee count from various formats."""
