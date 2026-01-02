@@ -14,6 +14,7 @@ import IntegrationsPage from './pages/IntegrationsPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
 import ICPsPage from './pages/ICPsPage';
+import CampaignsPage from './pages/CampaignsPage';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -78,6 +79,7 @@ function App() {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
           <Route path="/icps" element={<ICPsPage />} />
+          <Route path="/campaigns" element={<CampaignsPage />} />
         </Routes>
       </Layout>
     </Router>

@@ -32,6 +32,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/smart-lists', icon: ListFilter, label: 'Smart Lists' },
     { path: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
     { path: '/ai-writer', icon: Sparkles, label: 'AI Writer' },
+    { path: '/campaigns', icon: Zap, label: 'Campaigns' }, // NEW - ADD THIS
     { path: '/crm', icon: Upload, label: 'CRM Import' },
     { path: '/integrations', icon: Zap, label: 'Integrations' },
     { path: '/scoring', icon: Target, label: 'Scoring' },
