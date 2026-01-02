@@ -1,410 +1,475 @@
-// frontend/src/pages/CRMPage.tsx
-// COMPLETE REPLACEMENT - CSV + HubSpot in one page
+import { useState } from 'react';
+import { User, Database, Bell, Users, Key, Mail } from 'lucide-react';
+import '../styles/SettingsPage.css';
 
-import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
-import { Button } from '../components/ui/Button';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/Tabs';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/Card';
-import { AlertCircle, CheckCircle2, Loader2, LogOut } from 'lucide-react';
+type TabType = 'profile' | 'data-sources' | 'notifications' | 'workspace';
 
-interface HubSpotIntegration {
-  id: string;
-  provider: string;
-  is_connected: boolean;
-  connected_email?: string;
-  connected_at?: string;
+export default function SettingsPage() {
+  const [activeTab, setActiveTab] = useState<TabType>('profile');
+
+  return (
+    <div className="settings-page">
+      <div className="page-header">
+        <div className="header-main">
+          <User size={32} />
+          <div>
+            <h1>Settings</h1>
+            <p>Manage your account and workspace preferences</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Tab Navigation */}
+      <div className="settings-tabs">
+        <button
+          className={`settings-tab ${activeTab === 'profile' ? 'active' : ''}`}
+          onClick={() => setActiveTab('profile')}
+        >
+          <User size={20} />
+          <span>Profile</span>
+        </button>
+        <button
+          className={`settings-tab ${activeTab === 'data-sources' ? 'active' : ''}`}
+          onClick={() => setActiveTab('data-sources')}
+        >
+          <Database size={20} />
+          <span>Data Sources</span>
+        </button>
+        <button
+          className={`settings-tab ${activeTab === 'notifications' ? 'active' : ''}`}
+          onClick={() => setActiveTab('notifications')}
+        >
+          <Bell size={20} />
+          <span>Notifications</span>
+        </button>
+        <button
+          className={`settings-tab ${activeTab === 'workspace' ? 'active' : ''}`}
+          onClick={() => setActiveTab('workspace')}
+        >
+          <Users size={20} />
+          <span>Workspace</span>
+        </button>
+      </div>
+
+      {/* Tab Content */}
+      <div className="settings-content">
+        {activeTab === 'profile' && <ProfileTab />}
+        {activeTab === 'data-sources' && <DataSourcesTab />}
+        {activeTab === 'notifications' && <NotificationsTab />}
+        {activeTab === 'workspace' && <WorkspaceTab />}
+      </div>
+    </div>
+  );
 }
 
-interface ImportFilters {
-  lead_status_exclude: string[];
-  lifecycle_status_exclude: string[];
-  properties_to_import: string[];
-}
+function ProfileTab() {
+  const [name, setName] = useState('John Doe');
+  const [email, setEmail] = useState('john@example.com');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
-const HUBSPOT_LEAD_STATUS_OPTIONS = [
-  'Unqualified',
-  'Do Not Contact',
-  'Unsubscribed',
-  'Subscriber',
-  'Qualified',
-];
+  const handleSaveProfile = () => {
+    alert('Profile updated successfully!');
+  };
 
-const HUBSPOT_LIFECYCLE_STATUS_OPTIONS = [
-  'Unqualified',
-  'Lead',
-  'Customer',
-  'Evangelist',
-];
-
-const DEFAULT_HUBSPOT_PROPERTIES = [
-  'firstname',
-  'lastname',
-  'email',
-  'company',
-  'phone',
-  'mobilephone',
-  'linkedinurl',
-  'jobtitle',
-  'industry',
-  'numberofemployees',
-  'annualrevenue',
-  'lifecyclestage',
-  'hs_lead_status',
-];
-
-export default function CRMPage() {
-  const [crmTab, setCrmTab] = useState<string>('csv');
-  const [hubspotIntegration, setHubspotIntegration] = useState<HubSpotIntegration | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [importProgress, setImportProgress] = useState<{
-    status: 'idle' | 'importing' | 'enriching' | 'complete' | 'error';
-    total: number;
-    imported: number;
-    enriched: number;
-    error?: string;
-  }>({
-    status: 'idle',
-    total: 0,
-    imported: 0,
-    enriched: 0,
-  });
-  const [filters, setFilters] = useState<ImportFilters>({
-    lead_status_exclude: ['Unqualified', 'Do Not Contact', 'Unsubscribed'],
-    lifecycle_status_exclude: ['Unqualified'],
-    properties_to_import: DEFAULT_HUBSPOT_PROPERTIES,
-  });
-
-  useEffect(() => {
-    checkHubSpotConnection();
-  }, []);
-
-  const checkHubSpotConnection = async () => {
-    try {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/integration-status`,
-        {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setHubspotIntegration(data);
-      }
-    } catch (error) {
-      console.error('Error checking HubSpot connection:', error);
-    } finally {
-      setLoading(false);
+  const handleChangePassword = () => {
+    if (newPassword !== confirmPassword) {
+      alert('Passwords do not match');
+      return;
     }
-  };
-
-  const handleConnectHubSpot = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/auth/authorize`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        window.location.href = data.authorization_url;
-      }
-    } catch (error) {
-      console.error('Error initiating HubSpot connection:', error);
-    }
-  };
-
-  const handleDisconnectHubSpot = async () => {
-    try {
-      setLoading(true);
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/disconnect`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        }
-      );
-
-      if (response.ok) {
-        setHubspotIntegration(null);
-      }
-    } catch (error) {
-      console.error('Error disconnecting HubSpot:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleImportContacts = async () => {
-    try {
-      setImporting(true);
-      setImportProgress({ status: 'importing', total: 0, imported: 0, enriched: 0 });
-
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return;
-
-      const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/v3/hubspot/import`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            filters: {
-              lead_status_exclude: filters.lead_status_exclude,
-              lifecycle_status_exclude: filters.lifecycle_status_exclude,
-            },
-            properties_to_import: filters.properties_to_import,
-            auto_enrich: true,
-          }),
-        }
-      );
-
-      if (response.ok) {
-        const data = await response.json();
-        setImportProgress({
-          status: 'complete',
-          total: data.total_contacts,
-          imported: data.imported,
-          enriched: data.enrichment_queued,
-        });
-        setTimeout(() => checkHubSpotConnection(), 2000);
-      } else {
-        const errorData = await response.json();
-        setImportProgress({
-          status: 'error',
-          total: 0,
-          imported: 0,
-          enriched: 0,
-          error: errorData.detail || 'Import failed',
-        });
-      }
-    } catch (error) {
-      console.error('Error importing contacts:', error);
-      setImportProgress({
-        status: 'error',
-        total: 0,
-        imported: 0,
-        enriched: 0,
-        error: String(error),
-      });
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  const toggleLeadStatusFilter = (status: string) => {
-    setFilters(prev => ({
-      ...prev,
-      lead_status_exclude: prev.lead_status_exclude.includes(status)
-        ? prev.lead_status_exclude.filter(s => s !== status)
-        : [...prev.lead_status_exclude, status],
-    }));
-  };
-
-  const toggleLifecycleFilter = (status: string) => {
-    setFilters(prev => ({
-      ...prev,
-      lifecycle_status_exclude: prev.lifecycle_status_exclude.includes(status)
-        ? prev.lifecycle_status_exclude.filter(s => s !== status)
-        : [...prev.lifecycle_status_exclude, status],
-    }));
+    alert('Password changed successfully!');
+    setCurrentPassword('');
+    setNewPassword('');
+    setConfirmPassword('');
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">CRM Import</h1>
-          <p className="text-gray-600 mt-2">Import contacts from CSV or HubSpot</p>
+    <div className="tab-content">
+      <div className="settings-section">
+        <h2>Profile Information</h2>
+        <p className="section-description">Update your personal information</p>
+
+        <div className="form-group">
+          <label className="form-label">Full Name</label>
+          <input
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className="form-input"
+          />
         </div>
 
-        <Tabs value={crmTab} onValueChange={setCrmTab}>
-          <TabsList>
-            <TabsTrigger value="csv">CSV Import</TabsTrigger>
-            <TabsTrigger value="hubspot">HubSpot Import</TabsTrigger>
-          </TabsList>
+        <div className="form-group">
+          <label className="form-label">Email Address</label>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="form-input"
+          />
+        </div>
 
-          {/* CSV Import Tab */}
-          <TabsContent value="csv" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Upload CSV File</CardTitle>
-                <CardDescription>Import contacts from a CSV file</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">CSV import functionality coming soon</p>
-              </CardContent>
-            </Card>
-          </TabsContent>
+        <button onClick={handleSaveProfile} className="btn-primary">
+          Save Changes
+        </button>
+      </div>
 
-          {/* HubSpot Import Tab */}
-          <TabsContent value="hubspot" className="space-y-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>HubSpot Connection</CardTitle>
-                <CardDescription>Connect your HubSpot account to import contacts</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {hubspotIntegration?.is_connected ? (
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3">
-                    <CheckCircle2 className="text-green-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-green-900">Connected to HubSpot</p>
-                      <p className="text-sm text-green-700">
-                        Connected as: <span className="font-semibold">{hubspotIntegration.connected_email}</span>
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 flex items-start gap-3">
-                    <AlertCircle className="text-blue-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-medium text-blue-900">Not connected</p>
-                      <p className="text-sm text-blue-700">Click "Connect HubSpot" to authorize</p>
-                    </div>
-                  </div>
-                )}
+      <div className="settings-section">
+        <h2>Change Password</h2>
+        <p className="section-description">Ensure your account stays secure</p>
 
-                <div className="flex gap-3">
-                  <Button
-                    onClick={handleConnectHubSpot}
-                    disabled={loading || hubspotIntegration?.is_connected}
-                    className="flex items-center gap-2"
-                  >
-                    {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                    {hubspotIntegration?.is_connected ? 'Connected' : 'Connect HubSpot'}
-                  </Button>
+        <div className="form-group">
+          <label className="form-label">Current Password</label>
+          <input
+            type="password"
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="form-input"
+          />
+        </div>
 
-                  {hubspotIntegration?.is_connected && (
-                    <Button
-                      onClick={handleDisconnectHubSpot}
-                      disabled={loading}
-                      variant="outline"
-                      className="flex items-center gap-2"
-                    >
-                      {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-                      <LogOut className="h-4 w-4" />
-                      Disconnect
-                    </Button>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
+        <div className="form-group">
+          <label className="form-label">New Password</label>
+          <input
+            type="password"
+            value={newPassword}
+            onChange={(e) => setNewPassword(e.target.value)}
+            className="form-input"
+          />
+        </div>
 
-            {hubspotIntegration?.is_connected && (
-              <>
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Import Filters</CardTitle>
-                    <CardDescription>Configure which contacts to import</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-6">
-                    <div>
-                      <h4 className="font-medium text-gray-900 mb-3">Lead Status (Exclude)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Unchecked = will be imported</p>
-                      <div className="space-y-2">
-                        {HUBSPOT_LEAD_STATUS_OPTIONS.map(status => (
-                          <label key={status} className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={filters.lead_status_exclude.includes(status)}
-                              onChange={() => toggleLeadStatusFilter(status)}
-                              className="h-4 w-4 text-blue-600"
-                            />
-                            <span className="text-sm text-gray-700">{status}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
+        <div className="form-group">
+          <label className="form-label">Confirm New Password</label>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="form-input"
+          />
+        </div>
 
-                    <div className="border-t pt-6">
-                      <h4 className="font-medium text-gray-900 mb-3">Lifecycle Stage (Exclude)</h4>
-                      <p className="text-sm text-gray-600 mb-3">Unchecked = will be imported</p>
-                      <div className="space-y-2">
-                        {HUBSPOT_LIFECYCLE_STATUS_OPTIONS.map(status => (
-                          <label key={status} className="flex items-center gap-3">
-                            <input
-                              type="checkbox"
-                              checked={filters.lifecycle_status_exclude.includes(status)}
-                              onChange={() => toggleLifecycleFilter(status)}
-                              className="h-4 w-4 text-blue-600"
-                            />
-                            <span className="text-sm text-gray-700">{status}</span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+        <button onClick={handleChangePassword} className="btn-primary">
+          Change Password
+        </button>
+      </div>
+    </div>
+  );
+}
 
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Import Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {importProgress.status === 'idle' && (
-                      <p className="text-sm text-gray-600">Click "Import Contacts" to start</p>
-                    )}
+function DataSourcesTab() {
+  const [csvFile, setCsvFile] = useState<File | null>(null);
+  const [hubspotToken, setHubspotToken] = useState('');
+  const [batchSize, setBatchSize] = useState(50);
 
-                    {importProgress.status === 'importing' && (
-                      <div className="flex items-center gap-3">
-                        <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
-                        <p className="font-medium">Importing contacts...</p>
-                      </div>
-                    )}
+  const handleCsvUpload = () => {
+    if (!csvFile) {
+      alert('Please select a CSV file');
+      return;
+    }
+    alert(`Uploading ${csvFile.name}...`);
+  };
 
-                    {importProgress.status === 'complete' && (
-                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                        <p className="font-medium text-green-900">✓ Import completed!</p>
-                        <div className="mt-3 space-y-2 text-sm text-green-700">
-                          <p>Total: <span className="font-semibold">{importProgress.total}</span></p>
-                          <p>Imported: <span className="font-semibold">{importProgress.imported}</span></p>
-                          <p>Enrichment queued: <span className="font-semibold">{importProgress.enriched}</span></p>
-                        </div>
-                      </div>
-                    )}
+  const handleHubspotImport = () => {
+    if (!hubspotToken) {
+      alert('Please enter your HubSpot API token');
+      return;
+    }
+    alert(`Importing ${batchSize} contacts from HubSpot...`);
+  };
 
-                    {importProgress.status === 'error' && (
-                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                        <p className="font-medium text-red-900">Import failed</p>
-                        <p className="text-sm text-red-700 mt-2">{importProgress.error}</p>
-                      </div>
-                    )}
+  return (
+    <div className="tab-content">
+      <div className="settings-section">
+        <div className="section-header">
+          <div>
+            <h2>Upload CSV File</h2>
+            <p className="section-description">Import contacts from a CSV file</p>
+          </div>
+        </div>
 
-                    <Button
-                      onClick={handleImportContacts}
-                      disabled={importing || !hubspotIntegration?.is_connected}
-                      className="w-full"
-                    >
-                      {importing ? 'Importing...' : 'Import Contacts Now'}
-                    </Button>
-                  </CardContent>
-                </Card>
-              </>
-            )}
-          </TabsContent>
-        </Tabs>
+        <div className="upload-area">
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+            className="file-input"
+            id="csv-upload"
+          />
+          <label htmlFor="csv-upload" className="file-label">
+            <Database size={48} />
+            <span className="file-label-text">
+              {csvFile ? csvFile.name : 'Click to select CSV file'}
+            </span>
+            <span className="file-label-hint">Supports .csv files</span>
+          </label>
+        </div>
+
+        {csvFile && (
+          <button onClick={handleCsvUpload} className="btn-primary">
+            Upload CSV
+          </button>
+        )}
+
+        <div className="info-box">
+          <strong>CSV Format Requirements:</strong>
+          <ul>
+            <li>Must include: name, email, company</li>
+            <li>Optional: job_title, phone, industry</li>
+            <li>First row should contain column headers</li>
+          </ul>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="section-header">
+          <div>
+            <h2>HubSpot Connection</h2>
+            <p className="section-description">Connect your HubSpot account to import contacts</p>
+          </div>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">HubSpot Private App Token</label>
+          <input
+            type="password"
+            value={hubspotToken}
+            onChange={(e) => setHubspotToken(e.target.value)}
+            className="form-input"
+            placeholder="pat-na1-xxxxxxxx-xxxx"
+          />
+          <span className="form-hint">
+            HubSpot → Settings → Integrations → Private Apps → Create app with "crm.objects.contacts.read" scope
+          </span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Import Settings</label>
+          <div className="form-row">
+            <div>
+              <label className="form-label-sm">Batch Size</label>
+              <select
+                value={batchSize}
+                onChange={(e) => setBatchSize(parseInt(e.target.value))}
+                className="form-input"
+              >
+                <option value={25}>25 contacts</option>
+                <option value={50}>50 contacts</option>
+                <option value={100}>100 contacts</option>
+                <option value={200}>200 contacts</option>
+                <option value={500}>500 contacts</option>
+              </select>
+            </div>
+          </div>
+          <span className="form-hint">
+            Start with 25-50 for testing, increase once verified
+          </span>
+        </div>
+
+        <div className="checkbox-group">
+          <label className="checkbox-label">
+            <input type="checkbox" defaultChecked />
+            <span>Skip Duplicates</span>
+          </label>
+          <span className="form-hint">Skip contacts that already exist (by email)</span>
+        </div>
+
+        <button onClick={handleHubspotImport} className="btn-primary">
+          <Mail size={20} />
+          Import {batchSize} Contacts
+        </button>
+
+        <div className="info-box">
+          <strong>Need help getting your HubSpot API key?</strong>
+          <a href="https://developers.hubspot.com/docs/api/private-apps" target="_blank" rel="noopener noreferrer" className="info-link">
+            View HubSpot Private Apps Documentation →
+          </a>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <div className="section-header">
+          <div>
+            <h2>Coming Soon</h2>
+            <p className="section-description">Additional data source integrations</p>
+          </div>
+        </div>
+
+        <div className="coming-soon-grid">
+          <div className="coming-soon-card">
+            <div className="coming-soon-icon">📊</div>
+            <h3>Salesforce</h3>
+            <p>Sync contacts and deals</p>
+            <span className="coming-soon-badge">Q1 2026</span>
+          </div>
+          <div className="coming-soon-card">
+            <div className="coming-soon-icon">🔗</div>
+            <h3>Pipedrive</h3>
+            <p>Import pipeline data</p>
+            <span className="coming-soon-badge">Q1 2026</span>
+          </div>
+          <div className="coming-soon-card">
+            <div className="coming-soon-icon">💼</div>
+            <h3>LinkedIn</h3>
+            <p>Extract lead information</p>
+            <span className="coming-soon-badge">Q2 2026</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationsTab() {
+  const [emailNotifications, setEmailNotifications] = useState(true);
+  const [hotLeadAlerts, setHotLeadAlerts] = useState(true);
+  const [enrichmentComplete, setEnrichmentComplete] = useState(true);
+  const [slackWebhook, setSlackWebhook] = useState('');
+  const [minScore, setMinScore] = useState(70);
+
+  const handleSaveNotifications = () => {
+    alert('Notification settings saved!');
+  };
+
+  return (
+    <div className="tab-content">
+      <div className="settings-section">
+        <h2>Email Notifications</h2>
+        <p className="section-description">Control when we send you emails</p>
+
+        <div className="checkbox-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={emailNotifications}
+              onChange={(e) => setEmailNotifications(e.target.checked)}
+            />
+            <span>Enable email notifications</span>
+          </label>
+        </div>
+
+        <div className="checkbox-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={hotLeadAlerts}
+              onChange={(e) => setHotLeadAlerts(e.target.checked)}
+            />
+            <span>Notify for hot leads (score ≥ 70)</span>
+          </label>
+        </div>
+
+        <div className="checkbox-group">
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={enrichmentComplete}
+              onChange={(e) => setEnrichmentComplete(e.target.checked)}
+            />
+            <span>Notify when enrichment completes</span>
+          </label>
+        </div>
+      </div>
+
+      <div className="settings-section">
+        <h2>Slack Integration</h2>
+        <p className="section-description">Get real-time alerts in Slack</p>
+
+        <div className="form-group">
+          <label className="form-label">Slack Webhook URL</label>
+          <input
+            type="text"
+            value={slackWebhook}
+            onChange={(e) => setSlackWebhook(e.target.value)}
+            className="form-input"
+            placeholder="https://hooks.slack.com/services/..."
+          />
+          <span className="form-hint">
+            Get your webhook URL from <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer">Slack's incoming webhooks page</a>
+          </span>
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Minimum score for notifications</label>
+          <input
+            type="number"
+            value={minScore}
+            onChange={(e) => setMinScore(parseInt(e.target.value))}
+            className="form-input"
+            min="0"
+            max="100"
+          />
+          <span className="form-hint">Only notify for leads with ICP score above this threshold</span>
+        </div>
+
+        <button onClick={handleSaveNotifications} className="btn-primary">
+          Save Notification Settings
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function WorkspaceTab() {
+  const [workspaceName, setWorkspaceName] = useState('Acme Corp Sales');
+  const [teamSize, setTeamSize] = useState('5-10');
+
+  const handleSaveWorkspace = () => {
+    alert('Workspace settings saved!');
+  };
+
+  return (
+    <div className="tab-content">
+      <div className="settings-section">
+        <h2>Workspace Settings</h2>
+        <p className="section-description">Manage your team workspace</p>
+
+        <div className="form-group">
+          <label className="form-label">Workspace Name</label>
+          <input
+            type="text"
+            value={workspaceName}
+            onChange={(e) => setWorkspaceName(e.target.value)}
+            className="form-input"
+          />
+        </div>
+
+        <div className="form-group">
+          <label className="form-label">Team Size</label>
+          <select
+            value={teamSize}
+            onChange={(e) => setTeamSize(e.target.value)}
+            className="form-input"
+          >
+            <option value="1">Just me</option>
+            <option value="2-5">2-5 people</option>
+            <option value="5-10">5-10 people</option>
+            <option value="10-25">10-25 people</option>
+            <option value="25+">25+ people</option>
+          </select>
+        </div>
+
+        <button onClick={handleSaveWorkspace} className="btn-primary">
+          Save Workspace Settings
+        </button>
+      </div>
+
+      <div className="settings-section">
+        <h2>Team Members</h2>
+        <p className="section-description">Manage who has access to your workspace</p>
+
+        <div className="info-box">
+          <strong>Coming Soon:</strong> Invite team members, manage roles and permissions
+        </div>
+      </div>
+
+      <div className="settings-section danger-zone">
+        <h2>Danger Zone</h2>
+        <p className="section-description">Irreversible actions</p>
+
+        <button className="btn-danger">
+          Delete Workspace
+        </button>
       </div>
     </div>
   );

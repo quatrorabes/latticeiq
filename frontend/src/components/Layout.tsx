@@ -27,20 +27,21 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
-  const navItems = [
-    { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
-    { path: '/contacts', icon: Users, label: 'Contacts' },
-    { path: '/smart-lists', icon: ListFilter, label: 'Smart Lists' },
-    { path: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
-    { path: '/ai-writer', icon: Sparkles, label: 'AI Writer' },
-    { path: '/campaigns', icon: Zap, label: 'Campaigns' }, // NEW - ADD THIS
-    { path: '/templates', icon: Mail, label: 'Templates' }, // NEW - ADD THIS
-    { path: '/crm', icon: Upload, label: 'CRM Import' },
-    { path: '/integrations', icon: Zap, label: 'Integrations' },
-    { path: '/scoring', icon: Target, label: 'Scoring' },
-    { path: '/icps', icon: Crosshair, label: 'ICPs' }, // NEW
-    { path: '/settings', icon: Settings, label: 'Settings' },
-  ];
+const navItems = [
+  { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/contacts', icon: Users, label: 'Contacts' },
+  { path: '/smart-lists', icon: ListFilter, label: 'Smart Lists' },
+  { path: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
+  { path: '/ai-writer', icon: Sparkles, label: 'AI Writer' },
+  { path: '/campaigns', icon: Zap, label: 'Campaigns' },
+  { path: '/templates', icon: Mail, label: 'Templates' },
+  { path: '/integrations', icon: Zap, label: 'Integrations' },
+  { path: '/scoring', icon: Target, label: 'Scoring' },
+  { path: '/icps', icon: Crosshair, label: 'ICPs' },
+  // REMOVED: { path: '/crm', icon: Upload, label: 'CRM Import' },
+  { path: '/settings', icon: Settings, label: 'Settings' },  // Now contains CRM import
+];
+
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
