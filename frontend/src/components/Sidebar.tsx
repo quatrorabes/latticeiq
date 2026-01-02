@@ -1,4 +1,3 @@
-
 import { Link, useLocation } from 'react-router-dom'
 import { useState } from 'react'
 import {
@@ -6,6 +5,7 @@ import {
   Users,
   Zap,
   BarChart3,
+  Target,
   Settings,
   LogOut,
   ChevronLeft,
@@ -26,6 +26,7 @@ export default function Sidebar({ onLogout }: SidebarProps) {
     { path: '/contacts', label: 'Contacts', icon: Users },
     { path: '/enrichment', label: 'Enrichment', icon: Zap },
     { path: '/scoring', label: 'Scoring', icon: BarChart3 },
+    { path: '/icps', label: 'ICPs', icon: Target }, // NEW
     { path: '/settings', label: 'Settings', icon: Settings },
   ]
 

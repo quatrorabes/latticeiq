@@ -9,6 +9,7 @@ import {
   Sparkles,
   Zap,
   Target,
+  Crosshair,
   Settings,
   Menu,
   X,
@@ -34,6 +35,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { path: '/crm', icon: Upload, label: 'CRM Import' },
     { path: '/integrations', icon: Zap, label: 'Integrations' },
     { path: '/scoring', icon: Target, label: 'Scoring' },
+    { path: '/icps', icon: Crosshair, label: 'ICPs' }, // NEW
     { path: '/settings', icon: Settings, label: 'Settings' },
   ];
 

@@ -13,6 +13,7 @@ import AIWriterPage from './pages/AIWriterPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import LoginPage from './pages/LoginPage';
 import SignupPage from './pages/SignupPage';
+import ICPsPage from './pages/ICPsPage';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -76,6 +77,7 @@ function App() {
           <Route path="/scoring" element={<ScoringPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="/icps" element={<ICPsPage />} />
         </Routes>
       </Layout>
     </Router>
