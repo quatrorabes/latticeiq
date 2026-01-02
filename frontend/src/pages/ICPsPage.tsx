@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { icpApi, ICP, ContactMatch } from '../api/icps';
+import { icpApi, ICP } from '../api/icps';
 import { Edit2, Trash2, Target, Users, Building2, TrendingUp } from 'lucide-react';
+import '../styles/ICPsPage.css';
 
 export default function ICPsPage() {
   const [icps, setIcps] = useState<ICP[]>([]);
@@ -57,81 +58,81 @@ export default function ICPsPage() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-screen bg-slate-900">
-        <div className="text-slate-400">Loading ICPs...</div>
+      <div className="icps-page">
+        <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8' }}>
+          Loading ICPs...
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-900 p-6">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-6">
+    <div className="icps-page">
+      <div className="page-header">
+        <div className="header-main">
+          <Target size={32} />
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2">Ideal Client Profiles</h1>
-            <p className="text-slate-400">Define and match your target customers</p>
+            <h1>Ideal Client Profiles</h1>
+            <p>Define and match your target customers</p>
           </div>
-          <button
-            onClick={() => {
-              setEditingIcp(null);
-              setShowModal(true);
-            }}
-            className="bg-primary-500 text-white px-6 py-3 rounded-lg hover:bg-primary-600 transition font-medium flex items-center gap-2"
-          >
-            <Target className="w-5 h-5" />
-            Create ICP
+        </div>
+        <button
+          onClick={() => {
+            setEditingIcp(null);
+            setShowModal(true);
+          }}
+          className="btn-primary"
+        >
+          <Target size={20} />
+          Create ICP
+        </button>
+      </div>
+
+      {icps.length === 0 ? (
+        <div className="empty-state">
+          <Target size={64} />
+          <p>No ICPs yet</p>
+          <button onClick={() => setShowModal(true)} className="btn-primary">
+            Create your first ICP →
           </button>
         </div>
+      ) : (
+        <div className="icps-grid">
+          {icps.map((icp) => (
+            <ICPCard
+              key={icp.id}
+              icp={icp}
+              onEdit={handleEdit}
+              onMatch={handleMatchContacts}
+              onDelete={handleDelete}
+              matchingLoading={matchingLoading}
+            />
+          ))}
+        </div>
+      )}
 
-        {icps.length === 0 ? (
-          <div className="text-center py-16 bg-slate-800 rounded-lg border border-slate-700">
-            <Target className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400 mb-4">No ICPs yet</p>
-            <button
-              onClick={() => setShowModal(true)}
-              className="text-primary-400 hover:text-primary-300 font-medium"
-            >
-              Create your first ICP →
-            </button>
-          </div>
-        ) : (
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {icps.map((icp) => (
-              <ICPCard
-                key={icp.id}
-                icp={icp}
-                onEdit={handleEdit}
-                onMatch={handleMatchContacts}
-                onDelete={handleDelete}
-                matchingLoading={matchingLoading}
-              />
-            ))}
-          </div>
-        )}
+      {matches && selectedIcp && (
+        <MatchesPanel
+          icp={selectedIcp}
+          matches={matches}
+          onClose={() => setMatches(null)}
+        />
+      )}
 
-        {matches && selectedIcp && (
-          <MatchesPanel
-            icp={selectedIcp}
-            matches={matches}
-            onClose={() => setMatches(null)}
-          />
-        )}
-
-        {showModal && (
-          <ICPModal
-            icp={editingIcp}
-            onClose={() => {
-              setShowModal(false);
-              setEditingIcp(null);
-            }}
-            onSuccess={() => {
-              setShowModal(false);
-              setEditingIcp(null);
-              loadIcps();
-            }}
-          />
-        )}
-      </div>
+      {showModal && (
+        <ICPModal
+          icp={editingIcp}
+          onClose={() => {
+            setShowModal(false);
+            setEditingIcp(null);
+          }}
+          onSuccess={() => {
+            setShowModal(false);
+            setEditingIcp(null);
+            loadIcps();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -150,130 +151,99 @@ function ICPCard({
   matchingLoading: boolean;
 }) {
   return (
-    <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 hover:border-primary-500 transition group">
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex-1">
-          <h3 className="font-semibold text-xl text-white mb-1">{icp.name}</h3>
-          <span
-            className={`inline-block px-2 py-1 rounded text-xs font-medium ${
-              icp.is_active
-                ? 'bg-green-500/20 text-green-400'
-                : 'bg-slate-700 text-slate-400'
-            }`}
-          >
+    <div className="icp-card">
+      <div className="icp-card-header">
+        <div className="icp-card-title">
+          <h3>{icp.name}</h3>
+          <span className={`status-badge ${icp.is_active ? 'active' : 'inactive'}`}>
             {icp.is_active ? 'Active' : 'Inactive'}
           </span>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => onEdit(icp)}
-            className="p-2 text-slate-400 hover:text-primary-400 hover:bg-slate-700 rounded transition"
-            title="Edit"
-          >
-            <Edit2 className="w-4 h-4" />
+        <div className="icp-card-actions">
+          <button onClick={() => onEdit(icp)} className="icon-btn" title="Edit">
+            <Edit2 size={16} />
           </button>
-          <button
-            onClick={() => onDelete(icp.id)}
-            className="p-2 text-slate-400 hover:text-red-400 hover:bg-slate-700 rounded transition"
-            title="Delete"
-          >
-            <Trash2 className="w-4 h-4" />
+          <button onClick={() => onDelete(icp.id)} className="icon-btn danger" title="Delete">
+            <Trash2 size={16} />
           </button>
         </div>
       </div>
 
-      {icp.description && (
-        <p className="text-sm text-slate-400 mb-4">{icp.description}</p>
+      {icp.description && <p className="icp-description">{icp.description}</p>}
+
+      <div className="criteria-section">
+        <div className="criteria-header">
+          <Building2 size={16} />
+          <span className="criteria-label">
+            Industries ({icp.scoring_weights.industry_weight}% weight)
+          </span>
+        </div>
+        <div className="criteria-tags">
+          {icp.criteria.industries.map((ind, i) => (
+            <span key={i} className="criteria-tag industry">
+              {ind}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="criteria-section">
+        <div className="criteria-header">
+          <Users size={16} />
+          <span className="criteria-label">
+            Personas ({icp.scoring_weights.persona_weight}% weight)
+          </span>
+        </div>
+        <div className="criteria-tags">
+          {icp.criteria.personas.map((per, i) => (
+            <span key={i} className="criteria-tag persona">
+              {per}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {icp.criteria.min_company_size && (
+        <div className="criteria-section">
+          <div className="criteria-header">
+            <TrendingUp size={16} />
+            <span className="criteria-label">
+              Company Size ({icp.scoring_weights.company_size_weight}% weight)
+            </span>
+          </div>
+          <p className="criteria-text">
+            {icp.criteria.min_company_size}
+            {icp.criteria.max_company_size ? `-${icp.criteria.max_company_size}` : '+'} employees
+          </p>
+        </div>
       )}
 
-      {/* Matching Criteria */}
-      <div className="space-y-3 mb-4">
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Building2 className="w-4 h-4 text-blue-400" />
-            <span className="text-xs font-medium text-slate-400">
-              Industries ({icp.scoring_weights.industry_weight}% weight)
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {icp.criteria.industries.map((ind, i) => (
-              <span
-                key={i}
-                className="text-xs bg-blue-500/20 text-blue-300 px-2 py-1 rounded"
-              >
-                {ind}
-              </span>
-            ))}
-          </div>
+      <div className="score-breakdown">
+        <div className="score-breakdown-title">Match Score Calculation:</div>
+        <div className="score-item">
+          <span className="score-label">Industry Match</span>
+          <span className="score-value">{icp.scoring_weights.industry_weight} points</span>
         </div>
-
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Users className="w-4 h-4 text-purple-400" />
-            <span className="text-xs font-medium text-slate-400">
-              Personas ({icp.scoring_weights.persona_weight}% weight)
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-1">
-            {icp.criteria.personas.map((per, i) => (
-              <span
-                key={i}
-                className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded"
-              >
-                {per}
-              </span>
-            ))}
-          </div>
+        <div className="score-item">
+          <span className="score-label">Persona Match</span>
+          <span className="score-value">{icp.scoring_weights.persona_weight} points</span>
         </div>
-
-        {icp.criteria.min_company_size && (
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <TrendingUp className="w-4 h-4 text-green-400" />
-              <span className="text-xs font-medium text-slate-400">
-                Company Size ({icp.scoring_weights.company_size_weight}% weight)
-              </span>
-            </div>
-            <span className="text-sm text-slate-300">
-              {icp.criteria.min_company_size}
-              {icp.criteria.max_company_size
-                ? `-${icp.criteria.max_company_size}`
-                : '+'}{' '}
-              employees
-            </span>
-          </div>
-        )}
-      </div>
-
-      {/* Scoring Summary */}
-      <div className="bg-slate-700/50 rounded p-3 mb-4">
-        <div className="text-xs text-slate-400 mb-2">Match Score Calculation:</div>
-        <div className="space-y-1 text-xs">
-          <div className="flex justify-between text-slate-300">
-            <span>Industry Match</span>
-            <span>{icp.scoring_weights.industry_weight} points</span>
-          </div>
-          <div className="flex justify-between text-slate-300">
-            <span>Persona Match</span>
-            <span>{icp.scoring_weights.persona_weight} points</span>
-          </div>
-          <div className="flex justify-between text-slate-300">
-            <span>Company Size Match</span>
-            <span>{icp.scoring_weights.company_size_weight} points</span>
-          </div>
-          <div className="flex justify-between font-medium text-white pt-2 border-t border-slate-600">
-            <span>Total Possible</span>
-            <span>100 points</span>
-          </div>
+        <div className="score-item">
+          <span className="score-label">Company Size Match</span>
+          <span className="score-value">{icp.scoring_weights.company_size_weight} points</span>
+        </div>
+        <div className="score-item">
+          <span className="score-label">Total Possible</span>
+          <span className="score-value">100 points</span>
         </div>
       </div>
 
       <button
         onClick={() => onMatch(icp.id)}
         disabled={matchingLoading}
-        className="w-full bg-primary-500/20 text-primary-300 px-4 py-3 rounded-lg hover:bg-primary-500/30 transition font-medium disabled:opacity-50 flex items-center justify-center gap-2"
+        className="match-btn"
       >
-        <Target className="w-4 h-4" />
+        <Target size={16} />
         {matchingLoading ? 'Matching...' : 'Match Contacts'}
       </button>
     </div>
@@ -290,64 +260,60 @@ function MatchesPanel({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 max-w-4xl w-full max-h-[80vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal-header">
           <div>
-            <h2 className="text-2xl font-bold text-white">Matches for {icp.name}</h2>
-            <p className="text-slate-400">Minimum score: {matches.min_score}</p>
+            <h2>Matches for {icp.name}</h2>
+            <p style={{ color: '#94a3b8', margin: '0.5rem 0 0 0' }}>
+              Minimum score: {matches.min_score}
+            </p>
           </div>
-          <button
-            onClick={onClose}
-            className="text-slate-400 hover:text-white text-2xl"
-          >
+          <button onClick={onClose} className="close-btn">
             ×
           </button>
         </div>
 
-        <div className="mb-4 bg-slate-700/50 rounded p-4">
-          <p className="text-sm text-slate-300">
-            Found <strong className="text-white">{matches.total_matches}</strong> matching contacts
+        <div className="matches-panel">
+          <p>
+            Found <strong>{matches.total_matches}</strong> matching contacts
           </p>
         </div>
 
         {matches.contacts.length === 0 ? (
-          <p className="text-center py-12 text-slate-400">
+          <p style={{ textAlign: 'center', padding: '3rem', color: '#94a3b8' }}>
             No contacts match this ICP criteria above score {matches.min_score}
           </p>
         ) : (
-          <div className="space-y-3">
+          <div className="matches-list">
             {matches.contacts.map((contact: any) => (
-              <div
-                key={contact.id}
-                className="border border-slate-700 rounded-lg p-4 hover:bg-slate-700/30 transition"
-              >
-                <div className="flex justify-between items-start">
-                  <div className="flex-1">
-                    <h4 className="font-medium text-white mb-1">{contact.name}</h4>
-                    <p className="text-sm text-slate-400">{contact.job_title}</p>
-                    <p className="text-sm text-slate-500">{contact.company}</p>
+              <div key={contact.id} className="match-card">
+                <div className="match-card-content">
+                  <div className="match-info">
+                    <h4>{contact.name}</h4>
+                    <p>{contact.job_title}</p>
+                    <p>{contact.company}</p>
                   </div>
-                  <div className="text-right">
+                  <div className="match-score-display">
                     <div
-                      className={`text-2xl font-bold mb-1 ${
+                      className={`match-score-number ${
                         contact.icp_match_score >= 70
-                          ? 'text-green-400'
+                          ? 'hot'
                           : contact.icp_match_score >= 40
-                          ? 'text-yellow-400'
-                          : 'text-slate-400'
+                          ? 'warm'
+                          : 'cold'
                       }`}
                     >
                       {contact.icp_match_score}
                     </div>
-                    <div className="text-xs text-slate-400">ICP Score</div>
+                    <div className="match-score-label">ICP Score</div>
                     <div
-                      className={`text-xs font-medium mt-1 px-2 py-1 rounded ${
+                      className={`match-tier-badge ${
                         contact.icp_match_score >= 70
-                          ? 'bg-green-500/20 text-green-400'
+                          ? 'hot'
                           : contact.icp_match_score >= 40
-                          ? 'bg-yellow-500/20 text-yellow-400'
-                          : 'bg-slate-700 text-slate-400'
+                          ? 'warm'
+                          : 'cold'
                       }`}
                     >
                       {contact.icp_match_score >= 70
@@ -378,24 +344,12 @@ function ICPModal({
 }) {
   const [name, setName] = useState(icp?.name || '');
   const [description, setDescription] = useState(icp?.description || '');
-  const [industries, setIndustries] = useState(
-    icp?.criteria.industries.join(', ') || ''
-  );
-  const [personas, setPersonas] = useState(
-    icp?.criteria.personas.join(', ') || ''
-  );
-  const [minSize, setMinSize] = useState(
-    icp?.criteria.min_company_size?.toString() || ''
-  );
-  const [maxSize, setMaxSize] = useState(
-    icp?.criteria.max_company_size?.toString() || ''
-  );
-  const [industryWeight, setIndustryWeight] = useState(
-    icp?.scoring_weights.industry_weight || 30
-  );
-  const [personaWeight, setPersonaWeight] = useState(
-    icp?.scoring_weights.persona_weight || 40
-  );
+  const [industries, setIndustries] = useState(icp?.criteria.industries.join(', ') || '');
+  const [personas, setPersonas] = useState(icp?.criteria.personas.join(', ') || '');
+  const [minSize, setMinSize] = useState(icp?.criteria.min_company_size?.toString() || '');
+  const [maxSize, setMaxSize] = useState(icp?.criteria.max_company_size?.toString() || '');
+  const [industryWeight, setIndustryWeight] = useState(icp?.scoring_weights.industry_weight || 30);
+  const [personaWeight, setPersonaWeight] = useState(icp?.scoring_weights.persona_weight || 40);
   const [companySizeWeight, setCompanySizeWeight] = useState(
     icp?.scoring_weights.company_size_weight || 30
   );
@@ -446,192 +400,152 @@ function ICPModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-800 border border-slate-700 rounded-lg p-6 max-w-3xl w-full max-h-[90vh] overflow-y-auto">
-        <h2 className="text-2xl font-bold text-white mb-6">
-          {icp ? 'Edit ICP' : 'Create New ICP'}
-        </h2>
+    <div className="modal-overlay">
+      <div className="modal">
+        <div className="modal-header">
+          <h2>{icp ? 'Edit ICP' : 'Create New ICP'}</h2>
+          <button onClick={onClose} className="close-btn">
+            ×
+          </button>
+        </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          {/* Basic Info */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Name *
-            </label>
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Name *</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+              className="form-input"
               placeholder="e.g., Tech Decision Makers"
             />
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              Description
-            </label>
+          <div className="form-group">
+            <label className="form-label">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
+              className="form-textarea"
               rows={2}
               placeholder="Optional description"
             />
           </div>
 
-          {/* Criteria */}
-          <div className="border-t border-slate-700 pt-6">
-            <h3 className="text-lg font-semibold text-white mb-4">Matching Criteria</h3>
+          <div className="section-divider">
+            <h3 className="section-title">Matching Criteria</h3>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Industries (comma-separated)
-                </label>
+            <div className="form-group">
+              <label className="form-label">Industries (comma-separated)</label>
+              <input
+                type="text"
+                value={industries}
+                onChange={(e) => setIndustries(e.target.value)}
+                className="form-input"
+                placeholder="e.g., Technology, Finance, SaaS"
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Personas (comma-separated)</label>
+              <input
+                type="text"
+                value={personas}
+                onChange={(e) => setPersonas(e.target.value)}
+                className="form-input"
+                placeholder="e.g., Executive, Manager, Decision-maker"
+              />
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Min Company Size</label>
                 <input
-                  type="text"
-                  value={industries}
-                  onChange={(e) => setIndustries(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
-                  placeholder="e.g., Technology, Finance, SaaS"
+                  type="number"
+                  value={minSize}
+                  onChange={(e) => setMinSize(e.target.value)}
+                  className="form-input"
+                  placeholder="e.g., 50"
                 />
               </div>
-
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  Personas (comma-separated)
-                </label>
+              <div className="form-group">
+                <label className="form-label">Max Company Size</label>
                 <input
-                  type="text"
-                  value={personas}
-                  onChange={(e) => setPersonas(e.target.value)}
-                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
-                  placeholder="e.g., Executive, Manager, Decision-maker"
+                  type="number"
+                  value={maxSize}
+                  onChange={(e) => setMaxSize(e.target.value)}
+                  className="form-input"
+                  placeholder="e.g., 5000"
                 />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Min Company Size
-                  </label>
-                  <input
-                    type="number"
-                    value={minSize}
-                    onChange={(e) => setMinSize(e.target.value)}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
-                    placeholder="e.g., 50"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    Max Company Size
-                  </label>
-                  <input
-                    type="number"
-                    value={maxSize}
-                    onChange={(e) => setMaxSize(e.target.value)}
-                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-4 py-3 text-white placeholder-slate-400 focus:outline-none focus:border-primary-500"
-                    placeholder="e.g., 5000"
-                  />
-                </div>
               </div>
             </div>
           </div>
 
-          {/* Scoring Weights */}
-          <div className="border-t border-slate-700 pt-6">
-            <h3 className="text-lg font-semibold text-white mb-2">
-              Scoring Weights
-            </h3>
-            <p className="text-sm text-slate-400 mb-4">
+          <div className="section-divider">
+            <h3 className="section-title">Scoring Weights</h3>
+            <p className="section-subtitle">
               Adjust how much each criterion affects the match score (must total 100%)
             </p>
 
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between mb-2">
-                  <label className="text-sm font-medium text-slate-300">
-                    Industry Weight
-                  </label>
-                  <span className="text-sm font-bold text-white">
-                    {industryWeight}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={industryWeight}
-                  onChange={(e) => setIndustryWeight(parseInt(e.target.value))}
-                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
-                />
+            <div className="weight-slider-group">
+              <div className="weight-slider-header">
+                <span className="weight-slider-label">Industry Weight</span>
+                <span className="weight-slider-value">{industryWeight}%</span>
               </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={industryWeight}
+                onChange={(e) => setIndustryWeight(parseInt(e.target.value))}
+                className="weight-slider"
+              />
+            </div>
 
-              <div>
-                <div className="flex justify-between mb-2">
-                  <label className="text-sm font-medium text-slate-300">
-                    Persona Weight
-                  </label>
-                  <span className="text-sm font-bold text-white">
-                    {personaWeight}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={personaWeight}
-                  onChange={(e) => setPersonaWeight(parseInt(e.target.value))}
-                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
-                />
+            <div className="weight-slider-group">
+              <div className="weight-slider-header">
+                <span className="weight-slider-label">Persona Weight</span>
+                <span className="weight-slider-value">{personaWeight}%</span>
               </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={personaWeight}
+                onChange={(e) => setPersonaWeight(parseInt(e.target.value))}
+                className="weight-slider"
+              />
+            </div>
 
-              <div>
-                <div className="flex justify-between mb-2">
-                  <label className="text-sm font-medium text-slate-300">
-                    Company Size Weight
-                  </label>
-                  <span className="text-sm font-bold text-white">
-                    {companySizeWeight}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={companySizeWeight}
-                  onChange={(e) => setCompanySizeWeight(parseInt(e.target.value))}
-                  className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
-                />
+            <div className="weight-slider-group">
+              <div className="weight-slider-header">
+                <span className="weight-slider-label">Company Size Weight</span>
+                <span className="weight-slider-value">{companySizeWeight}%</span>
               </div>
+              <input
+                type="range"
+                min="0"
+                max="100"
+                value={companySizeWeight}
+                onChange={(e) => setCompanySizeWeight(parseInt(e.target.value))}
+                className="weight-slider"
+              />
+            </div>
 
-              <div
-                className={`text-center p-3 rounded-lg font-medium ${
-                  totalWeight === 100
-                    ? 'bg-green-500/20 text-green-400'
-                    : 'bg-red-500/20 text-red-400'
-                }`}
-              >
-                Total: {totalWeight}% {totalWeight === 100 ? '✓' : '(must equal 100%)'}
-              </div>
+            <div className={`weight-total ${totalWeight === 100 ? 'valid' : 'invalid'}`}>
+              Total: {totalWeight}% {totalWeight === 100 ? '✓' : '(must equal 100%)'}
             </div>
           </div>
 
-          <div className="flex gap-3 justify-end pt-4 border-t border-slate-700">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-6 py-3 border border-slate-600 text-slate-300 rounded-lg hover:bg-slate-700 transition font-medium"
-            >
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} className="btn-secondary">
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || totalWeight !== 100}
-              className="px-6 py-3 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="btn-primary"
             >
               {saving ? 'Saving...' : icp ? 'Update ICP' : 'Create ICP'}
             </button>
