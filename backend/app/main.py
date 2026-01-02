@@ -1,6 +1,12 @@
 """
 LatticeIQ Sales Intelligence API
 Enterprise-grade FastAPI application for lead scoring and enrichment
+
+Version 3.1.0 - Phase 2B Integration
+- Added ICP management endpoints
+- Added Campaign creation endpoints
+- Added Template preview endpoints
+- Added FieldAccessor, ICPMatcher, VariableSubstitutor, CampaignBuilder
 """
 
 import os
@@ -19,6 +25,7 @@ from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
 
+
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
 # ============================================================================
@@ -28,18 +35,20 @@ if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+
 # ============================================================================
 # CREATE APP FIRST
 # ============================================================================
 
 app = FastAPI(
     title="LatticeIQ Sales Intelligence API",
-    version="3.0.0",
-    description="Enterprise sales enrichment and lead scoring platform",
+    version="3.1.0",  # Updated for Phase 2B
+    description="Enterprise sales enrichment and lead scoring platform with ICP targeting and campaign management",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
     redoc_url="/api/redoc",
 )
+
 
 # ============================================================================
 # LOAD ENVIRONMENT & SUPABASE
@@ -70,11 +79,14 @@ class Settings(BaseModel):
             CORS_ALLOW_ORIGINS=os.getenv("CORS_ALLOW_ORIGINS", ""),
         )
 
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings.from_env()
 
+
 settings = get_settings()
+
 
 # ============================================================================
 # SETUP LOGGING
@@ -91,7 +103,9 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
     logger.propagate = False
     return logger
 
+
 logger = setup_logging(settings.LOG_LEVEL)
+
 
 # ============================================================================
 # CORS MIDDLEWARE - MUST BE FIRST
@@ -107,6 +121,7 @@ app.add_middleware(
 )
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 
 # ============================================================================
 # INITIALIZE SUPABASE
@@ -125,7 +140,21 @@ def initialize_supabase() -> Optional[Client]:
         logger.error({"event": "supabase_init_failed", "error": str(e)})
         return None
 
+
 supabase = initialize_supabase()
+
+
+# ============================================================================
+# SUPABASE CLIENT GETTER (for Phase 2B dependency injection)
+# ============================================================================
+
+def get_supabase() -> Optional[Client]:
+    """
+    Get Supabase client instance for dependency injection.
+    Used by Phase 2B routers.
+    """
+    return supabase
+
 
 # ============================================================================
 # DEFINE MODELS
@@ -134,6 +163,7 @@ supabase = initialize_supabase()
 class CurrentUser(BaseModel):
     id: str
     email: str
+
 
 class ContactCreate(BaseModel):
     first_name: str = Field(..., min_length=1, max_length=100)
@@ -144,6 +174,7 @@ class ContactCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
+
 
 class ContactUpdate(BaseModel):
     first_name: Optional[str] = Field(None, max_length=100)
@@ -158,6 +189,7 @@ class ContactUpdate(BaseModel):
     mdcp_score: Optional[int] = Field(None, ge=0, le=100)
     bant_score: Optional[int] = Field(None, ge=0, le=100)
     spice_score: Optional[int] = Field(None, ge=0, le=100)
+
 
 # ============================================================================
 # AUTH DEPENDENCY - JWT DECODE
@@ -192,13 +224,13 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
         logger.error({"event": "auth_error", "error_type": type(e).__name__, "error": str(e)})
         raise HTTPException(status_code=401, detail="Invalid token")
 
+
 # ============================================================================
 # IMPORT & REGISTER HUBSPOT ROUTER (SIMPLIFIED & SAFE)
 # ============================================================================
 
 logger.info({"event": "attempting_hubspot_import"})
 try:
-    # Direct import - no error handling that hides the real issue
     from app.hubspot.router import router as hubspot_router
     app.include_router(hubspot_router, prefix="/api/v3")
     logger.info({"event": "hubspot_router_registered", "prefix": "/api/v3/hubspot"})
@@ -206,6 +238,7 @@ except Exception as e:
     logger.error({"event": "hubspot_import_failed", "error": str(e), "error_type": type(e).__name__})
     import traceback
     logger.error({"event": "hubspot_traceback", "traceback": traceback.format_exc()})
+
 
 # ============================================================================
 # IMPORT OTHER ROUTERS
@@ -242,6 +275,67 @@ try:
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
 
+
+# ============================================================================
+# PHASE 2B ROUTER - ICP, CAMPAIGNS, TEMPLATES
+# ============================================================================
+
+# Track Phase 2B status
+phase2b_status = {
+    "field_accessor": "not_loaded",
+    "icp_matcher": "not_loaded",
+    "variable_substitutor": "not_loaded",
+    "campaign_builder": "not_loaded",
+    "router": "not_loaded"
+}
+
+try:
+    from app.routers.phase2_router import router as phase2_router
+    app.include_router(phase2_router)
+    phase2b_status["router"] = "operational"
+    logger.info({"event": "router_registered", "router": "phase2b", "endpoints": [
+        "/api/v3/icps",
+        "/api/v3/campaigns", 
+        "/api/v3/templates/preview",
+        "/api/v3/templates/variables/{contact_id}"
+    ]})
+    print("✅ Phase 2B router loaded (ICP, Campaigns, Templates)")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "phase2b", "error": str(e)})
+    print(f"⚠️ Phase 2B router not loaded: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Verify Phase 2B core classes are importable
+try:
+    from app.fields.field_accessor import FieldAccessor
+    phase2b_status["field_accessor"] = "operational"
+    logger.info({"event": "phase2b_class_loaded", "class": "FieldAccessor"})
+except Exception as e:
+    logger.warning({"event": "phase2b_class_failed", "class": "FieldAccessor", "error": str(e)})
+
+try:
+    from app.icp.icp_matcher import ICPMatcher
+    phase2b_status["icp_matcher"] = "operational"
+    logger.info({"event": "phase2b_class_loaded", "class": "ICPMatcher"})
+except Exception as e:
+    logger.warning({"event": "phase2b_class_failed", "class": "ICPMatcher", "error": str(e)})
+
+try:
+    from app.templates.variable_substitutor import VariableSubstitutor
+    phase2b_status["variable_substitutor"] = "operational"
+    logger.info({"event": "phase2b_class_loaded", "class": "VariableSubstitutor"})
+except Exception as e:
+    logger.warning({"event": "phase2b_class_failed", "class": "VariableSubstitutor", "error": str(e)})
+
+try:
+    from app.campaigns.campaign_builder import CampaignBuilder
+    phase2b_status["campaign_builder"] = "operational"
+    logger.info({"event": "phase2b_class_loaded", "class": "CampaignBuilder"})
+except Exception as e:
+    logger.warning({"event": "phase2b_class_failed", "class": "CampaignBuilder", "error": str(e)})
+
+
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
@@ -257,6 +351,7 @@ async def get_icp_config():
         "scoring_thresholds": {"high": 80, "medium": 60, "low": 40},
     }
 
+
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
 # ============================================================================
@@ -269,15 +364,70 @@ async def health():
         "uptime": "running",
     }
 
+
 @app.get("/api/v3/health")
 async def health_v3():
     db_status = "connected" if supabase else "disconnected"
+    
+    # Check Phase 2B operational status
+    phase2b_operational = all(
+        status == "operational" 
+        for status in phase2b_status.values()
+    )
+    
     return {
         "status": "ok",
+        "version": "3.1.0",
         "timestamp": datetime.utcnow().isoformat(),
         "database": db_status,
         "hubspot": "available",
+        "phase2b": {
+            "status": "operational" if phase2b_operational else "partial",
+            "services": phase2b_status
+        }
     }
+
+
+@app.get("/api/v3/phase2/health")
+async def phase2_health():
+    """
+    Detailed health check for Phase 2B services.
+    """
+    phase2b_operational = all(
+        status == "operational" 
+        for status in phase2b_status.values()
+    )
+    
+    return {
+        "status": "operational" if phase2b_operational else "degraded",
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": phase2b_status,
+        "endpoints": {
+            "icps": {
+                "POST /api/v3/icps": "Create ICP",
+                "GET /api/v3/icps": "List ICPs",
+                "GET /api/v3/icps/{id}": "Get ICP",
+                "PUT /api/v3/icps/{id}": "Update ICP",
+                "DELETE /api/v3/icps/{id}": "Delete ICP",
+                "GET /api/v3/icps/{id}/matches": "Get matching contacts",
+                "POST /api/v3/icps/{id}/match": "Bulk match contacts"
+            },
+            "campaigns": {
+                "POST /api/v3/campaigns": "Create campaign",
+                "GET /api/v3/campaigns": "List campaigns",
+                "GET /api/v3/campaigns/{id}": "Get campaign preview",
+                "POST /api/v3/campaigns/{id}/activate": "Activate campaign"
+            },
+            "templates": {
+                "POST /api/v3/templates/preview": "Preview template substitution",
+                "GET /api/v3/templates/variables/{contact_id}": "Get available variables"
+            },
+            "fields": {
+                "POST /api/v3/fields/values": "Get field values (debug)"
+            }
+        }
+    }
+
 
 @app.get("/api/routes")
 def list_routes(request: Request):
@@ -287,6 +437,7 @@ def list_routes(request: Request):
         key=lambda x: x["path"]
     )
 
+
 # ============================================================================
 # STARTUP / SHUTDOWN EVENTS
 # ============================================================================
@@ -294,10 +445,59 @@ def list_routes(request: Request):
 @app.on_event("startup")
 async def startup_event():
     logger.info({"event": "startup", "message": "LatticeIQ API starting up..."})
+    
+    # Log Phase 2B status
+    phase2b_operational = all(status == "operational" for status in phase2b_status.values())
+    
+    print("=" * 60)
+    print("🚀 LatticeIQ Sales Intelligence API v3.1.0")
+    print("=" * 60)
+    print("")
+    print("📦 Phase 2B Services Status:")
+    for service, status in phase2b_status.items():
+        icon = "✅" if status == "operational" else "❌"
+        print(f"   {icon} {service}: {status}")
+    print("")
+    
+    if phase2b_operational:
+        print("🎯 Phase 2B Endpoints Available:")
+        print("   ICP Management:")
+        print("      POST   /api/v3/icps              - Create ICP")
+        print("      GET    /api/v3/icps              - List ICPs")
+        print("      GET    /api/v3/icps/{id}         - Get ICP details")
+        print("      PUT    /api/v3/icps/{id}         - Update ICP")
+        print("      DELETE /api/v3/icps/{id}         - Delete ICP")
+        print("      GET    /api/v3/icps/{id}/matches - Get matching contacts")
+        print("      POST   /api/v3/icps/{id}/match   - Bulk match contacts")
+        print("")
+        print("   Campaign Management:")
+        print("      POST   /api/v3/campaigns              - Create campaign")
+        print("      GET    /api/v3/campaigns              - List campaigns")
+        print("      GET    /api/v3/campaigns/{id}         - Get campaign preview")
+        print("      POST   /api/v3/campaigns/{id}/activate - Activate campaign")
+        print("")
+        print("   Template Personalization:")
+        print("      POST   /api/v3/templates/preview           - Preview substitution")
+        print("      GET    /api/v3/templates/variables/{id}    - Available variables")
+        print("")
+    else:
+        print("⚠️  Phase 2B partially loaded - check logs for errors")
+        print("")
+    
+    print("=" * 60)
+    
+    logger.info({
+        "event": "startup_complete",
+        "version": "3.1.0",
+        "phase2b_status": phase2b_status,
+        "phase2b_operational": phase2b_operational
+    })
+
 
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
+
 
 # ============================================================================
 # ROOT ENDPOINT
@@ -307,12 +507,27 @@ async def shutdown_event():
 async def root():
     return {
         "name": "LatticeIQ Sales Intelligence API",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "docs": "/api/docs",
-        "status": "running"
+        "status": "running",
+        "features": {
+            "contacts": "CRUD operations",
+            "enrichment": "AI-powered data enrichment",
+            "scoring": "MDCP/BANT/SPICE frameworks",
+            "hubspot": "CRM integration",
+            "phase2b": {
+                "icps": "Ideal Client Profile management",
+                "campaigns": "Campaign creation & targeting",
+                "templates": "Variable substitution & personalization"
+            }
+        }
     }
 
-# Premium Feature Routers
+
+# ============================================================================
+# PREMIUM FEATURE ROUTERS
+# ============================================================================
+
 try:
     from app.routers.ai_writer_router import router as ai_writer_router
     app.include_router(ai_writer_router, prefix="/api/v3")
@@ -347,3 +562,18 @@ try:
     print("✅ Import router loaded")
 except Exception as e:
     print(f"⚠️ Import router not loaded: {e}")
+
+
+# ============================================================================
+# UVICORN ENTRY POINT (for local development)
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info"
+    )
