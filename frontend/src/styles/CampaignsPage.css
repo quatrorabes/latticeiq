@@ -1,400 +1,247 @@
-import { useState, useEffect } from 'react';
-import { templateApi, EmailTemplate } from '../api/campaigns';
-import { Edit2, Trash2, Mail, Plus, Eye, Code } from 'lucide-react';
-import '../styles/TemplatesPage.css';
+.campaigns-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  padding: 2rem;
+}
 
-export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [showEditor, setShowEditor] = useState(false);
-  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+.campaigns-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
 
-  useEffect(() => {
-    loadTemplates();
-  }, []);
+.campaign-card {
+  background: rgba(30, 41, 59, 0.6);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
 
-  const loadTemplates = async () => {
-    try {
-      const data = await templateApi.listEmail();
-      setTemplates(data);
-    } catch (error) {
-      console.error('Failed to load templates:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+.campaign-card:hover {
+  border-color: #8b5cf6;
+  box-shadow: 0 8px 24px rgba(139, 92, 246, 0.15);
+  transform: translateY(-2px);
+}
 
-  const handleEdit = (template: EmailTemplate) => {
-    setEditingTemplate(template);
-    setShowEditor(true);
-  };
+.campaign-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+}
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Delete this template?')) return;
-    try {
-      // await templateApi.deleteEmail(id);
-      loadTemplates();
-    } catch (error) {
-      console.error('Failed to delete template:', error);
-    }
-  };
+.campaign-header h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: white;
+  margin: 0;
+}
 
-  if (loading) {
-    return (
-      <div className="templates-page">
-        <div style={{ textAlign: 'center', padding: '4rem', color: '#94a3b8' }}>
-          Loading templates...
-        </div>
-      </div>
-    );
+.campaign-description {
+  color: #94a3b8;
+  font-size: 0.875rem;
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.campaign-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #cbd5e1;
+  font-size: 0.875rem;
+}
+
+.meta-item svg {
+  color: #6366f1;
+}
+
+.campaign-builder-modal {
+  max-width: 56rem;
+}
+
+.step-indicator {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  padding: 0 2rem;
+  position: relative;
+}
+
+.step-indicator::before {
+  content: '';
+  position: absolute;
+  top: 1.25rem;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: rgba(148, 163, 184, 0.2);
+  z-index: 0;
+}
+
+.step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.step-number {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(30, 41, 59, 0.8);
+  border: 2px solid rgba(148, 163, 184, 0.2);
+  color: #94a3b8;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.step.active .step-number {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  border-color: #6366f1;
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.step-label {
+  font-size: 0.875rem;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.step.active .step-label {
+  color: white;
+}
+
+.step-content {
+  padding: 1rem 0;
+  min-height: 300px;
+  animation: slideIn 0.3s ease-out;
+}
+
+.preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 400px;
+  overflow-y: auto;
+  padding-right: 0.5rem;
+}
+
+.preview-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.preview-list::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 3px;
+}
+
+.preview-list::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 3px;
+}
+
+.preview-card {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 0.75rem;
+  padding: 1rem;
+}
+
+.preview-contact {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.preview-contact strong {
+  color: white;
+  font-size: 0.875rem;
+}
+
+.preview-score {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  background: rgba(99, 102, 241, 0.2);
+  color: #818cf8;
+  border-radius: 0.375rem;
+  font-weight: 600;
+}
+
+.preview-email {
+  font-size: 0.875rem;
+}
+
+.email-subject {
+  margin-bottom: 0.5rem;
+  color: #cbd5e1;
+}
+
+.email-subject strong {
+  color: white;
+  margin-right: 0.5rem;
+}
+
+.email-body {
+  color: #94a3b8;
+  line-height: 1.6;
+  padding: 0.75rem;
+  background: rgba(15, 23, 42, 0.5);
+  border-radius: 0.5rem;
+  border-left: 3px solid #6366f1;
+}
+
+select.form-input {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
+  padding-right: 2.5rem;
+}
+
+select.form-input option {
+  background: #1e293b;
+  color: white;
+  padding: 0.5rem;
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-
-  return (
-    <div className="templates-page">
-      <div className="page-header">
-        <div className="header-main">
-          <Mail size={32} />
-          <div>
-            <h1>Email Templates</h1>
-            <p>Create personalized templates with dynamic variables</p>
-          </div>
-        </div>
-        <button
-          onClick={() => {
-            setEditingTemplate(null);
-            setShowEditor(true);
-          }}
-          className="btn-primary"
-        >
-          <Plus size={20} />
-          New Template
-        </button>
-      </div>
-
-      {templates.length === 0 ? (
-        <div className="empty-state">
-          <Mail size={64} />
-          <p>No templates yet</p>
-          <button onClick={() => setShowEditor(true)} className="btn-primary">
-            Create your first template →
-          </button>
-        </div>
-      ) : (
-        <div className="templates-grid">
-          {templates.map((template) => (
-            <TemplateCard
-              key={template.id}
-              template={template}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-            />
-          ))}
-        </div>
-      )}
-
-      {showEditor && (
-        <TemplateEditor
-          template={editingTemplate}
-          onClose={() => {
-            setShowEditor(false);
-            setEditingTemplate(null);
-          }}
-          onSuccess={() => {
-            setShowEditor(false);
-            setEditingTemplate(null);
-            loadTemplates();
-          }}
-        />
-      )}
-    </div>
-  );
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
-function TemplateCard({
-  template,
-  onEdit,
-  onDelete,
-}: {
-  template: EmailTemplate;
-  onEdit: (template: EmailTemplate) => void;
-  onDelete: (id: string) => void;
-}) {
-  return (
-    <div className="template-card">
-      <div className="template-header">
-        <div className="template-title">
-          <Mail size={20} />
-          <h3>{template.name}</h3>
-        </div>
-        <div className="template-actions">
-          <button onClick={() => onEdit(template)} className="icon-btn" title="Edit">
-            <Edit2 size={16} />
-          </button>
-          <button onClick={() => onDelete(template.id)} className="icon-btn danger" title="Delete">
-            <Trash2 size={16} />
-          </button>
-        </div>
-      </div>
-
-      <div className="template-subject">
-        <strong>Subject:</strong> {template.subject}
-      </div>
-
-      <div className="template-body-preview">
-        {template.body.substring(0, 150)}...
-      </div>
-
-      {template.variables_used.length > 0 && (
-        <div className="template-variables">
-          <div className="variables-label">Variables used:</div>
-          <div className="variables-list">
-            {template.variables_used.map((variable, i) => (
-              <span key={i} className="variable-tag">
-                {`{{${variable}}}`}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="template-footer">
-        <span className={`status-badge ${template.is_active ? 'active' : 'inactive'}`}>
-          {template.is_active ? 'Active' : 'Inactive'}
-        </span>
-        {template.category && <span className="category-badge">{template.category}</span>}
-      </div>
-    </div>
-  );
-}
-
-function TemplateEditor({
-  template,
-  onClose,
-  onSuccess,
-}: {
-  template: EmailTemplate | null;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const [name, setName] = useState(template?.name || '');
-  const [subject, setSubject] = useState(template?.subject || '');
-  const [body, setBody] = useState(template?.body || '');
-  const [category, setCategory] = useState(template?.category || '');
-  const [showPreview, setShowPreview] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const availableVariables = [
-    { name: 'first_name', description: 'Contact first name' },
-    { name: 'last_name', description: 'Contact last name' },
-    { name: 'company', description: 'Company name' },
-    { name: 'job_title', description: 'Job title' },
-    { name: 'industry', description: 'Industry' },
-    { name: 'company_size', description: 'Company employee count' },
-    { name: 'icp_score', description: 'ICP match score' },
-    { name: 'kernel_persona', description: 'Persona type (WHO)' },
-    { name: 'kernel_urgency', description: 'Urgency signal (WHEN)' },
-    { name: 'kernel_hook', description: 'Value proposition (WHAT)' },
-  ];
-
-  const insertVariable = (variable: string) => {
-    setBody((prev) => prev + `{{${variable}}}`);
-  };
-
-  const extractVariables = (text: string): string[] => {
-    const matches = text.match(/\{\{([^}]+)\}\}/g);
-    if (!matches) return [];
-    return [...new Set(matches.map((m) => m.replace(/[{}]/g, '')))];
-  };
-
-  const handleSave = async () => {
-    setSaving(true);
-    try {
-      const variables = extractVariables(subject + body);
-      
-      await templateApi.createEmail({
-        name,
-        subject,
-        body,
-        category: category || undefined,
-        variables_used: variables,
-        is_active: true,
-      });
-
-      onSuccess();
-    } catch (error) {
-      console.error('Failed to save template:', error);
-      alert('Failed to save template');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const previewSample = {
-    first_name: 'John',
-    last_name: 'Doe',
-    company: 'Acme Corp',
-    job_title: 'VP of Sales',
-    industry: 'Technology',
-    company_size: '500',
-    icp_score: '85',
-    kernel_persona: 'Executive',
-    kernel_urgency: 'Q1 Budget Planning',
-    kernel_hook: 'Increase pipeline velocity by 40%',
-  };
-
-  const renderPreview = (text: string) => {
-    let result = text;
-    Object.entries(previewSample).forEach(([key, value]) => {
-      result = result.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-    });
-    return result;
-  };
-
-  return (
-    <div className="modal-overlay">
-      <div className="modal template-editor-modal">
-        <div className="modal-header">
-          <h2>{template ? 'Edit Template' : 'New Email Template'}</h2>
-          <button onClick={onClose} className="close-btn">
-            ×
-          </button>
-        </div>
-
-        <div className="editor-tabs">
-          <button
-            className={`editor-tab ${!showPreview ? 'active' : ''}`}
-            onClick={() => setShowPreview(false)}
-          >
-            <Code size={16} />
-            Edit
-          </button>
-          <button
-            className={`editor-tab ${showPreview ? 'active' : ''}`}
-            onClick={() => setShowPreview(true)}
-          >
-            <Eye size={16} />
-            Preview
-          </button>
-        </div>
-
-        {!showPreview ? (
-          <div className="editor-content">
-            <div className="editor-main">
-              <div className="form-group">
-                <label className="form-label">Template Name *</label>
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  className="form-input"
-                  placeholder="e.g., Cold Outreach - Tech Executives"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Category</label>
-                <input
-                  type="text"
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="form-input"
-                  placeholder="e.g., Cold Outreach, Follow-up, Demo Request"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Email Subject *</label>
-                <input
-                  type="text"
-                  value={subject}
-                  onChange={(e) => setSubject(e.target.value)}
-                  className="form-input"
-                  placeholder="e.g., {{first_name}}, quick question about {{company}}"
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Email Body *</label>
-                <textarea
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  className="form-textarea template-body"
-                  rows={12}
-                  placeholder="Hi {{first_name}},&#10;&#10;I noticed {{company}} is in the {{industry}} space...&#10;&#10;Best,&#10;Your Name"
-                />
-              </div>
-            </div>
-
-            <div className="variables-sidebar">
-              <h3>Available Variables</h3>
-              <p className="variables-help">Click to insert into template</p>
-              <div className="variables-grid">
-                {availableVariables.map((variable) => (
-                  <button
-                    key={variable.name}
-                    onClick={() => insertVariable(variable.name)}
-                    className="variable-button"
-                    title={variable.description}
-                  >
-                    <Code size={14} />
-                    <span>{variable.name}</span>
-                  </button>
-                ))}
-              </div>
-
-              <div className="variables-info">
-                <strong>Syntax:</strong>
-                <code>{`{{variable_name}}`}</code>
-                <p>Variables are replaced with real contact data when emails are sent.</p>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="preview-content">
-            <div className="preview-header">
-              <h3>Preview with Sample Data</h3>
-              <div className="preview-badge">Sample Contact: John Doe</div>
-            </div>
-
-            <div className="preview-email-container">
-              <div className="preview-email-subject">
-                <strong>Subject:</strong> {renderPreview(subject)}
-              </div>
-              <div className="preview-email-body">
-                {renderPreview(body).split('\n').map((line, i) => (
-                  <p key={i}>{line || '\u00A0'}</p>
-                ))}
-              </div>
-            </div>
-
-            <div className="preview-sample-data">
-              <h4>Sample Data Used:</h4>
-              <div className="sample-data-grid">
-                {Object.entries(previewSample).map(([key, value]) => (
-                  <div key={key} className="sample-data-item">
-                    <code>{`{{${key}}}`}</code>
-                    <span>→</span>
-                    <strong>{value}</strong>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div className="modal-footer">
-          <button onClick={onClose} className="btn-secondary">
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={!name || !subject || !body || saving}
-            className="btn-primary"
-          >
-            {saving ? 'Saving...' : template ? 'Update Template' : 'Create Template'}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+@media (max-width: 768px) {
+  .campaigns-grid {
+    grid-template-columns: 1fr;
+  }
+  .step-indicator {
+    padding: 0 1rem;
+  }
+  .campaign-builder-modal {
+    max-width: 95vw;
+  }
 }
