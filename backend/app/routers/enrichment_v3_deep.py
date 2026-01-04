@@ -54,6 +54,7 @@ class DeepEnrichResponse(BaseModel):
     status: str
     contact_id: str
     profile: Optional[dict] = None
+    scores: Optional[dict] = None
     error: Optional[str] = None
 
 
@@ -62,7 +63,7 @@ def build_perplexity_query(name: str, title: str, company: str, linkedin_url: st
     context = f"{name}, {title} at {company}"
     if linkedin_url:
         context += f". LinkedIn: {linkedin_url}"
-    
+
     return f"""{context}
 
 You are a professional profile-building assistant. Generate an up-to-date profile using public web sources.
@@ -93,7 +94,7 @@ def call_perplexity(query: str) -> Optional[str]:
     if not PERPLEXITY_API_KEY:
         logger.error("No Perplexity API key")
         return None
-    
+
     try:
         response = requests.post(
             "https://api.perplexity.ai/chat/completions",
@@ -107,7 +108,7 @@ def call_perplexity(query: str) -> Optional[str]:
             },
             timeout=60
         )
-        
+
         if response.status_code == 200:
             data = response.json()
             return data["choices"][0]["message"]["content"]
@@ -124,7 +125,7 @@ def polish_with_gpt4(raw_profile: str, name: str, title: str, company: str) -> O
     if not openai_client:
         logger.error("No OpenAI client")
         return None
-    
+
     prompt = f"""Transform this research into a polished, sales-ready professional dossier.
 
 Contact: {name}, {title} at {company}
@@ -198,6 +199,99 @@ Format with markdown. Be specific and actionable."""
         return None
 
 
+def calculate_scores_for_contact(contact_id: str) -> Optional[dict]:
+    """Calculate MDCP, BANT, SPICE scores for a contact after enrichment."""
+    if not supabase:
+        return None
+
+    try:
+        # Fetch contact data
+        result = supabase.table("contacts").select("*").eq("id", contact_id).execute()
+        if not result.data:
+            return None
+
+        contact = result.data[0]
+        
+        # Extract enrichment data for scoring
+        title = (contact.get("job_title") or "").lower()
+        company = contact.get("company") or ""
+        enrichment_data = contact.get("enrichment_data") or {}
+        
+        # MDCP Score (Money, Decision-maker, Champion, Process)
+        mdcp_score = 50  # Base score
+        
+        # Decision-maker keywords boost
+        dm_keywords = ["ceo", "cfo", "coo", "cto", "president", "vp", "vice president", 
+                       "director", "head of", "chief", "owner", "founder", "partner"]
+        if any(kw in title for kw in dm_keywords):
+            mdcp_score += 25
+        
+        # Manager level
+        if "manager" in title or "lead" in title:
+            mdcp_score += 15
+            
+        # Has company info
+        if company:
+            mdcp_score += 10
+            
+        mdcp_score = min(100, mdcp_score)
+        
+        # BANT Score (Budget, Authority, Need, Timeline)
+        bant_score = 45  # Base score
+        
+        # Authority from title
+        if any(kw in title for kw in ["ceo", "cfo", "owner", "founder", "president"]):
+            bant_score += 30
+        elif any(kw in title for kw in ["vp", "vice president", "director", "head"]):
+            bant_score += 20
+        elif "manager" in title:
+            bant_score += 10
+            
+        # Has contact info (indicates engagement potential)
+        if contact.get("email"):
+            bant_score += 10
+        if contact.get("phone"):
+            bant_score += 5
+            
+        bant_score = min(100, bant_score)
+        
+        # SPICE Score (Situation, Problem, Implication, Consequence, Economic)
+        spice_score = 50  # Base score
+        
+        # Enrichment quality boost
+        if contact.get("enrichment_full_profile"):
+            spice_score += 20
+        if contact.get("enrichment_data_quality_score", 0) > 70:
+            spice_score += 10
+            
+        # Title relevance for SBA/Commercial lending
+        finance_keywords = ["finance", "real estate", "mortgage", "loan", "banking", "investment"]
+        if any(kw in title for kw in finance_keywords) or any(kw in company.lower() for kw in finance_keywords):
+            spice_score += 15
+            
+        spice_score = min(100, spice_score)
+        
+        # Calculate overall score (weighted average)
+        overall_score = int((mdcp_score * 0.35) + (bant_score * 0.35) + (spice_score * 0.30))
+        
+        scores = {
+            "mdcp_score": mdcp_score,
+            "bant_score": bant_score,
+            "spice_score": spice_score,
+            "overall_score": overall_score
+        }
+        
+        # Update contact with scores
+        supabase.table("contacts").update(scores).eq("id", contact_id).execute()
+        
+        logger.info(f"Calculated scores for {contact_id}: {scores}")
+        return scores
+
+    except Exception as e:
+        logger.error(f"Score calculation failed: {e}")
+        return None
+
+
 @router.post("/deep-enrich/{contact_id}", response_model=DeepEnrichResponse)
 async def deep_enrich_contact(
     contact_id: str,
@@ -205,21 +299,21 @@ async def deep_enrich_contact(
     x_workspace_id: str = Header(None),
 ):
     """
-    Execute deep enrichment: Perplexity research → GPT-4 polish.
-    Returns full profile synchronously.
+    Execute deep enrichment: Perplexity research → GPT-4 polish → Auto-score.
+    Returns full profile and scores synchronously.
     """
     if not supabase:
         raise HTTPException(status_code=503, detail="Database not connected")
-    
+
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="Missing x-workspace-id")
-    
+
     if not PERPLEXITY_API_KEY:
         raise HTTPException(status_code=503, detail="Perplexity API not configured")
-    
+
     if not OPENAI_API_KEY:
         raise HTTPException(status_code=503, detail="OpenAI API not configured")
-    
+
     # Create job record
     try:
         job_response = supabase.table("enrichment_deep_jobs").insert({
@@ -227,12 +321,12 @@ async def deep_enrich_contact(
             "workspace_id": x_workspace_id,
             "status": "processing",
         }).execute()
-        
+
         job_id = job_response.data[0]["id"] if job_response.data else None
     except Exception as e:
         logger.error(f"Failed to create job: {e}")
         job_id = None
-    
+
     # Stage 1: Perplexity Research
     logger.info(f"Stage 1: Perplexity research for {request.contact_name}")
     query = build_perplexity_query(
@@ -241,17 +335,16 @@ async def deep_enrich_contact(
         request.company_name,
         request.linkedin_url
     )
-    
+
     raw_profile = call_perplexity(query)
-    
+
     if not raw_profile:
-        # Update job status
         if job_id:
             supabase.table("enrichment_deep_jobs").update({
                 "status": "failed",
                 "error_message": "Perplexity research failed"
             }).eq("id", job_id).execute()
-        
+
         return DeepEnrichResponse(
             success=False,
             job_id=job_id,
@@ -259,7 +352,7 @@ async def deep_enrich_contact(
             contact_id=contact_id,
             error="Perplexity research failed"
         )
-    
+
     # Stage 2: GPT-4 Polish
     logger.info(f"Stage 2: GPT-4 polishing for {request.contact_name}")
     polished_profile = polish_with_gpt4(
@@ -268,11 +361,11 @@ async def deep_enrich_contact(
         request.title,
         request.company_name
     )
-    
+
     if not polished_profile:
         polished_profile = raw_profile  # Fallback to raw
-    
-    # Update job and contact
+
+    # Update job record
     if job_id:
         supabase.table("enrichment_deep_jobs").update({
             "status": "completed",
@@ -280,18 +373,22 @@ async def deep_enrich_contact(
             "polished_profile": polished_profile,
             "completed_at": datetime.utcnow().isoformat()
         }).eq("id", job_id).execute()
-    
+
     # Update contact with enrichment data
     try:
         supabase.table("contacts").update({
             "enrichment_full_profile": polished_profile,
             "enrichment_last_deep_enriched_at": datetime.utcnow().isoformat(),
-            "enrichment_deep_quality_score": 85,  # Default good score
-            "enrichment_status": "enriched"
+            "enrichment_deep_quality_score": 85,
+            "enrichment_status": "completed"
         }).eq("id", contact_id).execute()
     except Exception as e:
         logger.warning(f"Failed to update contact: {e}")
-    
+
+    # Stage 3: Auto-score
+    logger.info(f"Stage 3: Auto-scoring contact {contact_id}")
+    scores = calculate_scores_for_contact(contact_id)
+
     return DeepEnrichResponse(
         success=True,
         job_id=job_id,
@@ -301,7 +398,8 @@ async def deep_enrich_contact(
             "raw": raw_profile[:500] + "..." if len(raw_profile) > 500 else raw_profile,
             "polished": polished_profile,
             "generated_at": datetime.utcnow().isoformat()
-        }
+        },
+        scores=scores
     )
 
 
@@ -313,17 +411,17 @@ async def get_enrichment_status(
     """Get deep enrichment job status and result."""
     if not supabase:
         raise HTTPException(status_code=503, detail="Service unavailable")
-    
+
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="Missing x-workspace-id")
-    
+
     try:
         result = supabase.table("enrichment_deep_jobs").select("*").eq(
             "contact_id", contact_id
         ).eq("workspace_id", x_workspace_id).order(
             "created_at", desc=True
         ).limit(1).execute()
-        
+
         if result.data:
             job = result.data[0]
             return {
@@ -333,9 +431,9 @@ async def get_enrichment_status(
                 "polished_profile": job.get("polished_profile"),
                 "completed_at": job.get("completed_at"),
             }
-        
+
         return {"success": False, "status": "not_found"}
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -348,15 +446,15 @@ async def get_deep_profile(
     """Get the stored deep profile for a contact."""
     if not supabase:
         raise HTTPException(status_code=503, detail="Service unavailable")
-    
+
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="Missing x-workspace-id")
-    
+
     try:
         result = supabase.table("contacts").select(
             "id, first_name, last_name, company, job_title, enrichment_full_profile, enrichment_last_deep_enriched_at"
         ).eq("id", contact_id).eq("workspace_id", x_workspace_id).execute()
-        
+
         if result.data:
             contact = result.data[0]
             return {
@@ -368,8 +466,8 @@ async def get_deep_profile(
                 "profile": contact.get("enrichment_full_profile"),
                 "last_enriched": contact.get("enrichment_last_deep_enriched_at"),
             }
-        
+
         return {"success": False, "error": "Contact not found"}
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

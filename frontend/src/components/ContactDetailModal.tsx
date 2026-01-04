@@ -48,7 +48,7 @@ function parseDeepProfile(markdown: string): ParsedProfile {
     const regex = new RegExp(`### ${sectionName}[^]*?(?=###|$)`, 'i');
     const match = markdown.match(regex);
     if (!match) return [];
-    
+
     return match[0]
       .split('\n')
       .filter(line => line.trim().startsWith('-') || line.trim().match(/^\d+\./))
@@ -77,10 +77,11 @@ export const ContactDetailModal: React.FC<Props> = ({
   const [isScoring, setIsScoring] = useState(false);
   const [editData, setEditData] = useState<Partial<Contact>>(initialContact);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  
+
   // Deep profile state
   const [deepProfile, setDeepProfile] = useState<string | null>(null);
   const [parsedProfile, setParsedProfile] = useState<ParsedProfile | null>(null);
+  const [lastDeepEnriched, setLastDeepEnriched] = useState<string | null>(null);
 
   const workspaceId = '11111111-1111-1111-1111-111111111111'; // TODO: Get from context
 
@@ -96,6 +97,7 @@ export const ContactDetailModal: React.FC<Props> = ({
       if (result.success && result.profile) {
         setDeepProfile(result.profile);
         setParsedProfile(parseDeepProfile(result.profile));
+        setLastDeepEnriched(result.last_enriched || null);
       }
     } catch (err) {
       // No existing profile
@@ -149,6 +151,31 @@ export const ContactDetailModal: React.FC<Props> = ({
   };
 
   const handleDeepEnrich = async () => {
+    // Check if already enriched and warn user
+    if (deepProfile || lastDeepEnriched) {
+      const enrichedDate = lastDeepEnriched
+        ? new Date(lastDeepEnriched).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          })
+        : 'previously';
+
+      const confirmReEnrich = window.confirm(
+        `⚠️ This contact was already deep enriched on ${enrichedDate}.\n\n` +
+        `Re-enriching will:\n` +
+        `• Use API credits (Perplexity + OpenAI)\n` +
+        `• Overwrite the existing profile\n\n` +
+        `Continue with re-enrichment?`
+      );
+
+      if (!confirmReEnrich) {
+        return;
+      }
+    }
+
     setIsDeepEnriching(true);
     setMessage(null);
     try {
@@ -168,7 +195,13 @@ export const ContactDetailModal: React.FC<Props> = ({
       if (result.success && result.profile) {
         setDeepProfile(result.profile.polished);
         setParsedProfile(parseDeepProfile(result.profile.polished));
-        setMessage({ type: 'success', text: 'Deep enrichment complete!' });
+        setLastDeepEnriched(result.profile.generated_at);
+        
+        // Show scores in success message if available
+        const scoreMsg = result.scores 
+          ? ` Scores: MDCP ${result.scores.mdcp_score}, BANT ${result.scores.bant_score}, SPICE ${result.scores.spice_score}`
+          : '';
+        setMessage({ type: 'success', text: `Deep enrichment complete!${scoreMsg}` });
         setActiveTab('deepprofile');
         await refreshContact();
         onUpdate?.();
@@ -250,7 +283,7 @@ export const ContactDetailModal: React.FC<Props> = ({
   // Simple markdown renderer for profile sections
   const renderMarkdown = (text: string) => {
     if (!text) return null;
-    
+
     return text.split('\n').map((line, i) => {
       if (line.startsWith('## ')) {
         return <h2 key={i} className="profile-h2">{line.replace('## ', '')}</h2>;
@@ -338,13 +371,14 @@ export const ContactDetailModal: React.FC<Props> = ({
                 <Sparkles size={18} className={isEnriching ? 'spin' : ''} />
                 {isEnriching ? 'Enriching...' : 'Quick'}
               </button>
-              <button 
-                className="btn-action btn-deep-enrich" 
-                onClick={handleDeepEnrich} 
+              <button
+                className={`btn-action btn-deep-enrich ${deepProfile ? 'has-profile' : ''}`}
+                onClick={handleDeepEnrich}
                 disabled={isDeepEnriching}
+                title={deepProfile ? `Last enriched: ${lastDeepEnriched ? new Date(lastDeepEnriched).toLocaleDateString() : 'Unknown'}` : 'Generate deep profile'}
               >
                 <Brain size={18} className={isDeepEnriching ? 'spin' : ''} />
-                {isDeepEnriching ? 'Deep Enriching...' : 'Deep Enrich'}
+                {isDeepEnriching ? 'Deep Enriching...' : deepProfile ? 'Re-Enrich' : 'Deep Enrich'}
               </button>
               <button className="btn-action btn-score" onClick={handleScore} disabled={isScoring}>
                 <RefreshCw size={18} className={isScoring ? 'spin' : ''} />
@@ -504,7 +538,7 @@ export const ContactDetailModal: React.FC<Props> = ({
               <div className="enrichment-status-bar">
                 <span className={`status-badge status-${contact.enrichment_status || 'pending'}`}>
                   {contact.enrichment_status === 'completed' ? '✓ Enriched' :
-                   contact.enrichment_status === 'processing' ? '⏳ Processing' : '○ Not Enriched'}
+                    contact.enrichment_status === 'processing' ? '⏳ Processing' : '○ Not Enriched'}
                 </span>
                 {contact.enrichment_status !== 'completed' && (
                   <button className="btn-enrich-inline" onClick={handleEnrich} disabled={isEnriching}>
@@ -593,6 +627,20 @@ export const ContactDetailModal: React.FC<Props> = ({
 
               {!isDeepEnriching && parsedProfile ? (
                 <div className="deep-profile-content">
+                  {/* Last enriched timestamp */}
+                  {lastDeepEnriched && (
+                    <div className="last-enriched-banner">
+                      <CheckCircle size={14} />
+                      Last enriched: {new Date(lastDeepEnriched).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
+                  )}
+
                   {/* Sales Intelligence Cards */}
                   <div className="intel-cards">
                     <div className="intel-card pain-points">
@@ -663,8 +711,8 @@ export const ContactDetailModal: React.FC<Props> = ({
                   <Brain size={48} />
                   <h3>No deep profile yet</h3>
                   <p>Deep enrich uses Perplexity AI for research and GPT-4 to create a sales-ready dossier</p>
-                  <button 
-                    className="btn-deep-enrich-large" 
+                  <button
+                    className="btn-deep-enrich-large"
                     onClick={handleDeepEnrich}
                     disabled={isDeepEnriching}
                   >
