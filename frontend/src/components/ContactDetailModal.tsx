@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  X, Mail, Phone, Building2, Briefcase, Globe, Linkedin, 
+import {
+  X, Mail, Phone, Building2, Briefcase, Globe, Linkedin,
   Edit2, Save, Sparkles, Trash2, ExternalLink, Target,
-  DollarSign, Activity, Award, RefreshCw, CheckCircle
+  DollarSign, Activity, Award, RefreshCw, CheckCircle,
+  Brain, MessageSquare, Lightbulb, AlertCircle
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
 import { enrichContact } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
+import { deepEnrichContact, getDeepProfile } from '../api/deepEnrichment';
 import '../styles/ContactDetailModal.css';
 
 interface Props {
@@ -15,24 +17,90 @@ interface Props {
   onUpdate?: () => void;
 }
 
-export const ContactDetailModal: React.FC<Props> = ({ 
-  contact: initialContact, 
-  onClose, 
-  onUpdate 
+interface ParsedProfile {
+  professionalProfile: string;
+  companyProfile: string;
+  painPoints: string[];
+  talkingPoints: string[];
+  keyInsights: string[];
+}
+
+function parseDeepProfile(markdown: string): ParsedProfile {
+  const sections: ParsedProfile = {
+    professionalProfile: '',
+    companyProfile: '',
+    painPoints: [],
+    talkingPoints: [],
+    keyInsights: [],
+  };
+
+  if (!markdown) return sections;
+
+  // Extract major sections
+  const professionalMatch = markdown.match(/## PROFESSIONAL PROFILE[^]*?(?=## COMPANY PROFILE|---|\n## |$)/);
+  const companyMatch = markdown.match(/## COMPANY PROFILE[^]*?(?=## STRATEGIC|---|\n## |$)/);
+
+  if (professionalMatch) sections.professionalProfile = professionalMatch[0].trim();
+  if (companyMatch) sections.companyProfile = companyMatch[0].trim();
+
+  // Extract lists
+  const extractList = (sectionName: string): string[] => {
+    const regex = new RegExp(`### ${sectionName}[^]*?(?=###|$)`, 'i');
+    const match = markdown.match(regex);
+    if (!match) return [];
+    
+    return match[0]
+      .split('\n')
+      .filter(line => line.trim().startsWith('-') || line.trim().match(/^\d+\./))
+      .map(line => line.replace(/^[-\d.]+\s*/, '').trim())
+      .filter(Boolean);
+  };
+
+  sections.painPoints = extractList('Pain Points');
+  sections.talkingPoints = extractList('Talking Points');
+  sections.keyInsights = extractList('Key Insights');
+
+  return sections;
+}
+
+export const ContactDetailModal: React.FC<Props> = ({
+  contact: initialContact,
+  onClose,
+  onUpdate
 }) => {
   const [contact, setContact] = useState<Contact>(initialContact);
-  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile'>('info');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
+  const [isDeepEnriching, setIsDeepEnriching] = useState(false);
   const [isScoring, setIsScoring] = useState(false);
   const [editData, setEditData] = useState<Partial<Contact>>(initialContact);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  
+  // Deep profile state
+  const [deepProfile, setDeepProfile] = useState<string | null>(null);
+  const [parsedProfile, setParsedProfile] = useState<ParsedProfile | null>(null);
+
+  const workspaceId = '11111111-1111-1111-1111-111111111111'; // TODO: Get from context
 
   useEffect(() => {
     setContact(initialContact);
     setEditData(initialContact);
+    loadDeepProfile();
   }, [initialContact]);
+
+  const loadDeepProfile = async () => {
+    try {
+      const result = await getDeepProfile(initialContact.id, workspaceId);
+      if (result.success && result.profile) {
+        setDeepProfile(result.profile);
+        setParsedProfile(parseDeepProfile(result.profile));
+      }
+    } catch (err) {
+      // No existing profile
+    }
+  };
 
   const refreshContact = async () => {
     try {
@@ -80,6 +148,41 @@ export const ContactDetailModal: React.FC<Props> = ({
     }
   };
 
+  const handleDeepEnrich = async () => {
+    setIsDeepEnriching(true);
+    setMessage(null);
+    try {
+      const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+      const result = await deepEnrichContact(
+        contact.id,
+        {
+          contact_name: contactName,
+          company_name: contact.company || '',
+          title: contact.title || contact.job_title || '',
+          email: contact.email,
+          linkedin_url: contact.linkedin_url,
+        },
+        workspaceId
+      );
+
+      if (result.success && result.profile) {
+        setDeepProfile(result.profile.polished);
+        setParsedProfile(parseDeepProfile(result.profile.polished));
+        setMessage({ type: 'success', text: 'Deep enrichment complete!' });
+        setActiveTab('deepprofile');
+        await refreshContact();
+        onUpdate?.();
+      } else {
+        setMessage({ type: 'error', text: result.error || 'Deep enrichment failed' });
+      }
+    } catch (err: any) {
+      setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
+    } finally {
+      setIsDeepEnriching(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
+  };
+
   const handleScore = async () => {
     setIsScoring(true);
     setMessage(null);
@@ -118,11 +221,11 @@ export const ContactDetailModal: React.FC<Props> = ({
     }
   };
 
-  const ScoreCard = ({ label, score, tier, icon: Icon }: { 
-    label: string; 
-    score?: number; 
-    tier?: string; 
-    icon: React.ElementType 
+  const ScoreCard = ({ label, score, tier, icon: Icon }: {
+    label: string;
+    score?: number;
+    tier?: string;
+    icon: React.ElementType
   }) => (
     <div className={`score-card ${label.toLowerCase()}`}>
       <div className="score-card-icon" style={{ backgroundColor: getTierColor(tier) }}>
@@ -143,6 +246,27 @@ export const ContactDetailModal: React.FC<Props> = ({
       </div>
     </div>
   );
+
+  // Simple markdown renderer for profile sections
+  const renderMarkdown = (text: string) => {
+    if (!text) return null;
+    
+    return text.split('\n').map((line, i) => {
+      if (line.startsWith('## ')) {
+        return <h2 key={i} className="profile-h2">{line.replace('## ', '')}</h2>;
+      }
+      if (line.startsWith('### ')) {
+        return <h3 key={i} className="profile-h3">{line.replace('### ', '')}</h3>;
+      }
+      if (line.startsWith('- ')) {
+        return <li key={i} className="profile-li">{line.replace('- ', '')}</li>;
+      }
+      if (line.trim() === '') {
+        return null;
+      }
+      return <p key={i} className="profile-p">{line}</p>;
+    });
+  };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -212,11 +336,19 @@ export const ContactDetailModal: React.FC<Props> = ({
               </button>
               <button className="btn-action btn-enrich" onClick={handleEnrich} disabled={isEnriching}>
                 <Sparkles size={18} className={isEnriching ? 'spin' : ''} />
-                {isEnriching ? 'Enriching...' : 'Enrich'}
+                {isEnriching ? 'Enriching...' : 'Quick'}
+              </button>
+              <button 
+                className="btn-action btn-deep-enrich" 
+                onClick={handleDeepEnrich} 
+                disabled={isDeepEnriching}
+              >
+                <Brain size={18} className={isDeepEnriching ? 'spin' : ''} />
+                {isDeepEnriching ? 'Deep Enriching...' : 'Deep Enrich'}
               </button>
               <button className="btn-action btn-score" onClick={handleScore} disabled={isScoring}>
                 <RefreshCw size={18} className={isScoring ? 'spin' : ''} />
-                {isScoring ? 'Scoring...' : 'Re-Score'}
+                {isScoring ? 'Scoring...' : 'Score'}
               </button>
               <button className="btn-action btn-delete" onClick={handleDelete}>
                 <Trash2 size={18} />
@@ -227,19 +359,25 @@ export const ContactDetailModal: React.FC<Props> = ({
 
         {/* Tabs */}
         <div className="modal-tabs">
-          <button 
+          <button
             className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`}
             onClick={() => setActiveTab('info')}
           >
             Contact Info
           </button>
-          <button 
+          <button
             className={`tab-btn ${activeTab === 'enrichment' ? 'active' : ''}`}
             onClick={() => setActiveTab('enrichment')}
           >
-            Enrichment {contact.enrichment_status === 'completed' && '✓'}
+            Quick Enrich {contact.enrichment_status === 'completed' && '✓'}
           </button>
-          <button 
+          <button
+            className={`tab-btn ${activeTab === 'deepprofile' ? 'active' : ''}`}
+            onClick={() => setActiveTab('deepprofile')}
+          >
+            <Brain size={14} /> Deep Profile {deepProfile && '✓'}
+          </button>
+          <button
             className={`tab-btn ${activeTab === 'scoring' ? 'active' : ''}`}
             onClick={() => setActiveTab('scoring')}
           >
@@ -365,7 +503,7 @@ export const ContactDetailModal: React.FC<Props> = ({
             <div className="tab-pane">
               <div className="enrichment-status-bar">
                 <span className={`status-badge status-${contact.enrichment_status || 'pending'}`}>
-                  {contact.enrichment_status === 'completed' ? '✓ Enriched' : 
+                  {contact.enrichment_status === 'completed' ? '✓ Enriched' :
                    contact.enrichment_status === 'processing' ? '⏳ Processing' : '○ Not Enriched'}
                 </span>
                 {contact.enrichment_status !== 'completed' && (
@@ -403,8 +541,8 @@ export const ContactDetailModal: React.FC<Props> = ({
                     <div className="enrichment-section">
                       <h4>🎯 Talking Points</h4>
                       <ul className="talking-points">
-                        {(Array.isArray(enrichment.talking_points) 
-                          ? enrichment.talking_points 
+                        {(Array.isArray(enrichment.talking_points)
+                          ? enrichment.talking_points
                           : (enrichment.talking_points as string)?.split('\n')
                         ).map((point: string, i: number) => (
                           <li key={i}>{point}</li>
@@ -441,6 +579,104 @@ export const ContactDetailModal: React.FC<Props> = ({
             </div>
           )}
 
+          {/* DEEP PROFILE TAB */}
+          {activeTab === 'deepprofile' && (
+            <div className="tab-pane deep-profile-tab">
+              {isDeepEnriching && (
+                <div className="deep-enrich-loading">
+                  <Brain size={48} className="spin" />
+                  <h3>Deep Enriching...</h3>
+                  <p>Researching with Perplexity AI, then polishing with GPT-4</p>
+                  <p className="loading-note">This takes 30-60 seconds</p>
+                </div>
+              )}
+
+              {!isDeepEnriching && parsedProfile ? (
+                <div className="deep-profile-content">
+                  {/* Sales Intelligence Cards */}
+                  <div className="intel-cards">
+                    <div className="intel-card pain-points">
+                      <div className="intel-card-header">
+                        <AlertCircle size={20} />
+                        <h4>Pain Points</h4>
+                      </div>
+                      <ul>
+                        {parsedProfile.painPoints.length > 0 ? (
+                          parsedProfile.painPoints.map((point, i) => (
+                            <li key={i}>{point}</li>
+                          ))
+                        ) : (
+                          <li className="empty">Run deep enrich to identify pain points</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="intel-card talking-points">
+                      <div className="intel-card-header">
+                        <MessageSquare size={20} />
+                        <h4>Talking Points</h4>
+                      </div>
+                      <ul>
+                        {parsedProfile.talkingPoints.length > 0 ? (
+                          parsedProfile.talkingPoints.map((point, i) => (
+                            <li key={i}>{point}</li>
+                          ))
+                        ) : (
+                          <li className="empty">Run deep enrich for conversation starters</li>
+                        )}
+                      </ul>
+                    </div>
+
+                    <div className="intel-card key-insights">
+                      <div className="intel-card-header">
+                        <Lightbulb size={20} />
+                        <h4>Key Insights</h4>
+                      </div>
+                      <ul>
+                        {parsedProfile.keyInsights.length > 0 ? (
+                          parsedProfile.keyInsights.map((insight, i) => (
+                            <li key={i}>{insight}</li>
+                          ))
+                        ) : (
+                          <li className="empty">Run deep enrich for strategic insights</li>
+                        )}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Full Profile Sections */}
+                  <div className="profile-sections">
+                    {parsedProfile.professionalProfile && (
+                      <div className="profile-section">
+                        {renderMarkdown(parsedProfile.professionalProfile)}
+                      </div>
+                    )}
+                    {parsedProfile.companyProfile && (
+                      <div className="profile-section">
+                        {renderMarkdown(parsedProfile.companyProfile)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : !isDeepEnriching && (
+                <div className="empty-state">
+                  <Brain size={48} />
+                  <h3>No deep profile yet</h3>
+                  <p>Deep enrich uses Perplexity AI for research and GPT-4 to create a sales-ready dossier</p>
+                  <button 
+                    className="btn-deep-enrich-large" 
+                    onClick={handleDeepEnrich}
+                    disabled={isDeepEnriching}
+                  >
+                    <Brain size={20} />
+                    Generate Deep Profile
+                  </button>
+                  <p className="time-note">Takes 30-60 seconds</p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* SCORING TAB */}
           {activeTab === 'scoring' && (
             <div className="tab-pane">
@@ -453,29 +689,29 @@ export const ContactDetailModal: React.FC<Props> = ({
               </div>
 
               <div className="scores-grid">
-                <ScoreCard 
-                  label="MDCP" 
-                  score={contact.mdcp_score} 
-                  tier={contact.mdcp_tier} 
-                  icon={Target} 
+                <ScoreCard
+                  label="MDCP"
+                  score={contact.mdcp_score}
+                  tier={contact.mdcp_tier}
+                  icon={Target}
                 />
-                <ScoreCard 
-                  label="BANT" 
-                  score={contact.bant_score} 
-                  tier={contact.bant_tier} 
-                  icon={DollarSign} 
+                <ScoreCard
+                  label="BANT"
+                  score={contact.bant_score}
+                  tier={contact.bant_tier}
+                  icon={DollarSign}
                 />
-                <ScoreCard 
-                  label="SPICE" 
-                  score={contact.spice_score} 
-                  tier={contact.spice_tier} 
-                  icon={Activity} 
+                <ScoreCard
+                  label="SPICE"
+                  score={contact.spice_score}
+                  tier={contact.spice_tier}
+                  icon={Activity}
                 />
-                <ScoreCard 
-                  label="Overall" 
-                  score={contact.overall_score} 
-                  tier={contact.overall_tier} 
-                  icon={Award} 
+                <ScoreCard
+                  label="Overall"
+                  score={contact.overall_score}
+                  tier={contact.overall_tier}
+                  icon={Award}
                 />
               </div>
 

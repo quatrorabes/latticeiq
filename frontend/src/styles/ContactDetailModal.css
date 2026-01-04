@@ -590,3 +590,194 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* ===================== */
+/* DEEP PROFILE TAB      */
+/* ===================== */
+
+.btn-deep-enrich {
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+}
+
+.btn-deep-enrich:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+}
+
+.deep-profile-tab {
+  padding: 0;
+}
+
+.deep-enrich-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem 2rem;
+  text-align: center;
+}
+
+.deep-enrich-loading h3 {
+  margin: 1rem 0 0.5rem;
+  color: #f1f5f9;
+}
+
+.deep-enrich-loading p {
+  color: #94a3b8;
+  margin: 0.25rem 0;
+}
+
+.deep-enrich-loading .loading-note {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+/* Intel Cards */
+.intel-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.intel-card {
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 1.25rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.intel-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  color: #f1f5f9;
+}
+
+.intel-card-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.intel-card.pain-points .intel-card-header {
+  color: #f87171;
+}
+
+.intel-card.talking-points .intel-card-header {
+  color: #60a5fa;
+}
+
+.intel-card.key-insights .intel-card-header {
+  color: #fbbf24;
+}
+
+.intel-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.intel-card li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.intel-card li:last-child {
+  border-bottom: none;
+}
+
+.intel-card li.empty {
+  color: #64748b;
+  font-style: italic;
+}
+
+/* Profile Sections */
+.profile-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.profile-section {
+  background: #0f172a;
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.profile-h2 {
+  font-size: 1.1rem;
+  color: #818cf8;
+  margin: 0 0 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.profile-h3 {
+  font-size: 0.95rem;
+  color: #f1f5f9;
+  margin: 1.25rem 0 0.5rem;
+}
+
+.profile-p {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  margin: 0.5rem 0;
+}
+
+.profile-li {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin-left: 1.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Large Deep Enrich Button */
+.btn-deep-enrich-large {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%);
+  color: white;
+  border: none;
+  padding: 1rem 2rem;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-top: 1rem;
+}
+
+.btn-deep-enrich-large:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  transform: translateY(-1px);
+}
+
+.btn-deep-enrich-large:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.time-note {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-top: 0.75rem;
+}
+
+/* Spin Animation */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
