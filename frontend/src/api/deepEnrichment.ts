@@ -1,4 +1,5 @@
 // frontend/src/api/deepEnrichment.ts
+import { ScoreResponse } from '../types';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
@@ -20,6 +21,7 @@ interface DeepEnrichResponse {
     polished: string;
     generated_at: string;
   };
+  scores?: ScoreResponse;
   error?: string;
 }
 
