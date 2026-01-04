@@ -319,7 +319,7 @@ except Exception as e:
 
 # Deep Enrichment Router (NEW - Perplexity + GPT-4)
 try:
-    from app.routers.enrichment_v3_deep import router as deep_enrich_router
+    from backend.app.routers.enrichment_v3_deep import router as deep_enrich_router
     app.include_router(deep_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrichment_deep", "endpoints": [
         "POST /api/v3/enrichment/deep-enrich/{contact_id}",

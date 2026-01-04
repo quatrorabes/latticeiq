@@ -158,7 +158,7 @@ export const ContactDetailModal: React.FC<Props> = ({
         {
           contact_name: contactName,
           company_name: contact.company || '',
-          title: contact.title || contact.job_title || '',
+          title: contact.title || '',
           email: contact.email,
           linkedin_url: contact.linkedin_url,
         },
