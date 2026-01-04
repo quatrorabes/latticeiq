@@ -22,7 +22,7 @@ from app.enrichment.deep_enrichment import DeepEnrichmentService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/api/v3/enrichment",
+    prefix="/enrichment",
     tags=["Enrichment - Deep"],
 )
 
