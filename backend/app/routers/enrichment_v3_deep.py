@@ -17,7 +17,7 @@ import logging
 
 from app.database import get_supabase_client
 from app.auth import get_current_user
-from app.enrichment.deep_enrichment import DeepEnrichmentService
+from app.enrichment_v3.deep_enrichment import DeepEnrichmentService
 
 logger = logging.getLogger(__name__)
 
