@@ -26,11 +26,13 @@ SUPABASE_URL = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "")
 
 supabase: Optional[Client] = None
+supabase_error: Optional[str] = None
 
 try:
     supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
     logger.info("✅ Supabase connected for deep enrichment")
 except Exception as e:
+    supabase_error = str(e)
     logger.warning(f"⚠️ Supabase connection failed: {e}")
 
 router = APIRouter(
@@ -83,41 +85,57 @@ async def deep_enrich_contact(
     if not supabase:
         raise HTTPException(
             status_code=503,
-            detail="Deep enrichment service unavailable (Supabase not connected)"
+            detail=f"Deep enrichment service unavailable: {supabase_error}"
         )
     
     if not x_workspace_id:
         raise HTTPException(status_code=401, detail="Missing workspace ID")
     
+    # Check required API keys
+    perplexity_key = os.getenv("PERPLEXITY_API_KEY")
+    openai_key = os.getenv("OPENAI_API_KEY")
+    
+    if not perplexity_key:
+        raise HTTPException(
+            status_code=503,
+            detail="PERPLEXITY_API_KEY not configured on server"
+        )
+    
+    if not openai_key:
+        raise HTTPException(
+            status_code=503,
+            detail="OPENAI_API_KEY not configured on server"
+        )
+    
     try:
         # Initialize service
         service = DeepEnrichmentService(
             supabase_client=supabase,
-            perplexity_key=os.getenv("PERPLEXITY_API_KEY"),
-            openai_key=os.getenv("OPENAI_API_KEY"),
+            perplexity_key=perplexity_key,
+            openai_key=openai_key,
         )
         
         # Queue enrichment job
-        job_id = await service.queue_enrichment(
+        result = service.enrich_contact_async(
+            workspace_id=x_workspace_id,
             contact_id=contact_id,
             contact_name=request_body.contact_name,
             company_name=request_body.company_name,
             title=request_body.title,
             email=request_body.email,
             linkedin_url=request_body.linkedin_url,
-            workspace_id=x_workspace_id,
         )
         
         return DeepEnrichResponse(
             success=True,
-            job_id=job_id,
+            job_id=result.get("id"),
             status="queued",
             contact_id=contact_id,
         )
     
     except Exception as e:
         logger.error(f"Error queuing deep enrichment: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Enrichment error: {str(e)}")
 
 
 @router.get("/deep-enrich/{contact_id}/status")
@@ -137,7 +155,7 @@ async def get_enrichment_status(
     
     try:
         # Query job status
-        result = supabase.table("enrichment_jobs").select("*").eq(
+        result = supabase.table("enrichment_deep_jobs").select("*").eq(
             "contact_id", contact_id
         ).eq("workspace_id", x_workspace_id).order("created_at", desc=True).limit(1).execute()
         
@@ -148,7 +166,7 @@ async def get_enrichment_status(
                 "job_id": job.get("id"),
                 "status": job.get("status"),
                 "progress": job.get("progress", 0),
-                "result": job.get("result"),
+                "result": job.get("polished_profile"),
             }
         else:
             return {
