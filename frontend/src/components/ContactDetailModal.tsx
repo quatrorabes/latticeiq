@@ -1,3 +1,5 @@
+// frontend/src/components/ContactDetailModal.tsx
+
 import React, { useState, useEffect } from 'react';
 import {
   X, Mail, Phone, Building2, Briefcase, Globe, Linkedin,
@@ -6,9 +8,9 @@ import {
   Brain, MessageSquare, Lightbulb, AlertCircle
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
-import { enrichContact } from '../api/enrichment';
+import { enrichContact, deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
-import { deepEnrichContact, getDeepProfile } from '../api/deepEnrichment';
+import { useAuth } from '@supabase/auth-helpers-react';
 import '../styles/ContactDetailModal.css';
 
 interface Props {
@@ -68,6 +70,7 @@ export const ContactDetailModal: React.FC<Props> = ({
   onClose,
   onUpdate
 }) => {
+  const { session } = useAuth();
   const [contact, setContact] = useState<Contact>(initialContact);
   const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile'>('info');
   const [isEditing, setIsEditing] = useState(false);
@@ -83,26 +86,10 @@ export const ContactDetailModal: React.FC<Props> = ({
   const [parsedProfile, setParsedProfile] = useState<ParsedProfile | null>(null);
   const [lastDeepEnriched, setLastDeepEnriched] = useState<string | null>(null);
 
-  const workspaceId = '11111111-1111-1111-1111-111111111111'; // TODO: Get from context
-
   useEffect(() => {
     setContact(initialContact);
     setEditData(initialContact);
-    loadDeepProfile();
   }, [initialContact]);
-
-  const loadDeepProfile = async () => {
-    try {
-      const result = await getDeepProfile(initialContact.id, workspaceId);
-      if (result.success && result.profile) {
-        setDeepProfile(result.profile);
-        setParsedProfile(parseDeepProfile(result.profile));
-        setLastDeepEnriched(result.last_enriched || null);
-      }
-    } catch (err) {
-      // No existing profile
-    }
-  };
 
   const refreshContact = async () => {
     try {
@@ -151,62 +138,33 @@ export const ContactDetailModal: React.FC<Props> = ({
   };
 
   const handleDeepEnrich = async () => {
-    // Check if already enriched and warn user
-    if (deepProfile || lastDeepEnriched) {
-      const enrichedDate = lastDeepEnriched
-        ? new Date(lastDeepEnriched).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          })
-        : 'previously';
-
-      const confirmReEnrich = window.confirm(
-        `⚠️ This contact was already deep enriched on ${enrichedDate}.\n\n` +
-        `Re-enriching will:\n` +
-        `• Use API credits (Perplexity + OpenAI)\n` +
-        `• Overwrite the existing profile\n\n` +
-        `Continue with re-enrichment?`
-      );
-
-      if (!confirmReEnrich) {
-        return;
-      }
-    }
-
     setIsDeepEnriching(true);
     setMessage(null);
     try {
-      const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
-      const result = await deepEnrichContact(
-        contact.id,
-        {
-          contact_name: contactName,
-          company_name: contact.company || '',
-          title: contact.title || '',
-          email: contact.email,
-          linkedin_url: contact.linkedin_url,
-        },
-        workspaceId
-      );
+      const token = session?.access_token;
+      
+      if (!token) {
+        setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
+        setIsDeepEnriching(false);
+        return;
+      }
 
-      if (result.success && result.profile) {
-        setDeepProfile(result.profile.polished);
-        setParsedProfile(parseDeepProfile(result.profile.polished));
-        setLastDeepEnriched(result.profile.generated_at);
-        
-        // Show scores in success message if available
-        const scoreMsg = result.scores 
-          ? ` Scores: MDCP ${result.scores.mdcp_score}, BANT ${result.scores.bant_score}, SPICE ${result.scores.spice_score}`
-          : '';
-        setMessage({ type: 'success', text: `Deep enrichment complete!${scoreMsg}` });
+      const result = await deepEnrichContact(contact.id, token);
+
+      if (result.status === 'completed') {
+        // Fetch the enrichment result
+        const enrichedData = await getEnrichmentResult(contact.id, token);
+        setDeepProfile(JSON.stringify(enrichedData, null, 2));
+        setParsedProfile(parseDeepProfile(JSON.stringify(enrichedData, null, 2)));
+        setLastDeepEnriched(enrichedData.meta?.generated_at || new Date().toISOString());
+        setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
         setActiveTab('deepprofile');
         await refreshContact();
         onUpdate?.();
+      } else if (result.error) {
+        setMessage({ type: 'error', text: `Error: ${result.error}` });
       } else {
-        setMessage({ type: 'error', text: result.error || 'Deep enrichment failed' });
+        setMessage({ type: 'error', text: 'Deep enrichment failed' });
       }
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
@@ -280,7 +238,6 @@ export const ContactDetailModal: React.FC<Props> = ({
     </div>
   );
 
-  // Simple markdown renderer for profile sections
   const renderMarkdown = (text: string) => {
     if (!text) return null;
 
@@ -627,7 +584,6 @@ export const ContactDetailModal: React.FC<Props> = ({
 
               {!isDeepEnriching && parsedProfile ? (
                 <div className="deep-profile-content">
-                  {/* Last enriched timestamp */}
                   {lastDeepEnriched && (
                     <div className="last-enriched-banner">
                       <CheckCircle size={14} />
@@ -641,7 +597,6 @@ export const ContactDetailModal: React.FC<Props> = ({
                     </div>
                   )}
 
-                  {/* Sales Intelligence Cards */}
                   <div className="intel-cards">
                     <div className="intel-card pain-points">
                       <div className="intel-card-header">
@@ -692,7 +647,6 @@ export const ContactDetailModal: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* Full Profile Sections */}
                   <div className="profile-sections">
                     {parsedProfile.professionalProfile && (
                       <div className="profile-section">
