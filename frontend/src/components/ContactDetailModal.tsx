@@ -8,9 +8,10 @@ import {
   Brain, MessageSquare, Lightbulb, AlertCircle
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
-import { enrichContact, deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
+import { enrichContact, deepEnrichContact, getEnrichmentResult, pollEnrichmentComplete } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
 import { supabase } from '../lib/supabaseClient';
+import { UnifiedEnrichmentResult, LegacyEnrichmentData } from '../types/enrichment';
 import '../styles/ContactDetailModal.css';
 
 interface Props {
@@ -27,6 +28,87 @@ interface ParsedProfile {
   keyInsights: string[];
 }
 
+/**
+ * Transform UnifiedEnrichmentResult into ParsedProfile for display
+ */
+function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedProfile {
+  const sections: ParsedProfile = {
+    professionalProfile: '',
+    companyProfile: '',
+    painPoints: [],
+    talkingPoints: [],
+    keyInsights: [],
+  };
+
+  // Professional Profile section
+  if (enrichment.contact_profile) {
+    const cp = enrichment.contact_profile;
+    let profText = `## PROFESSIONAL PROFILE\n`;
+    if (cp.headline) profText += `${cp.headline}\n`;
+    if (cp.role_summary) profText += `${cp.role_summary}\n`;
+    if (cp.seniority) profText += `Seniority: ${cp.seniority}\n`;
+    
+    profText += `\n### Background\n`;
+    if (cp.background_bullets && Array.isArray(cp.background_bullets)) {
+      cp.background_bullets.forEach(bullet => {
+        profText += `- ${bullet.text}\n`;
+      });
+    }
+    sections.professionalProfile = profText;
+  }
+
+  // Company Profile section
+  if (enrichment.company_profile) {
+    const company = enrichment.company_profile;
+    let companyText = `## COMPANY PROFILE\n`;
+    if (company.one_liner) companyText += `${company.one_liner}\n`;
+    if (company.industry) companyText += `Industry: ${company.industry}\n`;
+    if (company.size_segment) companyText += `Size: ${company.size_segment}\n`;
+    if (company.region) companyText += `Region: ${company.region}\n`;
+    
+    companyText += `\n### Key Products/Services\n`;
+    if (company.key_products_or_services && Array.isArray(company.key_products_or_services)) {
+      company.key_products_or_services.forEach(product => {
+        companyText += `- ${product.text}\n`;
+      });
+    }
+    sections.companyProfile = companyText;
+  }
+
+  // Extract pain points from risks & objections
+  if (enrichment.risks_and_objections?.risk_bullets && Array.isArray(enrichment.risks_and_objections.risk_bullets)) {
+    sections.painPoints = enrichment.risks_and_objections.risk_bullets.map(b => b.text);
+  }
+
+  // Extract talking points from messaging & current focus
+  const talkingPoints: string[] = [];
+  if (enrichment.messaging?.cold_openers) {
+    enrichment.messaging.cold_openers.forEach(b => talkingPoints.push(b.text));
+  }
+  if (enrichment.current_focus?.strategic_initiatives) {
+    enrichment.current_focus.strategic_initiatives.forEach(b => talkingPoints.push(`Initiative: ${b.text}`));
+  }
+  sections.talkingPoints = talkingPoints;
+
+  // Extract key insights from buying signals
+  const insights: string[] = [];
+  if (enrichment.buying_signals?.recent_news) {
+    enrichment.buying_signals.recent_news.forEach(b => insights.push(b.text));
+  }
+  if (enrichment.buying_signals?.timing_triggers) {
+    enrichment.buying_signals.timing_triggers.forEach(b => insights.push(`Timing: ${b.text}`));
+  }
+  if (enrichment.buying_signals?.hiring_signals) {
+    enrichment.buying_signals.hiring_signals.forEach(b => insights.push(`Hiring: ${b.text}`));
+  }
+  sections.keyInsights = insights;
+
+  return sections;
+}
+
+/**
+ * Legacy parser for old enrichment format (quick enrich)
+ */
 function parseDeepProfile(markdown: string): ParsedProfile {
   const sections: ParsedProfile = {
     professionalProfile: '',
@@ -80,10 +162,12 @@ export const ContactDetailModal: React.FC<Props> = ({
   const [editData, setEditData] = useState<Partial<Contact>>(initialContact);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  // Deep profile state
+  // Deep enrichment state
   const [deepProfile, setDeepProfile] = useState<string | null>(null);
+  const [deepEnrichmentData, setDeepEnrichmentData] = useState<UnifiedEnrichmentResult | null>(null);
   const [parsedProfile, setParsedProfile] = useState<ParsedProfile | null>(null);
   const [lastDeepEnriched, setLastDeepEnriched] = useState<string | null>(null);
+  const [enrichmentProgress, setEnrichmentProgress] = useState(0);
 
   useEffect(() => {
     setContact(initialContact);
@@ -136,38 +220,77 @@ export const ContactDetailModal: React.FC<Props> = ({
     }
   };
 
-    const handleDeepEnrich = async () => {
+  const handleDeepEnrich = async () => {
     setIsDeepEnriching(true);
     setMessage(null);
+    setEnrichmentProgress(0);
+    
     try {
-      // Get token from Supabase directly
+      // Get token from Supabase
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-      
+
       if (!token) {
         setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
         setIsDeepEnriching(false);
         return;
       }
 
+      // Trigger deep enrichment
+      setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
+      setEnrichmentProgress(10);
+      
       const result = await deepEnrichContact(contact.id, token);
+      
+      if (result.status === 'completed' || result.status === 'processing') {
+        setEnrichmentProgress(30);
+        
+        // Poll for completion
+        let completed = false;
+        let attempts = 0;
+        const maxAttempts = 30; // 30 * 2 seconds = 60 seconds max
 
-      if (result.status === 'completed') {
-        // Fetch the enrichment result
-        const enrichedData = await getEnrichmentResult(contact.id, token);
-        setDeepProfile(JSON.stringify(enrichedData, null, 2));
-        setParsedProfile(parseDeepProfile(JSON.stringify(enrichedData, null, 2)));
-        setLastDeepEnriched(enrichedData.meta?.generated_at || new Date().toISOString());
-        setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
-        setActiveTab('deepprofile');
-        await refreshContact();
-        onUpdate?.();
+        while (!completed && attempts < maxAttempts) {
+          attempts++;
+          setEnrichmentProgress(30 + (attempts / maxAttempts) * 60);
+          
+          try {
+            const enrichedData = await getEnrichmentResult(contact.id, token);
+            if (enrichedData && enrichedData.contact_profile) {
+              // Successfully got the deep enrichment data
+              setDeepEnrichmentData(enrichedData as UnifiedEnrichmentResult);
+              const parsed = transformDeepEnrichment(enrichedData as UnifiedEnrichmentResult);
+              setParsedProfile(parsed);
+              setDeepProfile(JSON.stringify(enrichedData, null, 2));
+              setLastDeepEnriched(enrichedData.meta?.generated_at || new Date().toISOString());
+              setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
+              setActiveTab('deepprofile');
+              setEnrichmentProgress(100);
+              await refreshContact();
+              onUpdate?.();
+              completed = true;
+              break;
+            }
+          } catch (err) {
+            // Not ready yet, continue polling
+            console.log(`Polling attempt ${attempts}...`);
+          }
+
+          // Wait 2 seconds before next attempt
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        if (!completed) {
+          setMessage({ 
+            type: 'error', 
+            text: 'Enrichment took longer than expected. Please check back in a moment.' 
+          });
+        }
       } else if (result.error) {
         setMessage({ type: 'error', text: `Error: ${result.error}` });
-      } else {
-        setMessage({ type: 'error', text: 'Deep enrichment failed' });
       }
     } catch (err: any) {
+      console.error('Deep enrichment error:', err);
       setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
     } finally {
       setIsDeepEnriching(false);
@@ -259,6 +382,255 @@ export const ContactDetailModal: React.FC<Props> = ({
     });
   };
 
+  /**
+   * Render deep enrichment data using new UnifiedEnrichmentResult schema
+   */
+  const renderDeepEnrichmentSections = () => {
+    if (!deepEnrichmentData) return null;
+
+    const { contact_profile, company_profile, current_focus, buying_signals, risks_and_objections, messaging } = deepEnrichmentData;
+
+    return (
+      <div className="deep-enrichment-sections">
+        {/* Contact Profile Section */}
+        <div className="enrichment-card contact-profile-card">
+          <div className="card-header">
+            <h4>👤 Contact Profile</h4>
+          </div>
+          <div className="card-body">
+            {contact_profile.headline && (
+              <p className="headline">{contact_profile.headline}</p>
+            )}
+            {contact_profile.role_summary && (
+              <p className="role-summary">{contact_profile.role_summary}</p>
+            )}
+            {contact_profile.seniority && (
+              <p className="seniority">
+                <strong>Seniority:</strong> {contact_profile.seniority}
+              </p>
+            )}
+            {contact_profile.background_bullets && contact_profile.background_bullets.length > 0 && (
+              <div className="bullets-section">
+                <h5>Background</h5>
+                <ul>
+                  {contact_profile.background_bullets.map((bullet, i) => (
+                    <li key={i}>
+                      {bullet.text}
+                      {bullet.evidence && <span className="evidence"> ({bullet.evidence})</span>}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Company Profile Section */}
+        <div className="enrichment-card company-profile-card">
+          <div className="card-header">
+            <h4>🏢 Company Profile</h4>
+          </div>
+          <div className="card-body">
+            {company_profile.one_liner && (
+              <p className="one-liner italic">{company_profile.one_liner}</p>
+            )}
+            <div className="company-meta">
+              {company_profile.industry && <span><strong>Industry:</strong> {company_profile.industry}</span>}
+              {company_profile.size_segment && <span><strong>Size:</strong> {company_profile.size_segment}</span>}
+              {company_profile.region && <span><strong>Region:</strong> {company_profile.region}</span>}
+            </div>
+            {company_profile.key_products_or_services && company_profile.key_products_or_services.length > 0 && (
+              <div className="bullets-section">
+                <h5>Key Products/Services</h5>
+                <ul>
+                  {company_profile.key_products_or_services.map((product, i) => (
+                    <li key={i}>{product.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Current Focus Section */}
+        <div className="enrichment-card current-focus-card">
+          <div className="card-header">
+            <h4>🎯 Current Focus</h4>
+          </div>
+          <div className="card-body">
+            {current_focus.strategic_initiatives && current_focus.strategic_initiatives.length > 0 && (
+              <div className="focus-subsection">
+                <h5>Strategic Initiatives</h5>
+                <ul>
+                  {current_focus.strategic_initiatives.map((init, i) => (
+                    <li key={i}>{init.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {current_focus.recent_projects && current_focus.recent_projects.length > 0 && (
+              <div className="focus-subsection">
+                <h5>Recent Projects</h5>
+                <ul>
+                  {current_focus.recent_projects.map((proj, i) => (
+                    <li key={i}>{proj.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {current_focus.primary_kpis && current_focus.primary_kpis.length > 0 && (
+              <div className="focus-subsection">
+                <h5>Primary KPIs</h5>
+                <ul>
+                  {current_focus.primary_kpis.map((kpi, i) => (
+                    <li key={i}>{kpi.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Buying Signals Section */}
+        <div className="enrichment-card buying-signals-card signal-card">
+          <div className="card-header">
+            <h4>⚡ Buying Signals</h4>
+          </div>
+          <div className="card-body">
+            {buying_signals.recent_news && buying_signals.recent_news.length > 0 && (
+              <div className="signal-subsection">
+                <h5>Recent News</h5>
+                <ul>
+                  {buying_signals.recent_news.map((news, i) => (
+                    <li key={i}>{news.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {buying_signals.timing_triggers && buying_signals.timing_triggers.length > 0 && (
+              <div className="signal-subsection">
+                <h5>Timing Triggers</h5>
+                <ul>
+                  {buying_signals.timing_triggers.map((trigger, i) => (
+                    <li key={i}>{trigger.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {buying_signals.hiring_signals && buying_signals.hiring_signals.length > 0 && (
+              <div className="signal-subsection">
+                <h5>Hiring Signals</h5>
+                <ul>
+                  {buying_signals.hiring_signals.map((hire, i) => (
+                    <li key={i}>{hire.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {buying_signals.tech_changes && buying_signals.tech_changes.length > 0 && (
+              <div className="signal-subsection">
+                <h5>Tech Changes</h5>
+                <ul>
+                  {buying_signals.tech_changes.map((tech, i) => (
+                    <li key={i}>{tech.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Risks & Objections Section */}
+        <div className="enrichment-card risks-card">
+          <div className="card-header">
+            <h4>⚠️ Risks & Objections</h4>
+          </div>
+          <div className="card-body">
+            {risks_and_objections.risk_bullets && risks_and_objections.risk_bullets.length > 0 && (
+              <div className="risk-subsection">
+                <h5>Risk Bullets</h5>
+                <ul>
+                  {risks_and_objections.risk_bullets.map((risk, i) => (
+                    <li key={i}>{risk.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {risks_and_objections.likely_objections && risks_and_objections.likely_objections.length > 0 && (
+              <div className="risk-subsection">
+                <h5>Likely Objections</h5>
+                <ul>
+                  {risks_and_objections.likely_objections.map((obj, i) => (
+                    <li key={i}>{obj.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {risks_and_objections.landmines && risks_and_objections.landmines.length > 0 && (
+              <div className="risk-subsection">
+                <h5>Landmines</h5>
+                <ul>
+                  {risks_and_objections.landmines.map((landmine, i) => (
+                    <li key={i}>{landmine.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Messaging Section */}
+        <div className="enrichment-card messaging-card">
+          <div className="card-header">
+            <h4>💬 Messaging</h4>
+          </div>
+          <div className="card-body">
+            {messaging.cold_openers && messaging.cold_openers.length > 0 && (
+              <div className="messaging-subsection">
+                <h5>Cold Openers</h5>
+                <ul>
+                  {messaging.cold_openers.map((opener, i) => (
+                    <li key={i}>"{opener.text}"</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {messaging.value_props && messaging.value_props.length > 0 && (
+              <div className="messaging-subsection">
+                <h5>Value Propositions</h5>
+                <ul>
+                  {messaging.value_props.map((prop, i) => (
+                    <li key={i}>{prop.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {messaging.call_to_action_ideas && messaging.call_to_action_ideas.length > 0 && (
+              <div className="messaging-subsection">
+                <h5>Call-to-Action Ideas</h5>
+                <ul>
+                  {messaging.call_to_action_ideas.map((cta, i) => (
+                    <li key={i}>{cta.text}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Metadata */}
+        {deepEnrichmentData.meta && (
+          <div className="enrichment-meta">
+            <span>Generated: {deepEnrichmentData.meta.generated_at ? new Date(deepEnrichmentData.meta.generated_at).toLocaleString() : 'N/A'}</span>
+            <span>Source: {deepEnrichmentData.meta.source || 'N/A'}</span>
+            {deepEnrichmentData.meta.model && <span>Model: {deepEnrichmentData.meta.model}</span>}
+            {deepEnrichmentData.meta.provider && <span>Provider: {deepEnrichmentData.meta.provider}</span>}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -307,6 +679,14 @@ export const ContactDetailModal: React.FC<Props> = ({
           </div>
         )}
 
+        {/* Progress Bar for Deep Enrichment */}
+        {isDeepEnriching && enrichmentProgress > 0 && (
+          <div className="progress-bar-container">
+            <div className="progress-bar" style={{ width: `${enrichmentProgress}%` }}></div>
+            <span className="progress-text">{Math.round(enrichmentProgress)}%</span>
+          </div>
+        )}
+
         {/* Action Buttons */}
         <div className="modal-actions">
           {isEditing ? (
@@ -330,13 +710,13 @@ export const ContactDetailModal: React.FC<Props> = ({
                 {isEnriching ? 'Enriching...' : 'Quick'}
               </button>
               <button
-                className={`btn-action btn-deep-enrich ${deepProfile ? 'has-profile' : ''}`}
+                className={`btn-action btn-deep-enrich ${deepEnrichmentData ? 'has-profile' : ''}`}
                 onClick={handleDeepEnrich}
                 disabled={isDeepEnriching}
-                title={deepProfile ? `Last enriched: ${lastDeepEnriched ? new Date(lastDeepEnriched).toLocaleDateString() : 'Unknown'}` : 'Generate deep profile'}
+                title={deepEnrichmentData ? `Last enriched: ${lastDeepEnriched ? new Date(lastDeepEnriched).toLocaleDateString() : 'Unknown'}` : 'Generate deep profile'}
               >
                 <Brain size={18} className={isDeepEnriching ? 'spin' : ''} />
-                {isDeepEnriching ? 'Deep Enriching...' : deepProfile ? 'Re-Enrich' : 'Deep Enrich'}
+                {isDeepEnriching ? 'Deep Enriching...' : deepEnrichmentData ? 'Re-Enrich' : 'Deep Enrich'}
               </button>
               <button className="btn-action btn-score" onClick={handleScore} disabled={isScoring}>
                 <RefreshCw size={18} className={isScoring ? 'spin' : ''} />
@@ -367,7 +747,7 @@ export const ContactDetailModal: React.FC<Props> = ({
             className={`tab-btn ${activeTab === 'deepprofile' ? 'active' : ''}`}
             onClick={() => setActiveTab('deepprofile')}
           >
-            <Brain size={14} /> Deep Profile {deepProfile && '✓'}
+            <Brain size={14} /> Deep Profile {deepEnrichmentData && '✓'}
           </button>
           <button
             className={`tab-btn ${activeTab === 'scoring' ? 'active' : ''}`}
@@ -578,12 +958,12 @@ export const ContactDetailModal: React.FC<Props> = ({
                 <div className="deep-enrich-loading">
                   <Brain size={48} className="spin" />
                   <h3>Deep Enriching...</h3>
-                  <p>Researching with Perplexity AI, then polishing with GPT-4</p>
-                  <p className="loading-note">This takes 30-60 seconds</p>
+                  <p>Analyzing contact with Perplexity AI</p>
+                  <p className="loading-note">This takes 10-15 seconds</p>
                 </div>
               )}
 
-              {!isDeepEnriching && parsedProfile ? (
+              {!isDeepEnriching && deepEnrichmentData ? (
                 <div className="deep-profile-content">
                   {lastDeepEnriched && (
                     <div className="last-enriched-banner">
@@ -598,74 +978,67 @@ export const ContactDetailModal: React.FC<Props> = ({
                     </div>
                   )}
 
-                  <div className="intel-cards">
-                    <div className="intel-card pain-points">
-                      <div className="intel-card-header">
-                        <AlertCircle size={20} />
-                        <h4>Pain Points</h4>
-                      </div>
-                      <ul>
-                        {parsedProfile.painPoints.length > 0 ? (
-                          parsedProfile.painPoints.map((point, i) => (
-                            <li key={i}>{point}</li>
-                          ))
-                        ) : (
-                          <li className="empty">Run deep enrich to identify pain points</li>
-                        )}
-                      </ul>
-                    </div>
+                  {/* NEW: Display using UnifiedEnrichmentResult schema */}
+                  {renderDeepEnrichmentSections()}
 
-                    <div className="intel-card talking-points">
-                      <div className="intel-card-header">
-                        <MessageSquare size={20} />
-                        <h4>Talking Points</h4>
+                  {/* LEGACY: Fallback for parsed profile (if using old format) */}
+                  {parsedProfile && !deepEnrichmentData && (
+                    <div className="intel-cards">
+                      <div className="intel-card pain-points">
+                        <div className="intel-card-header">
+                          <AlertCircle size={20} />
+                          <h4>Pain Points</h4>
+                        </div>
+                        <ul>
+                          {parsedProfile.painPoints.length > 0 ? (
+                            parsedProfile.painPoints.map((point, i) => (
+                              <li key={i}>{point}</li>
+                            ))
+                          ) : (
+                            <li className="empty">Run deep enrich to identify pain points</li>
+                          )}
+                        </ul>
                       </div>
-                      <ul>
-                        {parsedProfile.talkingPoints.length > 0 ? (
-                          parsedProfile.talkingPoints.map((point, i) => (
-                            <li key={i}>{point}</li>
-                          ))
-                        ) : (
-                          <li className="empty">Run deep enrich for conversation starters</li>
-                        )}
-                      </ul>
-                    </div>
 
-                    <div className="intel-card key-insights">
-                      <div className="intel-card-header">
-                        <Lightbulb size={20} />
-                        <h4>Key Insights</h4>
+                      <div className="intel-card talking-points">
+                        <div className="intel-card-header">
+                          <MessageSquare size={20} />
+                          <h4>Talking Points</h4>
+                        </div>
+                        <ul>
+                          {parsedProfile.talkingPoints.length > 0 ? (
+                            parsedProfile.talkingPoints.map((point, i) => (
+                              <li key={i}>{point}</li>
+                            ))
+                          ) : (
+                            <li className="empty">Run deep enrich for conversation starters</li>
+                          )}
+                        </ul>
                       </div>
-                      <ul>
-                        {parsedProfile.keyInsights.length > 0 ? (
-                          parsedProfile.keyInsights.map((insight, i) => (
-                            <li key={i}>{insight}</li>
-                          ))
-                        ) : (
-                          <li className="empty">Run deep enrich for strategic insights</li>
-                        )}
-                      </ul>
-                    </div>
-                  </div>
 
-                  <div className="profile-sections">
-                    {parsedProfile.professionalProfile && (
-                      <div className="profile-section">
-                        {renderMarkdown(parsedProfile.professionalProfile)}
+                      <div className="intel-card key-insights">
+                        <div className="intel-card-header">
+                          <Lightbulb size={20} />
+                          <h4>Key Insights</h4>
+                        </div>
+                        <ul>
+                          {parsedProfile.keyInsights.length > 0 ? (
+                            parsedProfile.keyInsights.map((insight, i) => (
+                              <li key={i}>{insight}</li>
+                            ))
+                          ) : (
+                            <li className="empty">Run deep enrich for strategic insights</li>
+                          )}
+                        </ul>
                       </div>
-                    )}
-                    {parsedProfile.companyProfile && (
-                      <div className="profile-section">
-                        {renderMarkdown(parsedProfile.companyProfile)}
-                      </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
               ) : !isDeepEnriching && (
                 <div className="empty-state">
                   <Brain size={48} />
                   <h3>No deep profile yet</h3>
-                  <p>Deep enrich uses Perplexity AI for research and GPT-4 to create a sales-ready dossier</p>
+                  <p>Deep enrich uses Perplexity AI for comprehensive research</p>
                   <button
                     className="btn-deep-enrich-large"
                     onClick={handleDeepEnrich}
@@ -674,7 +1047,7 @@ export const ContactDetailModal: React.FC<Props> = ({
                     <Brain size={20} />
                     Generate Deep Profile
                   </button>
-                  <p className="time-note">Takes 30-60 seconds</p>
+                  <p className="time-note">Takes 10-15 seconds</p>
                 </div>
               )}
             </div>

@@ -47,12 +47,12 @@ export interface MessagingBox {
 }
 
 export interface EnrichmentMeta {
-  generated_at: string;
-  source: "quick" | "deep";
+  generated_at?: string;
+  source?: "quick" | "deep";
   model?: string | null;
   provider?: string | null;
   confidence_score?: number | null;
-  version: number;
+  version?: number;
 }
 
 export interface UnifiedEnrichmentResult {
@@ -63,5 +63,24 @@ export interface UnifiedEnrichmentResult {
   buying_signals: BuyingSignalsBox;
   risks_and_objections: RisksAndObjectionsBox;
   messaging: MessagingBox;
-  meta: EnrichmentMeta;
+  meta?: EnrichmentMeta;
+}
+
+// Legacy support - maps old enrichment format to new schema
+export interface LegacyEnrichmentData {
+  summary?: string;
+  opening_line?: string;
+  talking_points?: string[] | string;
+  persona_type?: string;
+  company_description?: string;
+  company_size?: string;
+  industry?: string;
+  recent_news?: string;
+  company_name?: string;
+  company_website?: string;
+  linkedin_company_url?: string;
+  tech_stack?: string[];
+  decision_makers?: Array<{ name: string; title: string; email: string }>;
+  buying_signals?: string[];
+  [key: string]: any;
 }
