@@ -5,12 +5,13 @@ LatticeIQ Sales Intelligence API
 Enterprise-grade FastAPI application for lead scoring and enrichment
 
 
-Version 3.1.0 - Phase 2B Integration + Deep Enrichment
+Version 3.2.0 - Phase 2B Integration + Deep Enrichment + CRM Exports
 - Added ICP management endpoints
 - Added Campaign creation endpoints
 - Added Template preview endpoints
 - Added FieldAccessor, ICPMatcher, VariableSubstitutor, CampaignBuilder
 - Added Deep Enrichment service (Perplexity + GPT-4 two-stage pipeline)
+- Added CRM Export routers (Salesforce, Pipedrive, CSV for Google/Outlook)
 """
 
 
@@ -52,8 +53,8 @@ if str(backend_dir) not in sys.path:
 
 app = FastAPI(
     title="LatticeIQ Sales Intelligence API",
-    version="3.1.0",  # Updated for Phase 2B + Deep Enrichment
-    description="Enterprise sales enrichment and lead scoring platform with ICP targeting, campaign management, and two-stage deep enrichment",
+    version="3.2.0",  # Updated for CRM Exports
+    description="Enterprise sales enrichment and lead scoring platform with ICP targeting, campaign management, two-stage deep enrichment, and CRM exports",
     docs_url="/api/docs",
     openapi_url="/api/openapi.json",
     redoc_url="/api/redoc",
@@ -76,6 +77,10 @@ class Settings(BaseModel):
     CORS_ALLOW_ORIGINS: str = Field(default="", alias="CORS_ALLOW_ORIGINS")
     PERPLEXITY_API_KEY: str = Field(default="", alias="PERPLEXITY_API_KEY")
     OPENAI_API_KEY: str = Field(default="", alias="OPENAI_API_KEY")
+    # CRM API Keys
+    SALESFORCE_CLIENT_ID: str = Field(default="", alias="SALESFORCE_CLIENT_ID")
+    SALESFORCE_CLIENT_SECRET: str = Field(default="", alias="SALESFORCE_CLIENT_SECRET")
+    PIPEDRIVE_API_KEY: str = Field(default="", alias="PIPEDRIVE_API_KEY")
 
 
     class Config:
@@ -95,6 +100,9 @@ class Settings(BaseModel):
             CORS_ALLOW_ORIGINS=os.getenv("CORS_ALLOW_ORIGINS", ""),
             PERPLEXITY_API_KEY=os.getenv("PERPLEXITY_API_KEY", ""),
             OPENAI_API_KEY=os.getenv("OPENAI_API_KEY", ""),
+            SALESFORCE_CLIENT_ID=os.getenv("SALESFORCE_CLIENT_ID", ""),
+            SALESFORCE_CLIENT_SECRET=os.getenv("SALESFORCE_CLIENT_SECRET", ""),
+            PIPEDRIVE_API_KEY=os.getenv("PIPEDRIVE_API_KEY", ""),
         )
 
 
@@ -440,6 +448,70 @@ except Exception as e:
 
 
 # ============================================================================
+# CRM EXPORT ROUTERS - SALESFORCE, PIPEDRIVE, CSV
+# ============================================================================
+
+
+# Track CRM Export status
+crm_export_status = {
+    "salesforce": "not_loaded",
+    "pipedrive": "not_loaded",
+    "csv_export": "not_loaded"
+}
+
+
+# Salesforce Export Router
+try:
+    from app.routers.crm_export_salesforce import router as salesforce_export_router
+    app.include_router(salesforce_export_router, prefix="/api/v3")
+    crm_export_status["salesforce"] = "operational"
+    logger.info({"event": "router_registered", "router": "salesforce_export", "endpoints": [
+        "POST /api/v3/export/salesforce",
+        "POST /api/v3/export/salesforce/bulk",
+        "GET /api/v3/export/salesforce/field-mapping",
+        "GET /api/v3/export/salesforce/job/{job_id}/status"
+    ]})
+    print("✅ Salesforce Export router loaded")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "salesforce_export", "error": str(e)})
+    print(f"⚠️ Salesforce Export router not loaded: {e}")
+
+
+# Pipedrive Export Router
+try:
+    from app.routers.crm_export_pipedrive import router as pipedrive_export_router
+    app.include_router(pipedrive_export_router, prefix="/api/v3")
+    crm_export_status["pipedrive"] = "operational"
+    logger.info({"event": "router_registered", "router": "pipedrive_export", "endpoints": [
+        "POST /api/v3/export/pipedrive",
+        "POST /api/v3/export/pipedrive/bulk",
+        "GET /api/v3/export/pipedrive/field-mapping",
+        "GET /api/v3/export/pipedrive/job/{job_id}/status"
+    ]})
+    print("✅ Pipedrive Export router loaded")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "pipedrive_export", "error": str(e)})
+    print(f"⚠️ Pipedrive Export router not loaded: {e}")
+
+
+# CSV Export Router (Google Contacts / Outlook)
+try:
+    from app.routers.crm_export_csv import router as csv_export_router
+    app.include_router(csv_export_router, prefix="/api/v3")
+    crm_export_status["csv_export"] = "operational"
+    logger.info({"event": "router_registered", "router": "csv_export", "endpoints": [
+        "POST /api/v3/export/csv",
+        "POST /api/v3/export/csv/bulk",
+        "GET /api/v3/export/csv/formats"
+    ]})
+    print("✅ CSV Export router loaded (Google Contacts / Outlook)")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "csv_export", "error": str(e)})
+    print(f"⚠️ CSV Export router not loaded: {e}")
+
+
+
+# ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
 
@@ -489,9 +561,15 @@ async def health_v3():
         deep_enrichment_status["openai_key"] == "configured"
     )
     
+    # Check CRM Export operational status
+    crm_export_operational = all(
+        status == "operational"
+        for status in crm_export_status.values()
+    )
+    
     return {
         "status": "ok",
-        "version": "3.1.0",
+        "version": "3.2.0",
         "timestamp": datetime.utcnow().isoformat(),
         "database": db_status,
         "hubspot": "available",
@@ -502,6 +580,10 @@ async def health_v3():
         "deep_enrichment": {
             "status": "operational" if deep_enrich_operational else "partial",
             "services": deep_enrichment_status
+        },
+        "crm_exports": {
+            "status": "operational" if crm_export_operational else "partial",
+            "services": crm_export_status
         }
     }
 
@@ -588,6 +670,62 @@ async def enrichment_health():
 
 
 
+@app.get("/api/v3/export/health")
+async def export_health():
+    """
+    Detailed health check for CRM export services.
+    """
+    crm_export_operational = all(
+        status == "operational"
+        for status in crm_export_status.values()
+    )
+    
+    # Check CRM API key configuration
+    salesforce_configured = bool(settings.SALESFORCE_CLIENT_ID and settings.SALESFORCE_CLIENT_SECRET)
+    pipedrive_configured = bool(settings.PIPEDRIVE_API_KEY)
+    
+    return {
+        "status": "operational" if crm_export_operational else "partial",
+        "timestamp": datetime.utcnow().isoformat(),
+        "services": crm_export_status,
+        "configuration": {
+            "salesforce": {
+                "client_id": "configured" if settings.SALESFORCE_CLIENT_ID else "missing",
+                "client_secret": "configured" if settings.SALESFORCE_CLIENT_SECRET else "missing",
+                "ready": salesforce_configured
+            },
+            "pipedrive": {
+                "api_key": "configured" if settings.PIPEDRIVE_API_KEY else "missing",
+                "ready": pipedrive_configured
+            },
+            "csv": {
+                "ready": True,  # No external API needed
+                "formats": ["google_contacts", "outlook", "generic"]
+            }
+        },
+        "endpoints": {
+            "salesforce": {
+                "POST /api/v3/export/salesforce": "Export single contact to Salesforce",
+                "POST /api/v3/export/salesforce/bulk": "Bulk export contacts to Salesforce",
+                "GET /api/v3/export/salesforce/field-mapping": "Get Salesforce field mappings",
+                "GET /api/v3/export/salesforce/job/{job_id}/status": "Check bulk export job status"
+            },
+            "pipedrive": {
+                "POST /api/v3/export/pipedrive": "Export single contact to Pipedrive",
+                "POST /api/v3/export/pipedrive/bulk": "Bulk export contacts to Pipedrive",
+                "GET /api/v3/export/pipedrive/field-mapping": "Get Pipedrive field mappings",
+                "GET /api/v3/export/pipedrive/job/{job_id}/status": "Check bulk export job status"
+            },
+            "csv": {
+                "POST /api/v3/export/csv": "Export single contact to CSV",
+                "POST /api/v3/export/csv/bulk": "Bulk export contacts to CSV",
+                "GET /api/v3/export/csv/formats": "Get available CSV formats"
+            }
+        }
+    }
+
+
+
 @app.get("/api/routes")
 def list_routes(request: Request):
     return sorted(
@@ -617,8 +755,11 @@ async def startup_event():
         deep_enrichment_status["openai_key"] == "configured"
     )
     
+    # Log CRM Export status
+    crm_export_operational = all(status == "operational" for status in crm_export_status.values())
+    
     print("=" * 70)
-    print("🚀 LatticeIQ Sales Intelligence API v3.1.0")
+    print("🚀 LatticeIQ Sales Intelligence API v3.2.0")
     print("=" * 70)
     print("")
     print("📦 Phase 2B Services Status:")
@@ -635,6 +776,12 @@ async def startup_event():
             icon = "⚠️"
         else:
             icon = "❌"
+        print(f"   {icon} {service}: {status}")
+    print("")
+    
+    print("📤 CRM Export Status:")
+    for service, status in crm_export_status.items():
+        icon = "✅" if status == "operational" else "❌"
         print(f"   {icon} {service}: {status}")
     print("")
     
@@ -678,15 +825,45 @@ async def startup_event():
         print("⚠️  Deep Enrichment not fully configured - check .env for API keys")
         print("")
     
+    if crm_export_operational:
+        print("📤 CRM Export Endpoints Available:")
+        print("   Salesforce:")
+        print("      POST   /api/v3/export/salesforce                  - Export single contact")
+        print("      POST   /api/v3/export/salesforce/bulk             - Bulk export contacts")
+        print("      GET    /api/v3/export/salesforce/field-mapping    - Get field mappings")
+        print("      GET    /api/v3/export/salesforce/job/{id}/status  - Check job status")
+        print("")
+        print("   Pipedrive:")
+        print("      POST   /api/v3/export/pipedrive                   - Export single contact")
+        print("      POST   /api/v3/export/pipedrive/bulk              - Bulk export contacts")
+        print("      GET    /api/v3/export/pipedrive/field-mapping     - Get field mappings")
+        print("      GET    /api/v3/export/pipedrive/job/{id}/status   - Check job status")
+        print("")
+        print("   CSV (Google Contacts / Outlook):")
+        print("      POST   /api/v3/export/csv                         - Export single contact")
+        print("      POST   /api/v3/export/csv/bulk                    - Bulk export contacts")
+        print("      GET    /api/v3/export/csv/formats                 - Available formats")
+        print("")
+        print("   Configuration:")
+        print(f"      Salesforce:  {'✅ Configured' if (settings.SALESFORCE_CLIENT_ID and settings.SALESFORCE_CLIENT_SECRET) else '⚠️ Missing credentials'}")
+        print(f"      Pipedrive:   {'✅ Configured' if settings.PIPEDRIVE_API_KEY else '⚠️ Missing API key'}")
+        print("      CSV Export:  ✅ Ready (no API needed)")
+        print("")
+    else:
+        print("⚠️  CRM Exports partially loaded - check logs for errors")
+        print("")
+    
     print("=" * 70)
     
     logger.info({
         "event": "startup_complete",
-        "version": "3.1.0",
+        "version": "3.2.0",
         "phase2b_status": phase2b_status,
         "phase2b_operational": phase2b_operational,
         "deep_enrichment_status": deep_enrichment_status,
-        "deep_enrichment_operational": deep_enrich_operational
+        "deep_enrichment_operational": deep_enrich_operational,
+        "crm_export_status": crm_export_status,
+        "crm_export_operational": crm_export_operational
     })
 
 
@@ -706,7 +883,7 @@ async def shutdown_event():
 async def root():
     return {
         "name": "LatticeIQ Sales Intelligence API",
-        "version": "3.1.0",
+        "version": "3.2.0",
         "docs": "/api/docs",
         "status": "running",
         "features": {
@@ -721,13 +898,19 @@ async def root():
                 "icps": "Ideal Client Profile management",
                 "campaigns": "Campaign creation & targeting",
                 "templates": "Variable substitution & personalization"
+            },
+            "exports": {
+                "salesforce": "Export contacts to Salesforce CRM",
+                "pipedrive": "Export contacts to Pipedrive CRM",
+                "csv": "Export to CSV (Google Contacts, Outlook, generic)"
             }
         },
         "health_checks": {
             "basic": "/health",
             "full": "/api/v3/health",
             "phase2b": "/api/v3/phase2/health",
-            "enrichment": "/api/v3/enrichment/health"
+            "enrichment": "/api/v3/enrichment/health",
+            "exports": "/api/v3/export/health"
         }
     }
 
