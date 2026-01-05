@@ -220,100 +220,94 @@ export const ContactDetailModal: React.FC<Props> = ({
     }
   };
 
-  // QUICK FIX for ContactDetailModal.tsx
-// Replace your handleDeepEnrich function with this improved version
-
-const handleDeepEnrich = async () => {
-  setIsDeepEnriching(true);
-  setMessage(null);
-  setEnrichmentProgress(0);
-  
-  try {
-    // Get token from Supabase
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-
-    if (!token) {
-      setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
-      setIsDeepEnriching(false);
-      return;
-    }
-
-    // Trigger deep enrichment
-    setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
-    setEnrichmentProgress(10);
+  // *** FIXED: Deep enrichment handler with correct data extraction ***
+  const handleDeepEnrich = async () => {
+    setIsDeepEnriching(true);
+    setMessage(null);
+    setEnrichmentProgress(0);
     
-    const result = await deepEnrichContact(contact.id, token);
-    console.log('✅ Deep enrichment triggered:', result);
-    
-    if (result.status === 'completed' || result.status === 'processing') {
-      setEnrichmentProgress(30);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      if (!token) {
+        setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
+        setIsDeepEnriching(false);
+        return;
+      }
+
+      setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
+      setEnrichmentProgress(10);
       
-      // Poll for completion
-      let completed = false;
-      let attempts = 0;
-      const maxAttempts = 30; // 30 * 2 seconds = 60 seconds max
-
-      while (!completed && attempts < maxAttempts) {
-        attempts++;
-        setEnrichmentProgress(30 + (attempts / maxAttempts) * 60);
+      const result = await deepEnrichContact(contact.id, token);
+      console.log('✅ Deep enrichment triggered:', result);
+      
+      if (result.status === 'completed' || result.status === 'processing') {
+        setEnrichmentProgress(30);
         
-        try {
-          const enrichedData = await getEnrichmentResult(contact.id, token);
-          console.log(`✅ Poll attempt ${attempts}: Got response`, enrichedData);
+        let completed = false;
+        let attempts = 0;
+        const maxAttempts = 30;
+
+        while (!completed && attempts < maxAttempts) {
+          attempts++;
+          setEnrichmentProgress(30 + (attempts / maxAttempts) * 60);
           
-          // Check if we have actual data
-          if (enrichedData && enrichedData.contact_profile) {
-            console.log('✅ Success! Got contact_profile');
+          try {
+            const enrichedData = await getEnrichmentResult(contact.id, token);
+            console.log(`✅ Poll attempt ${attempts}: Got response`, enrichedData);
             
-            // Successfully got the deep enrichment data
-            setDeepEnrichmentData(enrichedData as UnifiedEnrichmentResult);
-            const parsed = transformDeepEnrichment(enrichedData as UnifiedEnrichmentResult);
-            setParsedProfile(parsed);
-            setDeepProfile(JSON.stringify(enrichedData, null, 2));
-            setLastDeepEnriched(enrichedData.meta?.generated_at || new Date().toISOString());
-            setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
-            setActiveTab('deepprofile');
-            setEnrichmentProgress(100);
-            await refreshContact();
-            onUpdate?.();
-            completed = true;
-            break;
-          } else {
-            // Got a response but no contact_profile yet
-            console.log(`⏳ Poll attempt ${attempts}: Data not ready yet. Response:`, enrichedData);
+            // *** KEY FIX: Extract enrichment data from nested structure ***
+            const actualData = enrichedData?.enrichment_data?.data || enrichedData;
+            console.log('Extracted actualData:', actualData);
+            
+            if (actualData && actualData.contact_profile) {
+              console.log('✅ Success! Got contact_profile');
+              
+              setDeepEnrichmentData(actualData as UnifiedEnrichmentResult);
+              const parsed = transformDeepEnrichment(actualData as UnifiedEnrichmentResult);
+              setParsedProfile(parsed);
+              setDeepProfile(JSON.stringify(actualData, null, 2));
+              setLastDeepEnriched(actualData.meta?.generated_at || new Date().toISOString());
+              setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
+              setActiveTab('deepprofile');
+              setEnrichmentProgress(100);
+              await refreshContact();
+              onUpdate?.();
+              completed = true;
+              break;
+            } else {
+              console.log(`⏳ Poll attempt ${attempts}: Data not ready yet.`);
+            }
+          } catch (err) {
+            console.log(`❌ Poll attempt ${attempts} error:`, err);
           }
-        } catch (err) {
-          // Network error or parsing error
-          console.log(`❌ Poll attempt ${attempts} error:`, err);
+
+          await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
-        // Wait 2 seconds before next attempt
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        if (!completed) {
+          console.error('❌ Timed out after 30 attempts');
+          setMessage({ 
+            type: 'error', 
+            text: 'Enrichment took longer than expected. Please try again.' 
+          });
+        }
+      } else if (result.error) {
+        console.error('❌ Enrichment error from backend:', result.error);
+        setMessage({ type: 'error', text: `Error: ${result.error}` });
+      } else {
+        console.warn('⚠️ Unexpected result status:', result.status);
+        setMessage({ type: 'error', text: `Unexpected status: ${result.status}` });
       }
-
-      if (!completed) {
-        console.error('❌ Timed out after 30 attempts');
-        setMessage({ 
-          type: 'error', 
-          text: 'Enrichment took longer than expected (60s timeout). Please check backend logs.' 
-        });
-      }
-    } else if (result.error) {
-      console.error('❌ Enrichment error from backend:', result.error);
-      setMessage({ type: 'error', text: `Error: ${result.error}` });
-    } else {
-      console.warn('⚠️ Unexpected result status:', result.status);
-      setMessage({ type: 'error', text: `Unexpected status: ${result.status}` });
+    } catch (err: any) {
+      console.error('❌ Deep enrichment error:', err);
+      setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
+    } finally {
+      setIsDeepEnriching(false);
+      setTimeout(() => setMessage(null), 5000);
     }
-  } catch (err: any) {
-    console.error('❌ Deep enrichment error:', err);
-    setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
-  } finally {
-    setIsDeepEnriching(false);
-    setTimeout(() => setMessage(null), 5000);
-  }
-};
+  };
 
   const handleScore = async () => {
     setIsScoring(true);
@@ -410,230 +404,242 @@ const handleDeepEnrich = async () => {
     return (
       <div className="deep-enrichment-sections">
         {/* Contact Profile Section */}
-        <div className="enrichment-card contact-profile-card">
-          <div className="card-header">
-            <h4>👤 Contact Profile</h4>
+        {contact_profile && (
+          <div className="enrichment-card contact-profile-card">
+            <div className="card-header">
+              <h4>👤 Contact Profile</h4>
+            </div>
+            <div className="card-body">
+              {contact_profile.headline && (
+                <p className="headline">{contact_profile.headline}</p>
+              )}
+              {contact_profile.role_summary && (
+                <p className="role-summary">{contact_profile.role_summary}</p>
+              )}
+              {contact_profile.seniority && (
+                <p className="seniority">
+                  <strong>Seniority:</strong> {contact_profile.seniority}
+                </p>
+              )}
+              {contact_profile.background_bullets && contact_profile.background_bullets.length > 0 && (
+                <div className="bullets-section">
+                  <h5>Background</h5>
+                  <ul>
+                    {contact_profile.background_bullets.map((bullet, i) => (
+                      <li key={i}>
+                        {bullet.text}
+                        {bullet.evidence && <span className="evidence"> ({bullet.evidence})</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="card-body">
-            {contact_profile.headline && (
-              <p className="headline">{contact_profile.headline}</p>
-            )}
-            {contact_profile.role_summary && (
-              <p className="role-summary">{contact_profile.role_summary}</p>
-            )}
-            {contact_profile.seniority && (
-              <p className="seniority">
-                <strong>Seniority:</strong> {contact_profile.seniority}
-              </p>
-            )}
-            {contact_profile.background_bullets && contact_profile.background_bullets.length > 0 && (
-              <div className="bullets-section">
-                <h5>Background</h5>
-                <ul>
-                  {contact_profile.background_bullets.map((bullet, i) => (
-                    <li key={i}>
-                      {bullet.text}
-                      {bullet.evidence && <span className="evidence"> ({bullet.evidence})</span>}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Company Profile Section */}
-        <div className="enrichment-card company-profile-card">
-          <div className="card-header">
-            <h4>🏢 Company Profile</h4>
-          </div>
-          <div className="card-body">
-            {company_profile.one_liner && (
-              <p className="one-liner italic">{company_profile.one_liner}</p>
-            )}
-            <div className="company-meta">
-              {company_profile.industry && <span><strong>Industry:</strong> {company_profile.industry}</span>}
-              {company_profile.size_segment && <span><strong>Size:</strong> {company_profile.size_segment}</span>}
-              {company_profile.region && <span><strong>Region:</strong> {company_profile.region}</span>}
+        {company_profile && (
+          <div className="enrichment-card company-profile-card">
+            <div className="card-header">
+              <h4>🏢 Company Profile</h4>
             </div>
-            {company_profile.key_products_or_services && company_profile.key_products_or_services.length > 0 && (
-              <div className="bullets-section">
-                <h5>Key Products/Services</h5>
-                <ul>
-                  {company_profile.key_products_or_services.map((product, i) => (
-                    <li key={i}>{product.text}</li>
-                  ))}
-                </ul>
+            <div className="card-body">
+              {company_profile.one_liner && (
+                <p className="one-liner italic">{company_profile.one_liner}</p>
+              )}
+              <div className="company-meta">
+                {company_profile.industry && <span><strong>Industry:</strong> {company_profile.industry}</span>}
+                {company_profile.size_segment && <span><strong>Size:</strong> {company_profile.size_segment}</span>}
+                {company_profile.region && <span><strong>Region:</strong> {company_profile.region}</span>}
               </div>
-            )}
+              {company_profile.key_products_or_services && company_profile.key_products_or_services.length > 0 && (
+                <div className="bullets-section">
+                  <h5>Key Products/Services</h5>
+                  <ul>
+                    {company_profile.key_products_or_services.map((product, i) => (
+                      <li key={i}>{product.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Current Focus Section */}
-        <div className="enrichment-card current-focus-card">
-          <div className="card-header">
-            <h4>🎯 Current Focus</h4>
+        {current_focus && (
+          <div className="enrichment-card current-focus-card">
+            <div className="card-header">
+              <h4>🎯 Current Focus</h4>
+            </div>
+            <div className="card-body">
+              {current_focus.strategic_initiatives && current_focus.strategic_initiatives.length > 0 && (
+                <div className="focus-subsection">
+                  <h5>Strategic Initiatives</h5>
+                  <ul>
+                    {current_focus.strategic_initiatives.map((init, i) => (
+                      <li key={i}>{init.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {current_focus.recent_projects && current_focus.recent_projects.length > 0 && (
+                <div className="focus-subsection">
+                  <h5>Recent Projects</h5>
+                  <ul>
+                    {current_focus.recent_projects.map((proj, i) => (
+                      <li key={i}>{proj.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {current_focus.primary_kpis && current_focus.primary_kpis.length > 0 && (
+                <div className="focus-subsection">
+                  <h5>Primary KPIs</h5>
+                  <ul>
+                    {current_focus.primary_kpis.map((kpi, i) => (
+                      <li key={i}>{kpi.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="card-body">
-            {current_focus.strategic_initiatives && current_focus.strategic_initiatives.length > 0 && (
-              <div className="focus-subsection">
-                <h5>Strategic Initiatives</h5>
-                <ul>
-                  {current_focus.strategic_initiatives.map((init, i) => (
-                    <li key={i}>{init.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {current_focus.recent_projects && current_focus.recent_projects.length > 0 && (
-              <div className="focus-subsection">
-                <h5>Recent Projects</h5>
-                <ul>
-                  {current_focus.recent_projects.map((proj, i) => (
-                    <li key={i}>{proj.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {current_focus.primary_kpis && current_focus.primary_kpis.length > 0 && (
-              <div className="focus-subsection">
-                <h5>Primary KPIs</h5>
-                <ul>
-                  {current_focus.primary_kpis.map((kpi, i) => (
-                    <li key={i}>{kpi.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Buying Signals Section */}
-        <div className="enrichment-card buying-signals-card signal-card">
-          <div className="card-header">
-            <h4>⚡ Buying Signals</h4>
+        {buying_signals && (
+          <div className="enrichment-card buying-signals-card signal-card">
+            <div className="card-header">
+              <h4>⚡ Buying Signals</h4>
+            </div>
+            <div className="card-body">
+              {buying_signals.recent_news && buying_signals.recent_news.length > 0 && (
+                <div className="signal-subsection">
+                  <h5>Recent News</h5>
+                  <ul>
+                    {buying_signals.recent_news.map((news, i) => (
+                      <li key={i}>{news.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {buying_signals.timing_triggers && buying_signals.timing_triggers.length > 0 && (
+                <div className="signal-subsection">
+                  <h5>Timing Triggers</h5>
+                  <ul>
+                    {buying_signals.timing_triggers.map((trigger, i) => (
+                      <li key={i}>{trigger.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {buying_signals.hiring_signals && buying_signals.hiring_signals.length > 0 && (
+                <div className="signal-subsection">
+                  <h5>Hiring Signals</h5>
+                  <ul>
+                    {buying_signals.hiring_signals.map((hire, i) => (
+                      <li key={i}>{hire.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {buying_signals.tech_changes && buying_signals.tech_changes.length > 0 && (
+                <div className="signal-subsection">
+                  <h5>Tech Changes</h5>
+                  <ul>
+                    {buying_signals.tech_changes.map((tech, i) => (
+                      <li key={i}>{tech.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="card-body">
-            {buying_signals.recent_news && buying_signals.recent_news.length > 0 && (
-              <div className="signal-subsection">
-                <h5>Recent News</h5>
-                <ul>
-                  {buying_signals.recent_news.map((news, i) => (
-                    <li key={i}>{news.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {buying_signals.timing_triggers && buying_signals.timing_triggers.length > 0 && (
-              <div className="signal-subsection">
-                <h5>Timing Triggers</h5>
-                <ul>
-                  {buying_signals.timing_triggers.map((trigger, i) => (
-                    <li key={i}>{trigger.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {buying_signals.hiring_signals && buying_signals.hiring_signals.length > 0 && (
-              <div className="signal-subsection">
-                <h5>Hiring Signals</h5>
-                <ul>
-                  {buying_signals.hiring_signals.map((hire, i) => (
-                    <li key={i}>{hire.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {buying_signals.tech_changes && buying_signals.tech_changes.length > 0 && (
-              <div className="signal-subsection">
-                <h5>Tech Changes</h5>
-                <ul>
-                  {buying_signals.tech_changes.map((tech, i) => (
-                    <li key={i}>{tech.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Risks & Objections Section */}
-        <div className="enrichment-card risks-card">
-          <div className="card-header">
-            <h4>⚠️ Risks & Objections</h4>
+        {risks_and_objections && (
+          <div className="enrichment-card risks-card">
+            <div className="card-header">
+              <h4>⚠️ Risks & Objections</h4>
+            </div>
+            <div className="card-body">
+              {risks_and_objections.risk_bullets && risks_and_objections.risk_bullets.length > 0 && (
+                <div className="risk-subsection">
+                  <h5>Risk Bullets</h5>
+                  <ul>
+                    {risks_and_objections.risk_bullets.map((risk, i) => (
+                      <li key={i}>{risk.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {risks_and_objections.likely_objections && risks_and_objections.likely_objections.length > 0 && (
+                <div className="risk-subsection">
+                  <h5>Likely Objections</h5>
+                  <ul>
+                    {risks_and_objections.likely_objections.map((obj, i) => (
+                      <li key={i}>{obj.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {risks_and_objections.landmines && risks_and_objections.landmines.length > 0 && (
+                <div className="risk-subsection">
+                  <h5>Landmines</h5>
+                  <ul>
+                    {risks_and_objections.landmines.map((landmine, i) => (
+                      <li key={i}>{landmine.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="card-body">
-            {risks_and_objections.risk_bullets && risks_and_objections.risk_bullets.length > 0 && (
-              <div className="risk-subsection">
-                <h5>Risk Bullets</h5>
-                <ul>
-                  {risks_and_objections.risk_bullets.map((risk, i) => (
-                    <li key={i}>{risk.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {risks_and_objections.likely_objections && risks_and_objections.likely_objections.length > 0 && (
-              <div className="risk-subsection">
-                <h5>Likely Objections</h5>
-                <ul>
-                  {risks_and_objections.likely_objections.map((obj, i) => (
-                    <li key={i}>{obj.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {risks_and_objections.landmines && risks_and_objections.landmines.length > 0 && (
-              <div className="risk-subsection">
-                <h5>Landmines</h5>
-                <ul>
-                  {risks_and_objections.landmines.map((landmine, i) => (
-                    <li key={i}>{landmine.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Messaging Section */}
-        <div className="enrichment-card messaging-card">
-          <div className="card-header">
-            <h4>💬 Messaging</h4>
+        {messaging && (
+          <div className="enrichment-card messaging-card">
+            <div className="card-header">
+              <h4>💬 Messaging</h4>
+            </div>
+            <div className="card-body">
+              {messaging.cold_openers && messaging.cold_openers.length > 0 && (
+                <div className="messaging-subsection">
+                  <h5>Cold Openers</h5>
+                  <ul>
+                    {messaging.cold_openers.map((opener, i) => (
+                      <li key={i}>"{opener.text}"</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {messaging.value_props && messaging.value_props.length > 0 && (
+                <div className="messaging-subsection">
+                  <h5>Value Propositions</h5>
+                  <ul>
+                    {messaging.value_props.map((prop, i) => (
+                      <li key={i}>{prop.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {messaging.call_to_action_ideas && messaging.call_to_action_ideas.length > 0 && (
+                <div className="messaging-subsection">
+                  <h5>Call-to-Action Ideas</h5>
+                  <ul>
+                    {messaging.call_to_action_ideas.map((cta, i) => (
+                      <li key={i}>{cta.text}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="card-body">
-            {messaging.cold_openers && messaging.cold_openers.length > 0 && (
-              <div className="messaging-subsection">
-                <h5>Cold Openers</h5>
-                <ul>
-                  {messaging.cold_openers.map((opener, i) => (
-                    <li key={i}>"{opener.text}"</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {messaging.value_props && messaging.value_props.length > 0 && (
-              <div className="messaging-subsection">
-                <h5>Value Propositions</h5>
-                <ul>
-                  {messaging.value_props.map((prop, i) => (
-                    <li key={i}>{prop.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {messaging.call_to_action_ideas && messaging.call_to_action_ideas.length > 0 && (
-              <div className="messaging-subsection">
-                <h5>Call-to-Action Ideas</h5>
-                <ul>
-                  {messaging.call_to_action_ideas.map((cta, i) => (
-                    <li key={i}>{cta.text}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Metadata */}
         {deepEnrichmentData.meta && (
