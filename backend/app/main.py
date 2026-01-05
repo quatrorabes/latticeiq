@@ -485,7 +485,7 @@ deep_enrichment_status = {
 
 
 try:
-    from app.enrichment.deep_enrichment import DeepEnrichmentService
+    from app.enrichment_v3.deep_enrichment import DeepEnrichmentService
     deep_enrichment_status["service"] = "operational"
     
     # Check API keys
