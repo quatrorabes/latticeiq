@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Search, RefreshCw, Upload, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
-import { enrichContacts } from '../api/enrichment';
+import { enrichContact } from '../api/enrichment';
 import { ContactDetailModal } from '../components/ContactDetailModal';
 import '../styles/ContactsPage.css';
 
@@ -64,16 +64,20 @@ export const ContactsPage: React.FC = () => {
     if (selectedContacts.size === 0) return;
     setEnriching(true);
     try {
-      await enrichContacts(Array.from(selectedContacts));
+    // Enrich all contacts in parallel
+      await Promise.all(
+      Array.from(selectedContacts).map(contactId => enrichContact(contactId))
+      );
       alert(`✅ Enriched ${selectedContacts.size} contacts with scores!`);
       setSelectedContacts(new Set());
       loadContacts();
-    } catch (err: any) {
+  } catch (err: any) {
       alert(`❌ Failed: ${err.message}`);
-    } finally {
-      setEnriching(false);
-    }
-  };
+  } finally {
+    setEnriching(false);
+  }
+};
+
 
   const deleteSelected = async () => {
     if (selectedContacts.size === 0) return;
