@@ -118,11 +118,12 @@ async def call_perplexity_deep_research(
     try:
         parsed = json.loads(clean_content)
     except Exception as e:
-        logger.error("Failed to parse deep-enrich JSON: %s", e)
+        logger.error("Failed to parse deep-enrich JSON: %s\nRaw content:\n%s", e, clean_content[:2000])
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Deep enrichment returned invalid JSON",
+            detail=f"Deep enrichment returned invalid JSON: {str(e)}",
         )
+
 
     return {
         "raw_provider_response": data,
