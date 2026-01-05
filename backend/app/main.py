@@ -1,8 +1,10 @@
 # backend/app/main.py
 
+
 """
 LatticeIQ Sales Intelligence API
 Enterprise-grade FastAPI application for lead scoring and enrichment
+
 
 
 Version 3.2.0 - Phase 2B Integration + Deep Enrichment + CRM Exports
@@ -15,12 +17,14 @@ Version 3.2.0 - Phase 2B Integration + Deep Enrichment + CRM Exports
 """
 
 
+
 import os
 import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Optional
 from functools import lru_cache
+
 
 
 import jwt
@@ -34,9 +38,11 @@ from pythonjsonlogger import jsonlogger
 
 
 
+
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
 # ============================================================================
+
 
 
 backend_dir = Path(__file__).parent.resolve()
@@ -46,9 +52,11 @@ if str(backend_dir) not in sys.path:
 
 
 
+
 # ============================================================================
 # CREATE APP FIRST
 # ============================================================================
+
 
 
 app = FastAPI(
@@ -62,9 +70,11 @@ app = FastAPI(
 
 
 
+
 # ============================================================================
 # LOAD ENVIRONMENT & SUPABASE
 # ============================================================================
+
 
 
 class Settings(BaseModel):
@@ -83,9 +93,11 @@ class Settings(BaseModel):
     PIPEDRIVE_API_KEY: str = Field(default="", alias="PIPEDRIVE_API_KEY")
 
 
+
     class Config:
         env_file = ".env"
         case_sensitive = True
+
 
 
     @classmethod
@@ -107,9 +119,11 @@ class Settings(BaseModel):
 
 
 
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings.from_env()
+
 
 
 
@@ -117,9 +131,11 @@ settings = get_settings()
 
 
 
+
 # ============================================================================
 # SETUP LOGGING
 # ============================================================================
+
 
 
 def setup_logging(log_level: str = "INFO") -> logging.Logger:
@@ -135,13 +151,16 @@ def setup_logging(log_level: str = "INFO") -> logging.Logger:
 
 
 
+
 logger = setup_logging(settings.LOG_LEVEL)
+
 
 
 
 # ============================================================================
 # CORS MIDDLEWARE - MUST BE FIRST
 # ============================================================================
+
 
 
 app.add_middleware(
@@ -154,7 +173,9 @@ app.add_middleware(
 )
 
 
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
 
 
 
@@ -163,10 +184,12 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # ============================================================================
 
 
+
 def initialize_supabase() -> Optional[Client]:
     if not settings.SUPABASE_URL or not settings.SUPABASE_ANON_KEY:
         logger.warning({"event": "supabase_not_configured"})
         return None
+
 
 
     try:
@@ -179,13 +202,16 @@ def initialize_supabase() -> Optional[Client]:
 
 
 
+
 supabase = initialize_supabase()
+
 
 
 
 # ============================================================================
 # SUPABASE CLIENT GETTER (for dependency injection)
 # ============================================================================
+
 
 
 def get_supabase() -> Optional[Client]:
@@ -197,14 +223,17 @@ def get_supabase() -> Optional[Client]:
 
 
 
+
 # ============================================================================
 # DEFINE MODELS
 # ============================================================================
 
 
+
 class CurrentUser(BaseModel):
     id: str
     email: str
+
 
 
 
@@ -217,6 +246,7 @@ class ContactCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=20)
     linkedin_url: Optional[str] = Field(None, max_length=500)
     website: Optional[str] = Field(None, max_length=500)
+
 
 
 
@@ -236,9 +266,11 @@ class ContactUpdate(BaseModel):
 
 
 
+
 # ============================================================================
 # AUTH DEPENDENCY - JWT DECODE
 # ============================================================================
+
 
 
 async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
@@ -250,10 +282,12 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
         )
 
 
+
     try:
         parts = authorization.split(" ", 1)
         if len(parts) != 2 or parts[0].lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid authorization format")
+
 
 
         token = parts[1]
@@ -262,11 +296,14 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
         email = payload.get("email", "")
 
 
+
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: missing user id")
 
 
+
         return CurrentUser(id=str(user_id), email=str(email))
+
 
 
     except HTTPException:
@@ -277,9 +314,11 @@ async def get_current_user(authorization: str = Header(None)) -> CurrentUser:
 
 
 
+
 # ============================================================================
 # IMPORT & REGISTER HUBSPOT ROUTER (SIMPLIFIED & SAFE)
 # ============================================================================
+
 
 
 logger.info({"event": "attempting_hubspot_import"})
@@ -294,17 +333,21 @@ except Exception as e:
 
 
 
+
 # ============================================================================
 # IMPORT OTHER ROUTERS
 # ============================================================================
 
 
+
 # Contacts Router
 try:
     from app.contacts_router import router as contacts_router
+    app.include_router(contacts_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "contacts"})
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "contacts", "error": str(e)})
+
 
 
 # CRM Router
@@ -316,28 +359,37 @@ except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "crm", "error": str(e)})
 
 
-# Enrichment Router (Quick Enrichment)
+
+# Quick Enrichment Router (enrich_simple.py)
 try:
     from app.enrichment_v3.enrich_simple import router as simple_enrich_router
     app.include_router(simple_enrich_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "enrich_simple"})
+    logger.info({"event": "router_registered", "router": "enrich_simple", "endpoints": [
+        "POST /api/v3/enrichment/quick-enrich/{contact_id}",
+        "GET /api/v3/enrichment/quick-enrich/{contact_id}/debug"
+    ]})
+    print("✅ Quick Enrichment router loaded (Perplexity sonar-pro)")
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
+    print(f"⚠️ Quick Enrichment router not loaded: {e}")
 
 
-# Deep Enrichment Router (NEW - Perplexity + GPT-4)
+
+# Deep Enrichment Router (NEW - unified schema with boxes)
 try:
     from app.routers.enrichment_v3_deep import router as deep_enrich_router
     app.include_router(deep_enrich_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrichment_deep", "endpoints": [
         "POST /api/v3/enrichment/deep-enrich/{contact_id}",
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/status",
-        "GET /api/v3/enrichment/quota"
+        "GET /api/v3/enrichment/deep-enrich/{contact_id}/result",
+        "GET /api/v3/enrichment/deep-enrich/{contact_id}/debug"
     ]})
-    print("✅ Deep Enrichment router loaded (Perplexity + GPT-4)")
+    print("✅ Deep Enrichment router loaded (unified box schema)")
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "enrichment_deep", "error": str(e)})
     print(f"⚠️ Deep Enrichment router not loaded: {e}")
+
 
 
 # Scoring Router
@@ -350,9 +402,11 @@ except Exception as e:
 
 
 
+
 # ============================================================================
 # PHASE 2B ROUTER - ICP, CAMPAIGNS, TEMPLATES
 # ============================================================================
+
 
 
 # Track Phase 2B status
@@ -363,6 +417,7 @@ phase2b_status = {
     "campaign_builder": "not_loaded",
     "router": "not_loaded"
 }
+
 
 
 try:
@@ -383,6 +438,7 @@ except Exception as e:
     traceback.print_exc()
 
 
+
 # Verify Phase 2B core classes are importable
 try:
     from app.fields.field_accessor import FieldAccessor
@@ -390,6 +446,7 @@ try:
     logger.info({"event": "phase2b_class_loaded", "class": "FieldAccessor"})
 except Exception as e:
     logger.warning({"event": "phase2b_class_failed", "class": "FieldAccessor", "error": str(e)})
+
 
 
 try:
@@ -400,12 +457,14 @@ except Exception as e:
     logger.warning({"event": "phase2b_class_failed", "class": "ICPMatcher", "error": str(e)})
 
 
+
 try:
     from app.templates.variable_substitutor import VariableSubstitutor
     phase2b_status["variable_substitutor"] = "operational"
     logger.info({"event": "phase2b_class_loaded", "class": "VariableSubstitutor"})
 except Exception as e:
     logger.warning({"event": "phase2b_class_failed", "class": "VariableSubstitutor", "error": str(e)})
+
 
 
 try:
@@ -416,12 +475,14 @@ except Exception as e:
     logger.warning({"event": "phase2b_class_failed", "class": "CampaignBuilder", "error": str(e)})
 
 
+
 # Track Deep Enrichment status
 deep_enrichment_status = {
     "service": "not_loaded",
     "perplexity_key": "not_configured",
     "openai_key": "not_configured"
 }
+
 
 try:
     from app.enrichment.deep_enrichment import DeepEnrichmentService
@@ -447,9 +508,11 @@ except Exception as e:
 
 
 
+
 # ============================================================================
 # CRM EXPORT ROUTERS - SALESFORCE, PIPEDRIVE, CSV
 # ============================================================================
+
 
 
 # Track CRM Export status
@@ -458,6 +521,7 @@ crm_export_status = {
     "pipedrive": "not_loaded",
     "csv_export": "not_loaded"
 }
+
 
 
 # Salesforce Export Router
@@ -477,6 +541,7 @@ except Exception as e:
     print(f"⚠️ Salesforce Export router not loaded: {e}")
 
 
+
 # Pipedrive Export Router
 try:
     from app.routers.crm_export_pipedrive import router as pipedrive_export_router
@@ -492,6 +557,7 @@ try:
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "pipedrive_export", "error": str(e)})
     print(f"⚠️ Pipedrive Export router not loaded: {e}")
+
 
 
 # CSV Export Router (Google Contacts / Outlook)
@@ -511,9 +577,11 @@ except Exception as e:
 
 
 
+
 # ============================================================================
 # ICP CONFIG ENDPOINT
 # ============================================================================
+
 
 
 @app.get("/api/v3/icp-config")
@@ -529,9 +597,11 @@ async def get_icp_config():
 
 
 
+
 # ============================================================================
 # HEALTH CHECK ENDPOINTS
 # ============================================================================
+
 
 
 @app.get("/health")
@@ -541,6 +611,7 @@ async def health():
         "timestamp": datetime.utcnow().isoformat(),
         "uptime": "running",
     }
+
 
 
 
@@ -589,6 +660,7 @@ async def health_v3():
 
 
 
+
 @app.get("/api/v3/phase2/health")
 async def phase2_health():
     """
@@ -631,6 +703,7 @@ async def phase2_health():
 
 
 
+
 @app.get("/api/v3/enrichment/health")
 async def enrichment_health():
     """
@@ -659,7 +732,8 @@ async def enrichment_health():
                 "endpoints": [
                     "POST /api/v3/enrichment/deep-enrich/{contact_id}",
                     "GET /api/v3/enrichment/deep-enrich/{contact_id}/status",
-                    "GET /api/v3/enrichment/quota"
+                    "GET /api/v3/enrichment/deep-enrich/{contact_id}/result",
+                    "GET /api/v3/enrichment/deep-enrich/{contact_id}/debug"
                 ],
                 "latency": "90-120s (async)",
                 "quota": "metered (50/month default)",
@@ -667,6 +741,7 @@ async def enrichment_health():
             }
         }
     }
+
 
 
 
@@ -726,6 +801,7 @@ async def export_health():
 
 
 
+
 @app.get("/api/routes")
 def list_routes(request: Request):
     return sorted(
@@ -736,9 +812,11 @@ def list_routes(request: Request):
 
 
 
+
 # ============================================================================
 # STARTUP / SHUTDOWN EVENTS
 # ============================================================================
+
 
 
 @app.on_event("startup")
@@ -813,9 +891,10 @@ async def startup_event():
     if deep_enrich_operational:
         print("🧠 Deep Enrichment Endpoints Available:")
         print("   Two-Stage Enrichment (Perplexity + GPT-4):")
-        print("      POST   /api/v3/enrichment/deep-enrich/{contact_id}       - Queue enrichment job")
-        print("      GET    /api/v3/enrichment/deep-enrich/{contact_id}/status - Check job status")
-        print("      GET    /api/v3/enrichment/quota                           - Check quota usage")
+        print("      POST   /api/v3/enrichment/deep-enrich/{contact_id}        - Run deep enrichment")
+        print("      GET    /api/v3/enrichment/deep-enrich/{contact_id}/status - Check status")
+        print("      GET    /api/v3/enrichment/deep-enrich/{contact_id}/result - Get unified result")
+        print("      GET    /api/v3/enrichment/deep-enrich/{contact_id}/debug  - Debug payload")
         print("")
         print("   Configuration:")
         print(f"      Perplexity API:  {'✅ Configured' if settings.PERPLEXITY_API_KEY else '❌ Missing PERPLEXITY_API_KEY'}")
@@ -868,15 +947,18 @@ async def startup_event():
 
 
 
+
 @app.on_event("shutdown")
 async def shutdown_event():
     logger.info({"event": "shutdown", "message": "LatticeIQ API shutting down..."})
 
 
 
+
 # ============================================================================
 # ROOT ENDPOINT
 # ============================================================================
+
 
 
 @app.get("/")
@@ -916,9 +998,11 @@ async def root():
 
 
 
+
 # ============================================================================
 # PREMIUM FEATURE ROUTERS
 # ============================================================================
+
 
 
 try:
@@ -929,12 +1013,14 @@ except Exception as e:
     print(f"⚠️ AI Writer router not loaded: {e}")
 
 
+
 try:
     from app.routers.smart_lists_router import router as smart_lists_router
     app.include_router(smart_lists_router, prefix="/api/v3")
     print("✅ Smart Lists router loaded")
 except Exception as e:
     print(f"⚠️ Smart Lists router not loaded: {e}")
+
 
 
 try:
@@ -945,12 +1031,14 @@ except Exception as e:
     print(f"⚠️ Pipeline router not loaded: {e}")
 
 
+
 try:
     from app.routers.integrations_router import router as integrations_router
     app.include_router(integrations_router, prefix="/api/v3")
     print("✅ Integrations router loaded")
 except Exception as e:
     print(f"⚠️ Integrations router not loaded: {e}")
+
 
 
 try:
@@ -962,9 +1050,11 @@ except Exception as e:
 
 
 
+
 # ============================================================================
 # UVICORN ENTRY POINT (for local development)
 # ============================================================================
+
 
 
 if __name__ == "__main__":
