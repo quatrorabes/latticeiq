@@ -464,10 +464,18 @@ async def deep_enrich_contact(
     supabase: Client = Depends(get_supabase),
 ):
     contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
-    if not contact_res.data:
+    
+    # Defensive handling - contact_res.data is always a list
+    if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
-
-    contact = contact_res.data
+    
+    # Extract first item from the list
+    contact = contact_res.data[0]
+    
+    # Double-check we have a dict
+    if not isinstance(contact, dict):
+        logger.error("Contact is not a dict, got: %s", type(contact))
+        raise HTTPException(status_code=500, detail="Invalid contact data")
 
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
@@ -478,9 +486,7 @@ async def deep_enrich_contact(
 
     # Mark as processing
     supabase.table("contacts").update(
-        {
-            "enrichment_status": "processing",
-        }
+        {"enrichment_status": "processing"}
     ).eq("id", contact_id).execute()
 
     try:
@@ -531,9 +537,7 @@ async def deep_enrich_contact(
     except Exception as e:
         logger.exception("Deep enrichment failed: %s", e)
         supabase.table("contacts").update(
-            {
-                "enrichment_status": "failed",
-            }
+            {"enrichment_status": "failed"}
         ).eq("id", contact_id).execute()
         return DeepEnrichmentStatus(
             contact_id=contact_id,
@@ -541,6 +545,7 @@ async def deep_enrich_contact(
             status="failed",
             error=str(e),
         )
+
 
 
 @router.get(
