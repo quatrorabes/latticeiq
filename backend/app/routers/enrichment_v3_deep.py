@@ -107,9 +107,16 @@ async def call_perplexity_deep_research(
     content = data["choices"][0]["message"]["content"]
 
     import json
+    import re
+
+    # Strip markdown code blocks if present
+    clean_content = content.strip()
+    if clean_content.startswith("```"):
+        clean_content = re.sub(r'^```(?:json)?\s*', '', clean_content)
+        clean_content = re.sub(r'\s*```$', '', clean_content)
 
     try:
-        parsed = json.loads(content)
+        parsed = json.loads(clean_content)
     except Exception as e:
         logger.error("Failed to parse deep-enrich JSON: %s", e)
         raise HTTPException(
