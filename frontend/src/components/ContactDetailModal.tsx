@@ -209,98 +209,110 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
   const handleDeepEnrich = async () => {
-    setIsDeepEnriching(true);
-    setMessage(null);
-    setEnrichmentProgress(0);
-    
-    try {
-      // Get token from Supabase
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
+  setIsDeepEnriching(true);
+  setMessage(null);
+  setEnrichmentProgress(0);
+  
+  try {
+    // Get token from Supabase
+    const { data: { session } } = await supabase.auth.getSession();
+    const token = session?.access_token;
 
-      if (!token) {
-        setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
-        setIsDeepEnriching(false);
-        return;
-      }
-
-      // Trigger deep enrichment
-      setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
-      setEnrichmentProgress(10);
-      
-      const result = await deepEnrichContact(contact.id, token);
-      console.log('✅ Deep enrichment triggered:', result);
-      
-      if (result.status === 'completed' || result.status === 'processing') {
-        setEnrichmentProgress(30);
-        
-        // Poll for completion
-        let completed = false;
-        let attempts = 0;
-        const maxAttempts = 30; // 30 * 2 seconds = 60 seconds max
-
-        while (!completed && attempts < maxAttempts) {
-          attempts++;
-          setEnrichmentProgress(30 + (attempts / maxAttempts) * 60);
-          
-          try {
-            const enrichedData = await getEnrichmentResult(contact.id, token);
-            console.log(`✅ Poll attempt ${attempts}: Got response`, enrichedData);
-            
-            // ✅ FIXED: Backend returns {enrichment_data: {...}} or just {...}
-            const actualData = enrichedData?.enrichment_data?.data 
-              || enrichedData?.enrichment_data 
-              || enrichedData;
-            
-            // Check if we have actual data
-            if (actualData && actualData.contact_profile) {
-              console.log('✅ Success! Got contact_profile', actualData);
-              
-              setDeepEnrichmentData(actualData as UnifiedEnrichmentResult);
-              const parsed = transformDeepEnrichment(actualData as UnifiedEnrichmentResult);
-              setParsedProfile(parsed);
-              setDeepProfile(JSON.stringify(actualData, null, 2));
-              setLastDeepEnriched(actualData.meta?.generated_at || new Date().toISOString());
-              setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
-              setActiveTab('deepprofile');
-              setEnrichmentProgress(100);
-              await refreshContact();
-              onUpdate?.();
-              completed = true;
-              break;
-            } else {
-              console.log(`⏳ Poll attempt ${attempts}: Data not ready yet. Response:`, enrichedData);
-            }
-          } catch (err) {
-            console.log(`❌ Poll attempt ${attempts} error:`, err);
-          }
-
-          // Wait 2 seconds before next attempt
-          await new Promise(resolve => setTimeout(resolve, 2000));
-        }
-
-        if (!completed) {
-          console.error('❌ Timed out after 30 attempts');
-          setMessage({ 
-            type: 'error', 
-            text: 'Enrichment took longer than expected (60s timeout). Please check backend logs.' 
-          });
-        }
-      } else if (result.error) {
-        console.error('❌ Enrichment error from backend:', result.error);
-        setMessage({ type: 'error', text: `Error: ${result.error}` });
-      } else {
-        console.warn('⚠️ Unexpected result status:', result.status);
-        setMessage({ type: 'error', text: `Unexpected status: ${result.status}` });
-      }
-    } catch (err: any) {
-      console.error('❌ Deep enrichment error:', err);
-      setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
-    } finally {
+    if (!token) {
+      setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
       setIsDeepEnriching(false);
-      setTimeout(() => setMessage(null), 5000);
+      return;
     }
-  };
+
+    // Trigger deep enrichment
+    setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
+    setEnrichmentProgress(10);
+    
+    const result = await deepEnrichContact(contact.id, token);
+    console.log('✅ Deep enrichment triggered:', result);
+    
+    if (result.status === 'completed' || result.status === 'processing') {
+      setEnrichmentProgress(30);
+      
+      // Poll for completion
+      let completed = false;
+      let attempts = 0;
+      const maxAttempts = 30;
+
+      while (!completed && attempts < maxAttempts) {
+        attempts++;
+        setEnrichmentProgress(30 + (attempts / maxAttempts) * 60);
+        
+        try {
+          const response = await getEnrichmentResult(contact.id, token);
+          console.log(`✅ Poll attempt ${attempts}: Got response`, response);
+          
+          // 🔧 CRITICAL FIX: Extract data from correct structure
+          let actualData = null;
+          
+          // Try multiple extraction patterns
+          if (response?.enrichment_data?.data) {
+            actualData = response.enrichment_data.data;
+          } else if (response?.enrichment_data) {
+            actualData = response.enrichment_data;
+          } else if (response?.contact_profile) {
+            actualData = response;
+          }
+          
+          console.log('🔍 Extracted actualData:', actualData);
+          
+          // Check if we have real data
+          if (actualData && Object.keys(actualData).length > 0 && actualData.contact_profile) {
+            console.log('✅ SUCCESS! Data ready:', actualData);
+            
+            // ✅ Set state with extracted data
+            setDeepEnrichmentData(actualData as UnifiedEnrichmentResult);
+            const parsed = transformDeepEnrichment(actualData as UnifiedEnrichmentResult);
+            setParsedProfile(parsed);
+            setDeepProfile(JSON.stringify(actualData, null, 2));
+            setLastDeepEnriched(actualData.meta?.generated_at || new Date().toISOString());
+            setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
+            setActiveTab('deepprofile');
+            setEnrichmentProgress(100);
+            
+            // 🔧 IMPORTANT: Refresh contact to sync all state
+            await refreshContact();
+            onUpdate?.();
+            completed = true;
+            break;
+          } else {
+            console.log(`⏳ Poll ${attempts}: Data not ready. Keys:`, actualData ? Object.keys(actualData) : 'null');
+          }
+        } catch (err) {
+          console.log(`❌ Poll attempt ${attempts} error:`, err);
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      if (!completed) {
+        console.error('❌ Timed out after 30 attempts');
+        setMessage({ 
+          type: 'error', 
+          text: 'Enrichment took longer than expected (60s timeout). Please check backend logs.' 
+        });
+      }
+    } else if (result.error) {
+      console.error('❌ Enrichment error from backend:', result.error);
+      setMessage({ type: 'error', text: `Error: ${result.error}` });
+    } else {
+      console.warn('⚠️ Unexpected result status:', result.status);
+      setMessage({ type: 'error', text: `Unexpected status: ${result.status}` });
+    }
+  } catch (err: any) {
+    console.error('❌ Deep enrichment error:', err);
+    setMessage({ type: 'error', text: err.message || 'Deep enrichment failed' });
+  } finally {
+    setIsDeepEnriching(false);
+    setTimeout(() => setMessage(null), 5000);
+  }
+};
+
 
   const handleScore = async () => {
     setIsScoring(true);
