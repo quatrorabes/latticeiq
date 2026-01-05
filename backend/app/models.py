@@ -259,3 +259,10 @@ class ImportErrorResponse(BaseModel):
     message: str
     details: List[ImportErrorDetail] = []
     status_code: int = 422
+
+# User model for authentication
+class User(BaseModel):
+    """Authenticated user from JWT token."""
+    id: str
+    email: Optional[str] = None
+    workspace_id: Optional[str] = None
