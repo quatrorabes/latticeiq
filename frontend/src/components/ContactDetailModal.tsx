@@ -265,15 +265,20 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           if (actualData && Object.keys(actualData).length > 0 && actualData.contact_profile) {
             console.log('✅ SUCCESS! Data ready:', actualData);
             
-            // ✅ Set state with extracted data
+            // Set data first
             setDeepEnrichmentData(actualData as UnifiedEnrichmentResult);
             const parsed = transformDeepEnrichment(actualData as UnifiedEnrichmentResult);
             setParsedProfile(parsed);
             setDeepProfile(JSON.stringify(actualData, null, 2));
             setLastDeepEnriched(actualData.meta?.generated_at || new Date().toISOString());
             setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
-            setActiveTab('deepprofile');
-            setEnrichmentProgress(100);
+
+            // Force tab switch AFTER state settles
+            setTimeout(() => {
+              setActiveTab('deepprofile');
+            }, 100);
+
+            
             
             // 🔧 IMPORTANT: Refresh contact to sync all state
             await refreshContact();
@@ -863,7 +868,7 @@ const renderDeepEnrichmentSections = () => {
 
           {activeTab === 'deepprofile' && (
             <div className="tab-pane">
-              {deepEnrichmentData ? (
+              {deepEnrichmentData && Object.keys(deepEnrichmentData).length > 0 ? (
                 renderDeepEnrichmentSections()
               ) : (
                 <div className="empty-state">
@@ -877,6 +882,7 @@ const renderDeepEnrichmentSections = () => {
               )}
             </div>
           )}
+
 
           {activeTab === 'scoring' && (
             <div className="tab-pane">
