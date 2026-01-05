@@ -68,7 +68,7 @@ class MessagingBox(BaseModel):
 
 
 class EnrichmentMeta(BaseModel):
-    generated_at: datetime = Field(default_factory=datetime.utcnow)
+    generated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     source: Literal["quick", "deep"] = "quick"
     model: Optional[str] = None
     provider: Optional[str] = None
@@ -131,7 +131,7 @@ class QuickEnrichLegacyData(BaseModel):
     )
     provider: Optional[str] = None
     model: Optional[str] = None
-    generated_at: Optional[datetime] = Field(
+    generated_at: Optional[str] = Field(
         None, alias="generatedat"
     )
     raw_text: Optional[str] = Field(None, alias="rawtext")

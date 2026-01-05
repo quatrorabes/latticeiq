@@ -152,7 +152,7 @@ def build_unified_from_quick(
     )
 
     meta = EnrichmentMeta(
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.utcnow().isoformat(),
         source="quick",
         model=model_name,
         provider="perplexity",
