@@ -1,5 +1,5 @@
 # backend/app/hubspot/router.py
-# BEST PRACTICES VERSION - API key in request body, saves to Supabase
+# COMPREHENSIVE VERSION v3.0 - Maximum field extraction from HubSpot
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -28,6 +28,123 @@ def get_supabase() -> Client:
     return create_client(url, key)
 
 # ============================================================================
+# HUBSPOT FIELD MAPPING
+# ============================================================================
+
+# All available HubSpot contact properties we want to extract
+HUBSPOT_PROPERTIES = [
+    # Core identity
+    "firstname",
+    "lastname",
+    "email",
+    "hs_additional_emails",
+    
+    # Phone numbers
+    "phone",
+    "mobilephone",
+    "hs_whatsapp_phone_number",
+    "fax",
+    
+    # Professional info
+    "jobtitle",
+    "company",
+    "department",
+    "hs_persona",
+    
+    # Social & web
+    "hs_linkedinid",
+    "linkedinbio",
+    "twitterhandle",
+    "website",
+    
+    # Location
+    "city",
+    "state",
+    "country",
+    "zip",
+    "address",
+    "hs_timezone",
+    
+    # Company intel
+    "industry",
+    "company_size",
+    "annualrevenue",
+    "numemployees",
+    
+    # Lead/sales info
+    "hs_lead_status",
+    "lifecyclestage",
+    "hs_sales_email_last_replied",
+    "notes_last_contacted",
+    "hs_buying_role",
+    
+    # Engagement metrics
+    "hs_email_open",
+    "hs_email_click",
+    "hs_analytics_num_page_views",
+    "hs_analytics_num_visits",
+    
+    # Dates
+    "createdate",
+    "lastmodifieddate",
+    "hs_lastactivitydate",
+    "notes_last_updated",
+    "date_of_birth",
+    
+    # Custom/misc
+    "message",
+    "hs_content_membership_notes",
+]
+
+# Map HubSpot fields to our database schema (using `title` not `job_title`)
+FIELD_MAPPING = {
+    # Core fields
+    "firstname": "first_name",
+    "lastname": "last_name",
+    "email": "email",
+    "phone": "phone",
+    "mobilephone": "mobile_phone",
+    "jobtitle": "title",  # Maps to `title` for consistency with Salesforce/models
+    "company": "company",
+    "department": "department",
+    
+    # Social/web
+    "hs_linkedinid": "linkedin_url",
+    "twitterhandle": "twitter_handle",
+    "website": "website",
+    
+    # Location
+    "city": "city",
+    "state": "state",
+    "country": "country",
+    "zip": "postal_code",
+    "address": "street_address",
+    
+    # Company intel
+    "industry": "industry",
+    "company_size": "company_size",
+    "annualrevenue": "annual_revenue",
+    "numemployees": "employee_count",
+    
+    # Lead info
+    "hs_lead_status": "lead_status",
+    "lifecyclestage": "lifecycle_stage",
+    "hs_buying_role": "buying_role",
+    "hs_persona": "hubspot_persona",
+    
+    # Engagement
+    "hs_analytics_num_page_views": "page_views",
+    "hs_analytics_num_visits": "site_visits",
+    
+    # Dates
+    "date_of_birth": "birthday",
+    "hs_lastactivitydate": "last_activity_at",
+    
+    # Notes
+    "message": "notes",
+}
+
+# ============================================================================
 # REQUEST MODELS
 # ============================================================================
 
@@ -39,6 +156,7 @@ class ImportRequest(BaseModel):
     batch_size: int = Field(default=50, ge=1, le=500, description="Number of contacts to import")
     workspace_id: Optional[str] = Field(default=None, description="Workspace UUID for multi-tenant isolation")
     skip_duplicates: bool = Field(default=True, description="Skip contacts that already exist by email")
+    include_all_properties: bool = Field(default=True, description="Fetch all available HubSpot properties")
 
 # ============================================================================
 # RESPONSE MODELS
@@ -49,6 +167,7 @@ class TestConnectionResponse(BaseModel):
     message: str
     contact_count: int = 0
     portal_id: Optional[str] = None
+    available_properties: int = 0
 
 class ImportedContact(BaseModel):
     contact_id: str
@@ -57,6 +176,9 @@ class ImportedContact(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     company: Optional[str] = None
+    title: Optional[str] = None
+    linkedin_url: Optional[str] = None
+    fields_populated: int = 0
     status: str = "success"
 
 class ImportResponse(BaseModel):
@@ -66,7 +188,14 @@ class ImportResponse(BaseModel):
     total: int
     duplicates_skipped: int = 0
     failed: int = 0
+    total_fields_populated: int = 0
+    avg_fields_per_contact: float = 0.0
     contacts: List[ImportedContact] = []
+
+class FieldMappingResponse(BaseModel):
+    hubspot_properties: List[str]
+    field_mapping: Dict[str, str]
+    total_properties: int
 
 # ============================================================================
 # HUBSPOT API FUNCTIONS
@@ -80,6 +209,7 @@ async def test_hubspot_connection(api_key: str) -> Dict[str, Any]:
     }
     
     async with aiohttp.ClientSession() as session:
+        # Test basic access
         async with session.get(
             "https://api.hubapi.com/crm/v3/objects/contacts?limit=1",
             headers=headers
@@ -91,23 +221,40 @@ async def test_hubspot_connection(api_key: str) -> Dict[str, Any]:
             if resp.status != 200:
                 text = await resp.text()
                 raise Exception(f"HubSpot API error: {resp.status} - {text}")
-            
             await resp.json()
 
+        # Get contact count
         async with session.get(
             "https://api.hubapi.com/crm/v3/objects/contacts?limit=0",
             headers=headers
         ) as resp:
+            total = 0
             if resp.status == 200:
                 count_data = await resp.json()
                 total = count_data.get("total", 0)
-            else:
-                total = 0
+        
+        # Get available properties count
+        available_props = 0
+        async with session.get(
+            "https://api.hubapi.com/crm/v3/properties/contacts",
+            headers=headers
+        ) as resp:
+            if resp.status == 200:
+                props_data = await resp.json()
+                available_props = len(props_data.get("results", []))
                 
-        return {"authenticated": True, "contact_count": total}
+        return {
+            "authenticated": True, 
+            "contact_count": total,
+            "available_properties": available_props
+        }
 
-async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dict[str, Any]]:
-    """Fetch contacts from HubSpot API with pagination"""
+async def fetch_hubspot_contacts(
+    api_key: str, 
+    batch_size: int = 50,
+    include_all_properties: bool = True
+) -> List[Dict[str, Any]]:
+    """Fetch contacts from HubSpot API with ALL available properties"""
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -117,6 +264,11 @@ async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dic
     after: Optional[str] = None
     remaining = batch_size
     
+    # Use comprehensive property list or basic
+    properties = HUBSPOT_PROPERTIES if include_all_properties else [
+        "firstname", "lastname", "email", "company", "phone", "jobtitle"
+    ]
+    
     async with aiohttp.ClientSession() as session:
         while remaining > 0:
             fetch_count = min(remaining, 100)
@@ -124,7 +276,7 @@ async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dic
             url = "https://api.hubapi.com/crm/v3/objects/contacts"
             params: Dict[str, Any] = {
                 "limit": fetch_count,
-                "properties": ["firstname", "lastname", "email", "company", "phone", "jobtitle"]
+                "properties": ",".join(properties)
             }
             if after:
                 params["after"] = after
@@ -140,7 +292,8 @@ async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dic
                 logger.info(f"Fetched {len(contacts)} contacts from HubSpot")
                 if contacts:
                     sample_props = contacts[0].get("properties", {})
-                    logger.info(f"Sample contact: email={sample_props.get('email')}, firstname={sample_props.get('firstname')}")
+                    populated = sum(1 for v in sample_props.values() if v)
+                    logger.info(f"Sample contact has {populated} populated fields")
                 
                 all_contacts.extend(contacts)
                 remaining -= len(contacts)
@@ -154,6 +307,85 @@ async def fetch_hubspot_contacts(api_key: str, batch_size: int = 50) -> List[Dic
     
     return all_contacts[:batch_size]
 
+def map_hubspot_to_contact(props: Dict[str, Any], hubspot_id: str) -> Dict[str, Any]:
+    """Map HubSpot properties to our contact schema with maximum data extraction"""
+    
+    contact = {
+        "hubspot_id": hubspot_id,
+        "source": "hubspot",
+        "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
+    }
+    
+    # Apply field mapping
+    for hs_field, our_field in FIELD_MAPPING.items():
+        value = props.get(hs_field)
+        if value and str(value).strip():
+            contact[our_field] = str(value).strip()
+    
+    # Handle special cases
+    
+    # LinkedIn URL normalization
+    linkedin = props.get("hs_linkedinid") or props.get("linkedinbio") or ""
+    if linkedin:
+        linkedin = str(linkedin).strip()
+        # Ensure it's a full URL
+        if linkedin and not linkedin.startswith("http"):
+            if "linkedin.com" not in linkedin:
+                linkedin = f"https://www.linkedin.com/in/{linkedin}"
+            else:
+                linkedin = f"https://{linkedin}"
+        contact["linkedin_url"] = linkedin
+    
+    # Twitter handle normalization (remove @)
+    twitter = props.get("twitterhandle") or ""
+    if twitter:
+        contact["twitter_handle"] = str(twitter).lstrip("@").strip()
+    
+    # Annual revenue - convert to integer if possible
+    revenue = props.get("annualrevenue")
+    if revenue:
+        try:
+            contact["annual_revenue"] = int(float(revenue))
+        except (ValueError, TypeError):
+            contact["annual_revenue"] = str(revenue)
+    
+    # Employee count
+    employees = props.get("numemployees") or props.get("company_size")
+    if employees:
+        contact["employee_count"] = str(employees)
+    
+    # Location fields
+    city = props.get("city")
+    state = props.get("state")
+    country = props.get("country")
+    
+    if city:
+        contact["city"] = str(city).strip()
+    if state:
+        contact["state"] = str(state).strip()
+    if country:
+        contact["country"] = str(country).strip()
+    if props.get("zip"):
+        contact["postal_code"] = str(props["zip"]).strip()
+    if props.get("address"):
+        contact["street_address"] = str(props["address"]).strip()
+    
+    # Build combined location string for easy display
+    location_parts = [p for p in [city, state, country] if p]
+    if location_parts:
+        contact["location"] = ", ".join(str(p).strip() for p in location_parts)
+    
+    return contact
+
+def count_populated_fields(contact: Dict[str, Any]) -> int:
+    """Count how many fields have values"""
+    exclude = {"id", "created_at", "updated_at", "source", "hubspot_id", "workspace_id"}
+    return sum(
+        1 for k, v in contact.items() 
+        if k not in exclude and v and str(v).strip()
+    )
+
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
@@ -164,9 +396,26 @@ async def hubspot_health():
     return {
         "status": "ok",
         "service": "hubspot",
-        "version": "2.2",
-        "features": ["test-connection", "import-batch", "debug-fetch"]
+        "version": "3.0",
+        "features": [
+            "test-connection",
+            "import-batch",
+            "comprehensive-field-mapping",
+            "debug-fetch",
+            "field-mapping"
+        ],
+        "properties_tracked": len(HUBSPOT_PROPERTIES),
+        "field_mapping_count": len(FIELD_MAPPING)
     }
+
+@router.get("/field-mapping", response_model=FieldMappingResponse)
+async def get_field_mapping():
+    """Get the HubSpot to LatticeIQ field mapping reference"""
+    return FieldMappingResponse(
+        hubspot_properties=HUBSPOT_PROPERTIES,
+        field_mapping=FIELD_MAPPING,
+        total_properties=len(HUBSPOT_PROPERTIES)
+    )
 
 @router.post("/test-connection", response_model=TestConnectionResponse)
 async def test_connection(request: TestConnectionRequest):
@@ -178,7 +427,8 @@ async def test_connection(request: TestConnectionRequest):
         return TestConnectionResponse(
             success=True,
             message="Connected to HubSpot successfully!",
-            contact_count=result.get("contact_count", 0)
+            contact_count=result.get("contact_count", 0),
+            available_properties=result.get("available_properties", 0)
         )
     except Exception as e:
         logger.error(f"HubSpot connection error: {str(e)}")
@@ -186,12 +436,41 @@ async def test_connection(request: TestConnectionRequest):
 
 @router.post("/debug-fetch")
 async def debug_fetch(request: TestConnectionRequest):
-    """Debug: Show raw HubSpot contact data"""
+    """Debug: Show raw HubSpot contact data with all properties and field coverage"""
     try:
-        contacts = await fetch_hubspot_contacts(request.api_key, 5)
+        contacts = await fetch_hubspot_contacts(
+            request.api_key, 
+            batch_size=5,
+            include_all_properties=True
+        )
+        
+        # Analyze which fields have data across sample
+        field_coverage = {}
+        for contact in contacts:
+            props = contact.get("properties", {})
+            for key, value in props.items():
+                if key not in field_coverage:
+                    field_coverage[key] = {"has_value": 0, "empty": 0, "sample_value": None}
+                if value and str(value).strip():
+                    field_coverage[key]["has_value"] += 1
+                    if field_coverage[key]["sample_value"] is None:
+                        field_coverage[key]["sample_value"] = str(value)[:100]
+                else:
+                    field_coverage[key]["empty"] += 1
+        
+        # Sort by fields that have data
+        sorted_coverage = dict(sorted(
+            field_coverage.items(), 
+            key=lambda x: x[1]["has_value"], 
+            reverse=True
+        ))
+        
         return {
             "count": len(contacts),
-            "sample": contacts[:5]
+            "properties_requested": len(HUBSPOT_PROPERTIES),
+            "field_coverage": sorted_coverage,
+            "sample_contacts": contacts[:3],
+            "mapping_preview": FIELD_MAPPING
         }
     except Exception as e:
         logger.error(f"Debug fetch error: {str(e)}")
@@ -199,11 +478,16 @@ async def debug_fetch(request: TestConnectionRequest):
 
 @router.post("/import-batch", response_model=ImportResponse)
 async def import_batch(request: ImportRequest):
-    """Import contacts from HubSpot and save to database."""
+    """Import contacts from HubSpot with comprehensive field mapping."""
     try:
-        logger.info(f"Importing {request.batch_size} contacts from HubSpot...")
+        logger.info(f"Importing {request.batch_size} contacts from HubSpot (comprehensive mode={request.include_all_properties})...")
         
-        hubspot_contacts = await fetch_hubspot_contacts(request.api_key, request.batch_size)
+        # Fetch contacts with all properties
+        hubspot_contacts = await fetch_hubspot_contacts(
+            request.api_key, 
+            request.batch_size,
+            include_all_properties=request.include_all_properties
+        )
         
         if not hubspot_contacts:
             return ImportResponse(
@@ -219,6 +503,7 @@ async def import_batch(request: ImportRequest):
         imported_contacts: List[ImportedContact] = []
         duplicates_skipped = 0
         failed = 0
+        total_fields = 0
         
         for contact in hubspot_contacts:
             try:
@@ -233,6 +518,7 @@ async def import_batch(request: ImportRequest):
                     failed += 1
                     continue
                 
+                # Check for duplicates
                 if request.skip_duplicates:
                     existing = supabase.table("contacts").select("id").eq("email", email).execute()
                     
@@ -245,28 +531,31 @@ async def import_batch(request: ImportRequest):
                             first_name=props.get("firstname"),
                             last_name=props.get("lastname"),
                             company=props.get("company"),
+                            title=props.get("jobtitle"),
+                            linkedin_url=props.get("hs_linkedinid"),
+                            fields_populated=0,
                             status="duplicate_skipped"
                         ))
                         continue
                 
+                # Map HubSpot data to our schema
                 contact_id = str(uuid.uuid4())
-                new_contact = {
-                    "id": contact_id,
-                    "workspace_id": None,  # workspace_id is UUID type, use NULL for now
-                    "email": email,
-                    "first_name": props.get("firstname") or "",
-                    "last_name": props.get("lastname") or "",
-                    "company": props.get("company") or "",
-                    "phone": props.get("phone") or "",
-                    "job_title": props.get("jobtitle") or "",
-                    "source": "hubspot",
-                    "hubspot_id": hubspot_id,
-                    "created_at": datetime.utcnow().isoformat(),
-                    "updated_at": datetime.utcnow().isoformat(),
-                }
+                mapped_contact = map_hubspot_to_contact(props, hubspot_id)
+                mapped_contact["id"] = contact_id
+                mapped_contact["email"] = email
                 
-                logger.info(f"Inserting contact: {email}")
-                result = supabase.table("contacts").insert(new_contact).execute()
+                # Handle workspace_id (UUID type)
+                if request.workspace_id:
+                    mapped_contact["workspace_id"] = request.workspace_id
+                else:
+                    mapped_contact["workspace_id"] = None
+                
+                # Count populated fields
+                fields_count = count_populated_fields(mapped_contact)
+                total_fields += fields_count
+                
+                logger.info(f"Inserting contact: {email} with {fields_count} populated fields")
+                result = supabase.table("contacts").insert(mapped_contact).execute()
                 
                 if result.data:
                     logger.info(f"Successfully inserted: {email}")
@@ -274,9 +563,12 @@ async def import_batch(request: ImportRequest):
                         contact_id=contact_id,
                         hubspot_id=hubspot_id,
                         email=email,
-                        first_name=props.get("firstname"),
-                        last_name=props.get("lastname"),
-                        company=props.get("company"),
+                        first_name=mapped_contact.get("first_name"),
+                        last_name=mapped_contact.get("last_name"),
+                        company=mapped_contact.get("company"),
+                        title=mapped_contact.get("title"),
+                        linkedin_url=mapped_contact.get("linkedin_url"),
+                        fields_populated=fields_count,
                         status="success"
                     ))
                 else:
@@ -284,21 +576,28 @@ async def import_batch(request: ImportRequest):
                     failed += 1
                     
             except Exception as e:
-                logger.error(f"Error saving contact: {str(e)}")
+                logger.error(f"Error saving contact {email if 'email' in dir() else 'unknown'}: {str(e)}")
                 failed += 1
                 continue
         
         imported_count = len([c for c in imported_contacts if c.status == "success"])
+        avg_fields = total_fields / imported_count if imported_count > 0 else 0.0
         
-        logger.info(f"HubSpot import complete: {imported_count} imported, {duplicates_skipped} duplicates, {failed} failed")
+        logger.info(
+            f"HubSpot import complete: {imported_count} imported, "
+            f"{duplicates_skipped} duplicates, {failed} failed, "
+            f"avg {avg_fields:.1f} fields per contact"
+        )
         
         return ImportResponse(
             success=True,
-            message=f"Successfully imported {imported_count} contacts from HubSpot",
+            message=f"Imported {imported_count} contacts with avg {avg_fields:.1f} fields each",
             imported=imported_count,
             total=len(hubspot_contacts),
             duplicates_skipped=duplicates_skipped,
             failed=failed,
+            total_fields_populated=total_fields,
+            avg_fields_per_contact=round(avg_fields, 1),
             contacts=imported_contacts
         )
         
@@ -306,4 +605,4 @@ async def import_batch(request: ImportRequest):
         logger.error(f"HubSpot import error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-logger.info("HubSpot router loaded (v2.2 - workspace_id fix)")
+logger.info(f"HubSpot router loaded (v3.0 - comprehensive field mapping, {len(HUBSPOT_PROPERTIES)} properties tracked)")
