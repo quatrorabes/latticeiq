@@ -1,5 +1,5 @@
 # backend/app/hubspot/router.py
-# COMPREHENSIVE VERSION v3.0 - Maximum field extraction from HubSpot
+# COMPREHENSIVE VERSION v3.1 - Fixed LinkedIn field mapping
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -51,8 +51,11 @@ HUBSPOT_PROPERTIES = [
     "department",
     "hs_persona",
     
-    # Social & web
+    # Social & web - ALL LinkedIn variants
     "hs_linkedinid",
+    "linkedin_account",        # Custom field (internal name)
+    "linkedin_profile_url",    # Custom field (internal name)
+    "hs_linkedin_url",         # HubSpot built-in
     "linkedinbio",
     "twitterhandle",
     "website",
@@ -96,6 +99,15 @@ HUBSPOT_PROPERTIES = [
     "hs_content_membership_notes",
 ]
 
+# All possible LinkedIn field names in HubSpot (checked in order of priority)
+LINKEDIN_FIELDS = [
+    "linkedin_account",        # Custom - highest fill rate (29.81%)
+    "hs_linkedin_url",         # HubSpot built-in (9.08%)
+    "linkedin_profile_url",    # Custom (6.79%)
+    "hs_linkedinid",           # Legacy HubSpot field
+    "linkedinbio",             # Fallback
+]
+
 # Map HubSpot fields to our database schema (using `title` not `job_title`)
 FIELD_MAPPING = {
     # Core fields
@@ -108,8 +120,7 @@ FIELD_MAPPING = {
     "company": "company",
     "department": "department",
     
-    # Social/web
-    "hs_linkedinid": "linkedin_url",
+    # Social/web - LinkedIn handled separately in map function
     "twitterhandle": "twitter_handle",
     "website": "website",
     
@@ -195,6 +206,7 @@ class ImportResponse(BaseModel):
 class FieldMappingResponse(BaseModel):
     hubspot_properties: List[str]
     field_mapping: Dict[str, str]
+    linkedin_fields: List[str]
     total_properties: int
 
 # ============================================================================
@@ -307,6 +319,43 @@ async def fetch_hubspot_contacts(
     
     return all_contacts[:batch_size]
 
+
+def extract_linkedin_url(props: Dict[str, Any]) -> Optional[str]:
+    """
+    Extract LinkedIn URL from any of the possible HubSpot LinkedIn fields.
+    Checks all variants and returns the first non-empty value, normalized to a full URL.
+    """
+    linkedin = None
+    source_field = None
+    
+    # Check each LinkedIn field in priority order
+    for field in LINKEDIN_FIELDS:
+        value = props.get(field)
+        if value and str(value).strip():
+            linkedin = str(value).strip()
+            source_field = field
+            logger.debug(f"Found LinkedIn in '{field}': {linkedin[:50]}...")
+            break
+    
+    if not linkedin:
+        return None
+    
+    # Normalize to full URL
+    if not linkedin.startswith("http"):
+        if "linkedin.com" in linkedin:
+            linkedin = f"https://{linkedin}"
+        else:
+            # Just a username/slug
+            linkedin = f"https://www.linkedin.com/in/{linkedin}"
+    
+    # Ensure https
+    if linkedin.startswith("http://"):
+        linkedin = linkedin.replace("http://", "https://")
+    
+    logger.info(f"Extracted LinkedIn URL from '{source_field}': {linkedin}")
+    return linkedin
+
+
 def map_hubspot_to_contact(props: Dict[str, Any], hubspot_id: str) -> Dict[str, Any]:
     """Map HubSpot properties to our contact schema with maximum data extraction"""
     
@@ -323,19 +372,10 @@ def map_hubspot_to_contact(props: Dict[str, Any], hubspot_id: str) -> Dict[str, 
         if value and str(value).strip():
             contact[our_field] = str(value).strip()
     
-    # Handle special cases
-    
-    # LinkedIn URL normalization
-    linkedin = props.get("hs_linkedinid") or props.get("linkedinbio") or ""
-    if linkedin:
-        linkedin = str(linkedin).strip()
-        # Ensure it's a full URL
-        if linkedin and not linkedin.startswith("http"):
-            if "linkedin.com" not in linkedin:
-                linkedin = f"https://www.linkedin.com/in/{linkedin}"
-            else:
-                linkedin = f"https://{linkedin}"
-        contact["linkedin_url"] = linkedin
+    # Handle LinkedIn URL - check ALL possible fields
+    linkedin_url = extract_linkedin_url(props)
+    if linkedin_url:
+        contact["linkedin_url"] = linkedin_url
     
     # Twitter handle normalization (remove @)
     twitter = props.get("twitterhandle") or ""
@@ -396,15 +436,17 @@ async def hubspot_health():
     return {
         "status": "ok",
         "service": "hubspot",
-        "version": "3.0",
+        "version": "3.1",
         "features": [
             "test-connection",
             "import-batch",
             "comprehensive-field-mapping",
+            "multi-linkedin-field-support",
             "debug-fetch",
             "field-mapping"
         ],
         "properties_tracked": len(HUBSPOT_PROPERTIES),
+        "linkedin_fields_checked": len(LINKEDIN_FIELDS),
         "field_mapping_count": len(FIELD_MAPPING)
     }
 
@@ -414,6 +456,7 @@ async def get_field_mapping():
     return FieldMappingResponse(
         hubspot_properties=HUBSPOT_PROPERTIES,
         field_mapping=FIELD_MAPPING,
+        linkedin_fields=LINKEDIN_FIELDS,
         total_properties=len(HUBSPOT_PROPERTIES)
     )
 
@@ -446,8 +489,22 @@ async def debug_fetch(request: TestConnectionRequest):
         
         # Analyze which fields have data across sample
         field_coverage = {}
+        linkedin_analysis = []
+        
         for contact in contacts:
             props = contact.get("properties", {})
+            
+            # Track LinkedIn fields specifically
+            contact_linkedin = {}
+            for lf in LINKEDIN_FIELDS:
+                val = props.get(lf)
+                contact_linkedin[lf] = val if val else None
+            linkedin_analysis.append({
+                "email": props.get("email"),
+                "linkedin_fields": contact_linkedin,
+                "extracted_url": extract_linkedin_url(props)
+            })
+            
             for key, value in props.items():
                 if key not in field_coverage:
                     field_coverage[key] = {"has_value": 0, "empty": 0, "sample_value": None}
@@ -468,6 +525,8 @@ async def debug_fetch(request: TestConnectionRequest):
         return {
             "count": len(contacts),
             "properties_requested": len(HUBSPOT_PROPERTIES),
+            "linkedin_fields_checked": LINKEDIN_FIELDS,
+            "linkedin_analysis": linkedin_analysis,
             "field_coverage": sorted_coverage,
             "sample_contacts": contacts[:3],
             "mapping_preview": FIELD_MAPPING
@@ -518,6 +577,9 @@ async def import_batch(request: ImportRequest):
                     failed += 1
                     continue
                 
+                # Extract LinkedIn for display
+                linkedin_url = extract_linkedin_url(props)
+                
                 # Check for duplicates
                 if request.skip_duplicates:
                     existing = supabase.table("contacts").select("id").eq("email", email).execute()
@@ -532,7 +594,7 @@ async def import_batch(request: ImportRequest):
                             last_name=props.get("lastname"),
                             company=props.get("company"),
                             title=props.get("jobtitle"),
-                            linkedin_url=props.get("hs_linkedinid"),
+                            linkedin_url=linkedin_url,
                             fields_populated=0,
                             status="duplicate_skipped"
                         ))
@@ -554,7 +616,7 @@ async def import_batch(request: ImportRequest):
                 fields_count = count_populated_fields(mapped_contact)
                 total_fields += fields_count
                 
-                logger.info(f"Inserting contact: {email} with {fields_count} populated fields")
+                logger.info(f"Inserting contact: {email} with {fields_count} populated fields (LinkedIn: {mapped_contact.get('linkedin_url', 'none')})")
                 result = supabase.table("contacts").insert(mapped_contact).execute()
                 
                 if result.data:
@@ -605,4 +667,4 @@ async def import_batch(request: ImportRequest):
         logger.error(f"HubSpot import error: {str(e)}")
         raise HTTPException(status_code=400, detail=str(e))
 
-logger.info(f"HubSpot router loaded (v3.0 - comprehensive field mapping, {len(HUBSPOT_PROPERTIES)} properties tracked)")
+logger.info(f"HubSpot router loaded (v3.1 - multi-LinkedIn field support, {len(HUBSPOT_PROPERTIES)} properties tracked)")
