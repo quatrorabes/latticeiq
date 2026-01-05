@@ -10,7 +10,7 @@ import {
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
 import { enrichContact, deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabaseClient';
 import '../styles/ContactDetailModal.css';
 
 interface Props {

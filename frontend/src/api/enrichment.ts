@@ -38,3 +38,24 @@ export async function getEnrichmentResult(
   }
   return await resp.json();
 }
+
+// Quick enrichment (single contact)
+export async function enrichContact(contactId: string) {
+  const API_URL = import.meta.env.VITE_API_URL;
+  const response = await fetch(
+    `${API_URL}/api/v3/enrichment/quick-enrich/${contactId}`,
+    { method: 'POST' }
+  );
+  if (!response.ok) {
+    throw new Error(`Quick enrich failed: ${response.status}`);
+  }
+  return response.json();
+}
+
+// Batch enrichment (multiple contacts)
+export async function enrichContacts(contactIds: string[]) {
+  const results = await Promise.all(
+    contactIds.map(id => enrichContact(id))
+  );
+  return results;
+}
