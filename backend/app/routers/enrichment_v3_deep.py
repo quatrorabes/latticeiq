@@ -549,6 +549,38 @@ async def deep_enrich_contact(
 
 
 @router.get(
+    "/deep-enrich/{contact_id}/result",
+    response_model=UnifiedEnrichmentResult,
+    summary="Get the final merged enrichment result (deep preferred, quick fallback)",
+)
+async def deep_enrich_result(
+    contact_id: str = Path(...),
+    user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+):
+    contact_res = supabase.table("contacts").select(
+        "id, enrichment_data"
+    ).eq("id", contact_id).execute()
+    
+    # contact_res.data is always a list
+    if not contact_res.data or len(contact_res.data) == 0:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    
+    contact = contact_res.data[0]
+    data = contact.get("enrichment_data") or {}
+    if not data:
+        raise HTTPException(status_code=404, detail="No enrichment data found")
+
+    if data.get("mode") == "deep" and data.get("data"):
+        return UnifiedEnrichmentResult.parse_obj(data["data"])
+
+    if data.get("mode") == "quick" and data.get("data"):
+        return UnifiedEnrichmentResult.parse_obj(data["data"])
+
+    raise HTTPException(status_code=404, detail="Enrichment data not in expected format")
+
+
+@router.get(
     "/deep-enrich/{contact_id}/status",
     response_model=DeepEnrichmentStatus,
 )
@@ -560,10 +592,12 @@ async def deep_enrich_status(
     contact_res = supabase.table("contacts").select(
         "id, enrichment_status"
     ).eq("id", contact_id).execute()
-    if not contact_res.data:
+    
+    if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    status_value = contact_res.data.get("enrichment_status") or "pending"
+    contact = contact_res.data[0]
+    status_value = contact.get("enrichment_status") or "pending"
 
     mapped = "queued"
     if status_value in ("pending", None):
@@ -584,35 +618,6 @@ async def deep_enrich_status(
 
 
 @router.get(
-    "/deep-enrich/{contact_id}/result",
-    response_model=UnifiedEnrichmentResult,
-    summary="Get the final merged enrichment result (deep preferred, quick fallback)",
-)
-async def deep_enrich_result(
-    contact_id: str = Path(...),
-    user=Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
-):
-    contact_res = supabase.table("contacts").select(
-        "id, enrichment_data"
-    ).eq("id", contact_id).execute()
-    if not contact_res.data:
-        raise HTTPException(status_code=404, detail="Contact not found")
-
-    data = contact_res.data.get("enrichment_data") or {}
-    if not data:
-        raise HTTPException(status_code=404, detail="No enrichment data found")
-
-    if data.get("mode") == "deep" and data.get("data"):
-        return UnifiedEnrichmentResult.parse_obj(data["data"])
-
-    if data.get("mode") == "quick" and data.get("data"):
-        return UnifiedEnrichmentResult.parse_obj(data["data"])
-
-    raise HTTPException(status_code=404, detail="Enrichment data not in expected format")
-
-
-@router.get(
     "/deep-enrich/{contact_id}/debug",
     response_model=DebugDeepEnrichResponse,
     summary="Full debug payload for deep enrichment",
@@ -625,10 +630,12 @@ async def deep_enrich_debug(
     contact_res = supabase.table("contacts").select(
         "id, enrichment_data"
     ).eq("id", contact_id).execute()
-    if not contact_res.data:
+    
+    if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    data = contact_res.data.get("enrichment_data") or {}
+    contact = contact_res.data[0]
+    data = contact.get("enrichment_data") or {}
     if not data or data.get("mode") != "deep":
         raise HTTPException(
             status_code=404,
