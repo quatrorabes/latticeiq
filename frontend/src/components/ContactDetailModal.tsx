@@ -378,25 +378,26 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     });
   };
 
-  /**
-   * FIXED: renderDeepEnrichmentSections with snake_case
-   */
-  const renderDeepEnrichmentSections = () => {
-    if (!deepEnrichmentData) return null;
-    
-    // ✅ FIXED: Snake_case keys
-    const { 
-      contact_profile, 
-      company_profile, 
-      current_focus, 
-      buying_signals, 
-      risks_and_objections, 
-      messaging 
-    } = deepEnrichmentData;
+const renderDeepEnrichmentSections = () => {
+  if (!deepEnrichmentData) {
+    console.log('❌ No deepEnrichmentData');
+    return null;
+  }
+  
+  console.log('🎨 Rendering deep enrichment sections:', deepEnrichmentData);
+  
+  // ✅ SAFE EXTRACTION with defaults
+  const contact_profile = deepEnrichmentData.contact_profile || {};
+  const company_profile = deepEnrichmentData.company_profile || {};
+  const current_focus = deepEnrichmentData.current_focus || {};
+  const buying_signals = deepEnrichmentData.buying_signals || {};
+  const risks_and_objections = deepEnrichmentData.risks_and_objections || {};
+  const messaging = deepEnrichmentData.messaging || {};
 
-    return (
-      <div className="deep-enrichment-sections">
-        {/* Contact Profile Section */}
+  return (
+    <div className="deep-enrichment-sections">
+      {/* Contact Profile Section */}
+      {contact_profile && Object.keys(contact_profile).length > 0 && (
         <div className="enrichment-card contact-profile-card">
           <div className="card-header">
             <h4>Contact Profile</h4>
@@ -421,8 +422,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             )}
           </div>
         </div>
+      )}
 
-        {/* Company Profile Section */}
+      {/* Company Profile Section */}
+      {company_profile && Object.keys(company_profile).length > 0 && (
         <div className="enrichment-card company-profile-card">
           <div className="card-header">
             <h4>Company Profile</h4>
@@ -447,8 +450,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             )}
           </div>
         </div>
+      )}
 
-        {/* Current Focus Section */}
+      {/* Current Focus Section */}
+      {current_focus && Object.keys(current_focus).length > 0 && (
         <div className="enrichment-card current-focus-card">
           <div className="card-header">
             <h4>Current Focus</h4>
@@ -486,8 +491,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             )}
           </div>
         </div>
+      )}
 
-        {/* Buying Signals Section */}
+      {/* Buying Signals Section */}
+      {buying_signals && Object.keys(buying_signals).length > 0 && (
         <div className="enrichment-card buying-signals-card signal-card">
           <div className="card-header">
             <h4>Buying Signals</h4>
@@ -535,8 +542,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             )}
           </div>
         </div>
+      )}
 
-        {/* Risks & Objections Section */}
+      {/* Risks & Objections Section */}
+      {risks_and_objections && Object.keys(risks_and_objections).length > 0 && (
         <div className="enrichment-card risks-card">
           <div className="card-header">
             <h4>Risks & Objections</h4>
@@ -574,8 +583,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             )}
           </div>
         </div>
+      )}
 
-        {/* Messaging Section */}
+      {/* Messaging Section */}
+      {messaging && Object.keys(messaging).length > 0 && (
         <div className="enrichment-card messaging-card">
           <div className="card-header">
             <h4>Messaging</h4>
@@ -613,19 +624,21 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             )}
           </div>
         </div>
+      )}
 
-        {/* Metadata */}
-        {deepEnrichmentData.meta && (
-          <div className="enrichment-meta">
-            <span>Generated: {deepEnrichmentData.meta.generated_at ? new Date(deepEnrichmentData.meta.generated_at).toLocaleString() : 'N/A'}</span>
-            <span>Source: {deepEnrichmentData.meta.source || 'N/A'}</span>
-            {deepEnrichmentData.meta.model && <span>Model: {deepEnrichmentData.meta.model}</span>}
-            {deepEnrichmentData.meta.provider && <span>Provider: {deepEnrichmentData.meta.provider}</span>}
-          </div>
-        )}
-      </div>
-    );
-  };
+      {/* Metadata */}
+      {deepEnrichmentData.meta && (
+        <div className="enrichment-meta">
+          <span>Generated: {deepEnrichmentData.meta.generated_at ? new Date(deepEnrichmentData.meta.generated_at).toLocaleString() : 'N/A'}</span>
+          <span>Source: {deepEnrichmentData.meta.source || 'N/A'}</span>
+          {deepEnrichmentData.meta.model && <span>Model: {deepEnrichmentData.meta.model}</span>}
+          {deepEnrichmentData.meta.provider && <span>Provider: {deepEnrichmentData.meta.provider}</span>}
+        </div>
+      )}
+    </div>
+  );
+};
+
 
   return (
     <div className="modal-overlay" onClick={onClose}>
