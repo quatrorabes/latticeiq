@@ -149,7 +149,7 @@ def build_unified_from_deep(
     )
 
     meta = EnrichmentMeta(
-        generated_at=datetime.utcnow(),
+        generated_at=datetime.utcnow().isoformat(),
         source="deep",
         model=model_name,
         provider="perplexity",
