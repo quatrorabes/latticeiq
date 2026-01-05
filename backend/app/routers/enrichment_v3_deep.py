@@ -287,7 +287,7 @@ async def call_perplexity_deep_research(
     The model is instructed to return a full UnifiedEnrichmentResult JSON.
     """
 
-    name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+    name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
     company = contact.get("company") or ""
     title = contact.get("title") or contact.get("job_title") or ""
     linkedin_url = contact.get("linkedin_url") or ""
