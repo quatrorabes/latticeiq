@@ -47,7 +47,7 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
     if (cp.seniority) profText += `Seniority: ${cp.seniority}\n\n`;
     profText += 'Background:\n';
     if (Array.isArray(cp.background_bullets)) {
-      cp.background_bullets.forEach(bullet => {
+      cp.background_bullets.forEach((bullet: any) => {
         profText += `- ${bullet.text}\n`;
       });
     }
@@ -64,7 +64,7 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
     if (company.region) companyText += `Region: ${company.region}\n\n`;
     companyText += 'Key Products/Services:\n';
     if (Array.isArray(company.key_products_or_services)) {
-      company.key_products_or_services.forEach(product => {
+      company.key_products_or_services.forEach((product: any) => {
         companyText += `- ${product.text}\n`;
       });
     }
@@ -73,29 +73,29 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
 
   // Extract pain points from risks & objections
   if (Array.isArray(enrichment.risks_and_objections?.risk_bullets)) {
-    sections.painPoints = enrichment.risks_and_objections.risk_bullets.map(b => b.text);
+    sections.painPoints = enrichment.risks_and_objections.risk_bullets.map((b: any) => b.text);
   }
 
   // Extract talking points from messaging & current focus
   const talkingPoints: string[] = [];
   if (enrichment.messaging?.cold_openers) {
-    enrichment.messaging.cold_openers.forEach(b => talkingPoints.push(b.text));
+    enrichment.messaging.cold_openers.forEach((b: any) => talkingPoints.push(b.text));
   }
   if (enrichment.current_focus?.strategic_initiatives) {
-    enrichment.current_focus.strategic_initiatives.forEach(b => talkingPoints.push(`Initiative: ${b.text}`));
+    enrichment.current_focus.strategic_initiatives.forEach((b: any) => talkingPoints.push(`Initiative: ${b.text}`));
   }
   sections.talkingPoints = talkingPoints;
 
   // Extract key insights from buying signals
   const insights: string[] = [];
   if (enrichment.buying_signals?.recent_news) {
-    enrichment.buying_signals.recent_news.forEach(b => insights.push(b.text));
+    enrichment.buying_signals.recent_news.forEach((b: any) => insights.push(b.text));
   }
   if (enrichment.buying_signals?.timing_triggers) {
-    enrichment.buying_signals.timing_triggers.forEach(b => insights.push(`Timing: ${b.text}`));
+    enrichment.buying_signals.timing_triggers.forEach((b: any) => insights.push(`Timing: ${b.text}`));
   }
-  if (enrichment.buying_signals?.hirings_ignals) {
-    enrichment.buying_signals.hirings_ignals.forEach(b => insights.push(`Hiring: ${b.text}`));
+  if (enrichment.buying_signals?.hiring_signals) {
+    enrichment.buying_signals.hiring_signals.forEach((b: any) => insights.push(`Hiring: ${b.text}`));
   }
   sections.keyInsights = insights;
 
@@ -129,8 +129,8 @@ function parseDeepProfile(markdown: string): ParsedProfile {
     
     return match[0]
       .split('\n')
-      .filter(line => line.trim().startsWith('-') || line.trim().match(/^\d\./))
-      .map(line => line.replace(/^[- \d\.]+/, '').trim())
+      .filter((line: string) => line.trim().startsWith('-') || line.trim().match(/^\d\./))
+      .map((line: string) => line.replace(/^[- \d\.]+/, '').trim())
       .filter(Boolean);
   };
 
@@ -320,7 +320,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Delete ${contact.firstname} ${contact.lastname}? This cannot be undone.`)) return;
+    if (!confirm(`Delete ${contact.first_name} ${contact.last_name}? This cannot be undone.`)) return;
     try {
       await deleteContact(contact.id);
       onUpdate?.();
@@ -357,7 +357,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
 
   const renderMarkdown = (text: string) => {
     if (!text) return null;
-    return text.split('\n').map((line, i) => {
+    return text.split('\n').map((line: string, i: number) => {
       if (line.startsWith('## ')) return <h2 key={i} className="profile-h2">{line.replace('## ', '')}</h2>;
       if (line.startsWith('### ')) return <h3 key={i} className="profile-h3">{line.replace('### ', '')}</h3>;
       if (line.startsWith('- ')) return <li key={i} className="profile-li">{line.replace('- ', '')}</li>;
@@ -398,7 +398,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="bullets-section">
                 <h5>Background</h5>
                 <ul>
-                  {contact_profile.background_bullets.map((bullet, i) => (
+                  {contact_profile.background_bullets.map((bullet: any, i: number) => (
                     <li key={i}>
                       {bullet.text}
                       {bullet.evidence && <span className="evidence"> [{bullet.evidence}]</span>}
@@ -427,7 +427,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="bullets-section">
                 <h5>Key Products/Services</h5>
                 <ul>
-                  {company_profile.key_products_or_services.map((product, i) => (
+                  {company_profile.key_products_or_services.map((product: any, i: number) => (
                     <li key={i}>{product.text}</li>
                   ))}
                 </ul>
@@ -446,7 +446,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="focus-subsection">
                 <h5>Strategic Initiatives</h5>
                 <ul>
-                  {current_focus.strategic_initiatives.map((init, i) => (
+                  {current_focus.strategic_initiatives.map((init: any, i: number) => (
                     <li key={i}>{init.text}</li>
                   ))}
                 </ul>
@@ -456,7 +456,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="focus-subsection">
                 <h5>Recent Projects</h5>
                 <ul>
-                  {current_focus.recent_projects.map((proj, i) => (
+                  {current_focus.recent_projects.map((proj: any, i: number) => (
                     <li key={i}>{proj.text}</li>
                   ))}
                 </ul>
@@ -466,7 +466,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="focus-subsection">
                 <h5>Primary KPIs</h5>
                 <ul>
-                  {current_focus.primary_kpis.map((kpi, i) => (
+                  {current_focus.primary_kpis.map((kpi: any, i: number) => (
                     <li key={i}>{kpi.text}</li>
                   ))}
                 </ul>
@@ -485,7 +485,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="signal-subsection">
                 <h5>Recent News</h5>
                 <ul>
-                  {buying_signals.recent_news.map((news, i) => (
+                  {buying_signals.recent_news.map((news: any, i: number) => (
                     <li key={i}>{news.text}</li>
                   ))}
                 </ul>
@@ -495,17 +495,17 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="signal-subsection">
                 <h5>Timing Triggers</h5>
                 <ul>
-                  {buying_signals.timing_triggers.map((trigger, i) => (
+                  {buying_signals.timing_triggers.map((trigger: any, i: number) => (
                     <li key={i}>{trigger.text}</li>
                   ))}
                 </ul>
               </div>
             )}
-            {buying_signals.hirings_ignals && buying_signals.hirings_ignals.length > 0 && (
+            {buying_signals.hiring_signals && buying_signals.hiring_signals.length > 0 && (
               <div className="signal-subsection">
                 <h5>Hiring Signals</h5>
                 <ul>
-                  {buying_signals.hirings_ignals.map((hire, i) => (
+                  {buying_signals.hiring_signals.map((hire: any, i: number) => (
                     <li key={i}>{hire.text}</li>
                   ))}
                 </ul>
@@ -515,7 +515,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="signal-subsection">
                 <h5>Tech Changes</h5>
                 <ul>
-                  {buying_signals.tech_changes.map((tech, i) => (
+                  {buying_signals.tech_changes.map((tech: any, i: number) => (
                     <li key={i}>{tech.text}</li>
                   ))}
                 </ul>
@@ -534,7 +534,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="risk-subsection">
                 <h5>Risk Bullets</h5>
                 <ul>
-                  {risks_and_objections.risk_bullets.map((risk, i) => (
+                  {risks_and_objections.risk_bullets.map((risk: any, i: number) => (
                     <li key={i}>{risk.text}</li>
                   ))}
                 </ul>
@@ -544,7 +544,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="risk-subsection">
                 <h5>Likely Objections</h5>
                 <ul>
-                  {risks_and_objections.likely_objections.map((obj, i) => (
+                  {risks_and_objections.likely_objections.map((obj: any, i: number) => (
                     <li key={i}>{obj.text}</li>
                   ))}
                 </ul>
@@ -554,7 +554,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="risk-subsection">
                 <h5>Landmines</h5>
                 <ul>
-                  {risks_and_objections.landmines.map((landmine, i) => (
+                  {risks_and_objections.landmines.map((landmine: any, i: number) => (
                     <li key={i}>{landmine.text}</li>
                   ))}
                 </ul>
@@ -573,7 +573,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="messaging-subsection">
                 <h5>Cold Openers</h5>
                 <ul>
-                  {messaging.cold_openers.map((opener, i) => (
+                  {messaging.cold_openers.map((opener: any, i: number) => (
                     <li key={i}>{opener.text}</li>
                   ))}
                 </ul>
@@ -583,7 +583,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="messaging-subsection">
                 <h5>Value Propositions</h5>
                 <ul>
-                  {messaging.value_props.map((prop, i) => (
+                  {messaging.value_props.map((prop: any, i: number) => (
                     <li key={i}>{prop.text}</li>
                   ))}
                 </ul>
@@ -593,7 +593,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               <div className="messaging-subsection">
                 <h5>Call-to-Action Ideas</h5>
                 <ul>
-                  {messaging.call_to_action_ideas.map((cta, i) => (
+                  {messaging.call_to_action_ideas.map((cta: any, i: number) => (
                     <li key={i}>{cta.text}</li>
                   ))}
                 </ul>
@@ -622,29 +622,29 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
         <div className="modal-header">
           <div className="header-left">
             <div className="avatar-large">
-              {contact.firstname?.charAt(0)}{contact.lastname?.charAt(0)}
+              {contact.first_name?.charAt(0)}{contact.last_name?.charAt(0)}
             </div>
             <div className="header-info">
               {isEditing ? (
                 <div className="edit-name-row">
                   <input 
                     type="text" 
-                    value={editData.firstname} 
-                    onChange={e => setEditData({...editData, firstname: e.target.value})}
+                    value={editData.first_name} 
+                    onChange={e => setEditData({...editData, first_name: e.target.value})}
                     placeholder="First name"
                     className="input-name"
                   />
                   <input 
                     type="text" 
-                    value={editData.lastname} 
-                    onChange={e => setEditData({...editData, lastname: e.target.value})}
+                    value={editData.last_name} 
+                    onChange={e => setEditData({...editData, last_name: e.target.value})}
                     placeholder="Last name"
                     className="input-name"
                   />
                 </div>
               ) : (
                 <>
-                  <h2>{contact.firstname} {contact.lastname}</h2>
+                  <h2>{contact.first_name} {contact.last_name}</h2>
                   <p className="header-subtitle">{contact.title || 'No title'} @ {contact.company || 'Unknown'}</p>
                 </>
               )}
@@ -736,7 +736,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                   {isEditing ? (
                     <input 
                       type="email" 
-                      value={editData.email} 
+                      value={editData.email || ''} 
                       onChange={e => setEditData({...editData, email: e.target.value})}
                       className="input-field"
                     />
@@ -749,7 +749,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                   {isEditing ? (
                     <input 
                       type="text" 
-                      value={editData.phone} 
+                      value={editData.phone || ''} 
                       onChange={e => setEditData({...editData, phone: e.target.value})}
                       className="input-field"
                     />
@@ -762,12 +762,12 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                   {isEditing ? (
                     <input 
                       type="text" 
-                      value={editData.linkedin_url} 
+                      value={editData.linkedin_url || ''} 
                       onChange={e => setEditData({...editData, linkedin_url: e.target.value})}
                       className="input-field"
                     />
                   ) : (
-                    <a href={contact.linkedin_url} target="_blank" rel="noreferrer" className="info-value link">
+                    <a href={contact.linkedin_url || '#'} target="_blank" rel="noreferrer" className="info-value link">
                       {contact.linkedin_url ? 'View Profile' : 'No URL'} <ExternalLink size={12}/>
                     </a>
                   )}
@@ -777,7 +777,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                   {isEditing ? (
                     <input 
                       type="text" 
-                      value={editData.company} 
+                      value={editData.company || ''} 
                       onChange={e => setEditData({...editData, company: e.target.value})}
                       className="input-field"
                     />
@@ -790,7 +790,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                   {isEditing ? (
                     <input 
                       type="text" 
-                      value={editData.title} 
+                      value={editData.title || ''} 
                       onChange={e => setEditData({...editData, title: e.target.value})}
                       className="input-field"
                     />
@@ -803,12 +803,12 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                   {isEditing ? (
                     <input 
                       type="text" 
-                      value={editData.website} 
+                      value={editData.website || ''} 
                       onChange={e => setEditData({...editData, website: e.target.value})}
                       className="input-field"
                     />
                   ) : (
-                    <a href={contact.website} target="_blank" rel="noreferrer" className="info-value link">
+                    <a href={contact.website || '#'} target="_blank" rel="noreferrer" className="info-value link">
                       {contact.website || 'No website'}
                     </a>
                   )}
@@ -821,7 +821,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             <div className="tab-pane">
               {contact.enrichment_status === 'completed' ? (
                 <div className="enrichment-results">
-                  {/* Render standard enrichment data here if needed */}
                   <p>Standard enrichment data is available. Check scoring or deep profile for details.</p>
                 </div>
               ) : (
