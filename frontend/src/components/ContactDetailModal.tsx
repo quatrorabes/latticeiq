@@ -10,7 +10,7 @@ import {
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
 import { enrichContact, deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
-import { useAuth } from '@supabase/auth-helpers-react';
+import { supabase } from '../lib/supabase';
 import '../styles/ContactDetailModal.css';
 
 interface Props {
@@ -70,7 +70,6 @@ export const ContactDetailModal: React.FC<Props> = ({
   onClose,
   onUpdate
 }) => {
-  const { session } = useAuth();
   const [contact, setContact] = useState<Contact>(initialContact);
   const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile'>('info');
   const [isEditing, setIsEditing] = useState(false);
@@ -137,10 +136,12 @@ export const ContactDetailModal: React.FC<Props> = ({
     }
   };
 
-  const handleDeepEnrich = async () => {
+    const handleDeepEnrich = async () => {
     setIsDeepEnriching(true);
     setMessage(null);
     try {
+      // Get token from Supabase directly
+      const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
       
       if (!token) {
