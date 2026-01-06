@@ -1,6 +1,6 @@
 // frontend/src/components/ContactDetailModal.tsx
 import React, { useState, useEffect } from 'react';
-import { X, Building2, TrendingUp, DollarSign, Users, Newspaper, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
+import { X, Building2, TrendingUp, DollarSign, Users, Newspaper, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Briefcase, AlertTriangle, MessageSquare, Zap } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Contact } from '../types';
 
@@ -83,8 +83,9 @@ export default function ContactDetailModal({
       // Poll for results (deep enrichment takes 10-18 seconds)
       let attempts = 0;
       const maxAttempts = 30;
+      let found = false;
       
-      while (attempts < maxAttempts) {
+      while (attempts < maxAttempts && !found) {
         await new Promise(resolve => setTimeout(resolve, 1000));
         
         const resultResponse = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`, {
@@ -99,6 +100,7 @@ export default function ContactDetailModal({
           if (result.status === 'completed' && result.data) {
             setEnrichmentData(result.data);
             setEnrichmentStatus('completed');
+            found = true;
             
             if (result.scores) {
               setScores({
@@ -122,6 +124,7 @@ export default function ContactDetailModal({
             setIsEnriching(false);
             return;
           } else if (result.status === 'failed') {
+            found = true;
             throw new Error(result.error || 'Enrichment failed');
           }
         }
@@ -129,7 +132,9 @@ export default function ContactDetailModal({
         attempts++;
       }
       
-      throw new Error('Enrichment timed out. Please try again.');
+      if (!found) {
+        throw new Error('Enrichment timed out. Please try again.');
+      }
       
     } catch (error) {
       console.error('Deep enrichment error:', error);
@@ -173,216 +178,6 @@ export default function ContactDetailModal({
   };
 
   // ============================================================
-  // ENRICHMENT SECTION RENDERERS
-  // ============================================================
-
-  const renderCompanyOverview = (data: any) => {
-    if (!data) return null;
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <Building2 className="w-5 h-5 text-indigo-400" />
-          <h4>Company Overview</h4>
-        </div>
-        <div className="section-content">
-          {data.description && (
-            <p className="description">{data.description}</p>
-          )}
-          <div className="detail-grid">
-            {data.industry && <DetailItem label="Industry" value={data.industry} />}
-            {data.founded && <DetailItem label="Founded" value={data.founded} />}
-            {data.headquarters && <DetailItem label="Headquarters" value={data.headquarters} />}
-            {data.employee_count && <DetailItem label="Employees" value={data.employee_count} />}
-            {data.website && (
-              <DetailItem 
-                label="Website" 
-                value={<a href={data.website} target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">{data.website}</a>} 
-              />
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderMarketPosition = (data: any) => {
-    if (!data) return null;
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <TrendingUp className="w-5 h-5 text-emerald-400" />
-          <h4>Market Position</h4>
-        </div>
-        <div className="section-content">
-          {data.unique_value_proposition && (
-            <p className="description">{data.unique_value_proposition}</p>
-          )}
-          <div className="detail-grid">
-            {data.market_share && <DetailItem label="Market Share" value={data.market_share} />}
-            {data.target_market && <DetailItem label="Target Market" value={data.target_market} />}
-            {data.growth_trajectory && <DetailItem label="Growth" value={data.growth_trajectory} />}
-          </div>
-          {data.competitors && data.competitors.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Key Competitors:</span>
-              <div className="tag-list">
-                {data.competitors.map((competitor: string, i: number) => (
-                  <span key={i} className="tag">{competitor}</span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderKeyFinancials = (data: any) => {
-    if (!data) return null;
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <DollarSign className="w-5 h-5 text-amber-400" />
-          <h4>Key Financials</h4>
-        </div>
-        <div className="section-content">
-          <div className="detail-grid">
-            {data.revenue && <DetailItem label="Revenue" value={data.revenue} />}
-            {data.funding_total && <DetailItem label="Total Funding" value={data.funding_total} />}
-            {data.last_funding_round && <DetailItem label="Last Round" value={data.last_funding_round} />}
-            {data.valuation && <DetailItem label="Valuation" value={data.valuation} />}
-            {data.profitability && <DetailItem label="Profitability" value={data.profitability} />}
-            {data.financial_health && <DetailItem label="Financial Health" value={data.financial_health} />}
-          </div>
-        </div>
-      </div>
-    );
-  };
-
-  const renderExecutiveTeam = (data: any) => {
-    if (!data) return null;
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <Users className="w-5 h-5 text-purple-400" />
-          <h4>Executive Team</h4>
-        </div>
-        <div className="section-content">
-          <div className="detail-grid">
-            {data.ceo && <DetailItem label="CEO" value={data.ceo} />}
-            {data.cto && <DetailItem label="CTO" value={data.cto} />}
-            {data.cfo && <DetailItem label="CFO" value={data.cfo} />}
-          </div>
-          {data.key_decision_makers && data.key_decision_makers.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Key Decision Makers:</span>
-              <ul className="bullet-list">
-                {data.key_decision_makers.map((person: string, i: number) => (
-                  <li key={i}>{person}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {data.recent_leadership_changes && (
-            <div className="note-box">
-              <strong>Recent Changes:</strong> {data.recent_leadership_changes}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderRecentNews = (data: any) => {
-    if (!data) return null;
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <Newspaper className="w-5 h-5 text-cyan-400" />
-          <h4>Recent News</h4>
-        </div>
-        <div className="section-content">
-          {data.sentiment && (
-            <div className={`sentiment-badge ${data.sentiment.toLowerCase()}`}>
-              Sentiment: {data.sentiment}
-            </div>
-          )}
-          {data.headlines && data.headlines.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Headlines:</span>
-              <ul className="bullet-list">
-                {data.headlines.map((headline: string, i: number) => (
-                  <li key={i}>{headline}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {data.press_releases && data.press_releases.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Press Releases:</span>
-              <ul className="bullet-list">
-                {data.press_releases.map((pr: string, i: number) => (
-                  <li key={i}>{pr}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  const renderEngagementSignals = (data: any) => {
-    if (!data) return null;
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <Target className="w-5 h-5 text-rose-400" />
-          <h4>Engagement Signals</h4>
-        </div>
-        <div className="section-content">
-          {data.recommended_approach && (
-            <div className="highlight-box">
-              <strong>Recommended Approach:</strong>
-              <p>{data.recommended_approach}</p>
-            </div>
-          )}
-          {data.buying_signals && data.buying_signals.length > 0 && (
-            <div className="list-section">
-              <span className="list-label success">🔥 Buying Signals:</span>
-              <ul className="bullet-list">
-                {data.buying_signals.map((signal: string, i: number) => (
-                  <li key={i}>{signal}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {data.pain_points && data.pain_points.length > 0 && (
-            <div className="list-section">
-              <span className="list-label warning">⚠️ Pain Points:</span>
-              <ul className="bullet-list">
-                {data.pain_points.map((point: string, i: number) => (
-                  <li key={i}>{point}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {data.technology_stack && data.technology_stack.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Tech Stack:</span>
-              <div className="tag-list">
-                {data.technology_stack.map((tech: string, i: number) => (
-                  <span key={i} className="tag tech">{tech}</span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  // ============================================================
   // DETAIL ITEM COMPONENT
   // ============================================================
 
@@ -394,10 +189,285 @@ export default function ContactDetailModal({
   );
 
   // ============================================================
+  // NEW 6-SECTION ENRICHMENT RENDERERS
+  // ============================================================
+
+  const renderContactProfile = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <User className="w-5 h-5 text-indigo-400" />
+          <h4>Contact Profile</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          <div className="detail-grid">
+            {data.senioritylevel && <DetailItem label="Seniority" value={data.senioritylevel} />}
+            {data.decisionmakingstyle && <DetailItem label="Decision Style" value={data.decisionmakingstyle} />}
+            {data.influencelevel && <DetailItem label="Influence" value={data.influencelevel} />}
+            {data.communicationstyle && <DetailItem label="Communication" value={data.communicationstyle} />}
+          </div>
+          {data.professionalbackground && (
+            <div className="note-box">
+              <strong>Background:</strong> {data.professionalbackground}
+            </div>
+          )}
+          {data.keymotivators && data.keymotivators.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Key Motivators:</span>
+              <ul className="bullet-list">
+                {data.keymotivators.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCompanyProfile = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Building2 className="w-5 h-5 text-emerald-400" />
+          <h4>Company Profile</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          <div className="detail-grid">
+            {data.industry && <DetailItem label="Industry" value={data.industry} />}
+            {data.companysize && <DetailItem label="Size" value={data.companysize} />}
+            {data.estimatedrevenue && <DetailItem label="Revenue" value={data.estimatedrevenue} />}
+            {data.growthstage && <DetailItem label="Stage" value={data.growthstage} />}
+            {data.fundingstatus && <DetailItem label="Funding" value={data.fundingstatus} />}
+            {data.marketposition && <DetailItem label="Market Position" value={data.marketposition} />}
+          </div>
+          {data.businessmodel && (
+            <div className="note-box">
+              <strong>Business Model:</strong> {data.businessmodel}
+            </div>
+          )}
+          {data.keyproductsservices && data.keyproductsservices.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Products/Services:</span>
+              <div className="tag-list">
+                {data.keyproductsservices.map((item: string, i: number) => (
+                  <span key={i} className="tag">{item}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.competitivelandscape && (
+            <div className="note-box">
+              <strong>Competitive Landscape:</strong> {data.competitivelandscape}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCurrentFocus = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Target className="w-5 h-5 text-amber-400" />
+          <h4>Current Focus</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          {data.strategicpriorities && data.strategicpriorities.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">🎯 Strategic Priorities:</span>
+              <ul className="bullet-list">
+                {data.strategicpriorities.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.currentchallenges && data.currentchallenges.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">⚠️ Current Challenges:</span>
+              <ul className="bullet-list">
+                {data.currentchallenges.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.technologyadoption && (
+            <div className="note-box">
+              <strong>Technology Adoption:</strong> {data.technologyadoption}
+            </div>
+          )}
+          {data.recentinitiatives && data.recentinitiatives.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Recent Initiatives:</span>
+              <ul className="bullet-list">
+                {data.recentinitiatives.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderBuyingSignals = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Zap className="w-5 h-5 text-green-400" />
+          <h4>Buying Signals</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          <div className="detail-grid">
+            {data.budgetindicators && <DetailItem label="Budget Indicators" value={data.budgetindicators} />}
+            {data.timeframesignals && <DetailItem label="Timeframe" value={data.timeframesignals} />}
+            {data.urgencylevel && <DetailItem label="Urgency" value={data.urgencylevel} />}
+            {data.decisionprocess && <DetailItem label="Decision Process" value={data.decisionprocess} />}
+          </div>
+          {data.triggersidentified && data.triggersidentified.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">🔥 Triggers Identified:</span>
+              <ul className="bullet-list">
+                {data.triggersidentified.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.potentialneedgaps && data.potentialneedgaps.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Potential Need Gaps:</span>
+              <ul className="bullet-list">
+                {data.potentialneedgaps.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderRisksAndObjections = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <AlertTriangle className="w-5 h-5 text-red-400" />
+          <h4>Risks & Objections</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          <div className="detail-grid">
+            {data.overallrisklevel && <DetailItem label="Risk Level" value={data.overallrisklevel} />}
+            {data.competitorrisks && <DetailItem label="Competitor Risks" value={data.competitorrisks} />}
+          </div>
+          {data.anticipatedobjections && data.anticipatedobjections.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">⚠️ Anticipated Objections:</span>
+              <ul className="bullet-list">
+                {data.anticipatedobjections.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.potentialblockers && data.potentialblockers.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Potential Blockers:</span>
+              <ul className="bullet-list">
+                {data.potentialblockers.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.mitigationstrategies && data.mitigationstrategies.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">✅ Mitigation Strategies:</span>
+              <ul className="bullet-list">
+                {data.mitigationstrategies.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMessaging = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <MessageSquare className="w-5 h-5 text-purple-400" />
+          <h4>Recommended Messaging</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          {data.primaryvalueproposition && (
+            <div className="highlight-box">
+              <strong>Primary Value Proposition:</strong>
+              <p>{data.primaryvalueproposition}</p>
+            </div>
+          )}
+          <div className="detail-grid">
+            {data.communicationstyle && <DetailItem label="Style" value={data.communicationstyle} />}
+            {data.tonerecommendation && <DetailItem label="Tone" value={data.tonerecommendation} />}
+            {data.bestcontactmethod && <DetailItem label="Best Method" value={data.bestcontactmethod} />}
+            {data.besttimetocontact && <DetailItem label="Best Time" value={data.besttimetocontact} />}
+          </div>
+          {data.keytalkinpoints && data.keytalkinpoints.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">💬 Key Talking Points:</span>
+              <ul className="bullet-list">
+                {data.keytalkinpoints.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.topicstoavoid && data.topicstoavoid.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">🚫 Topics to Avoid:</span>
+              <ul className="bullet-list">
+                {data.topicstoavoid.map((item: string, i: number) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.aboropener && (
+            <div className="note-box">
+              <strong>Suggested Opener:</strong> {data.aboropener}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
   // MAIN RENDER
   // ============================================================
 
-  const contactName = `${contact.first_name} ${contact.last_name}`.trim();
+  const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown';
   const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??';
 
   return (
@@ -529,15 +599,15 @@ export default function ContactDetailModal({
                 </div>
               )}
 
-              {/* Enrichment Sections */}
+              {/* Enrichment Sections - NEW 6-SECTION FORMAT */}
               {enrichmentData && !isEnriching && (
                 <div className="enrichment-sections">
-                  {renderCompanyOverview(enrichmentData.company_overview)}
-                  {renderMarketPosition(enrichmentData.market_position)}
-                  {renderKeyFinancials(enrichmentData.key_financials)}
-                  {renderExecutiveTeam(enrichmentData.executive_team)}
-                  {renderRecentNews(enrichmentData.recent_news)}
-                  {renderEngagementSignals(enrichmentData.engagement_signals)}
+                  {renderContactProfile(enrichmentData.contactprofile)}
+                  {renderCompanyProfile(enrichmentData.companyprofile)}
+                  {renderCurrentFocus(enrichmentData.currentfocus)}
+                  {renderBuyingSignals(enrichmentData.buyingsignals)}
+                  {renderRisksAndObjections(enrichmentData.risksandobjections)}
+                  {renderMessaging(enrichmentData.messaging)}
                 </div>
               )}
 
@@ -546,7 +616,7 @@ export default function ContactDetailModal({
                 <div className="empty-state">
                   <Building2 className="w-12 h-12 text-slate-600" />
                   <h3>No Enrichment Data</h3>
-                  <p>Click "Deep Enrich Contact" to gather comprehensive company intelligence including financials, market position, executives, and engagement signals.</p>
+                  <p>Click "Deep Enrich Contact" to gather comprehensive intelligence including contact profile, company details, buying signals, and personalized messaging recommendations.</p>
                 </div>
               )}
             </div>
@@ -606,7 +676,7 @@ export default function ContactDetailModal({
         </div>
       </div>
 
-      {/* Inline Styles - KEEP EXACTLY AS IS FROM PREVIOUS FILE */}
+      {/* Inline Styles */}
       <style>{`
         .modal-overlay {
           position: fixed;
@@ -964,6 +1034,10 @@ export default function ContactDetailModal({
           color: #cbd5e1;
         }
         
+        .note-box strong {
+          color: #94a3b8;
+        }
+        
         .highlight-box {
           background: rgba(99, 102, 241, 0.1);
           border-left: 3px solid #6366f1;
@@ -973,30 +1047,6 @@ export default function ContactDetailModal({
           color: #a5b4fc;
           display: block;
           margin-bottom: 0.25rem;
-        }
-        
-        .sentiment-badge {
-          display: inline-block;
-          padding: 0.25rem 0.75rem;
-          border-radius: 9999px;
-          font-size: 0.75rem;
-          font-weight: 600;
-          margin-bottom: 1rem;
-        }
-        
-        .sentiment-badge.positive {
-          background: rgba(34, 197, 94, 0.1);
-          color: #86efac;
-        }
-        
-        .sentiment-badge.neutral {
-          background: rgba(148, 163, 184, 0.1);
-          color: #94a3b8;
-        }
-        
-        .sentiment-badge.negative {
-          background: rgba(239, 68, 68, 0.1);
-          color: #f87171;
         }
         
         .empty-state {

@@ -1,26 +1,14 @@
 // pages/RelationshipIntelligence.tsx
-// Main dashboard component for LatticeIQ
+// Main dashboard component for LatticeIQ - WITH CONTACT DETAIL MODAL
 
 import { useEffect, useState } from 'react'
 import { Chart, registerables } from 'chart.js'
-import { supabase } from '../supabaseClient'
+import { supabase } from '../lib/supabaseClient'
+import ContactDetailModal from '../components/ContactDetailModal'
+import { Contact } from '../types'  // <-- ADD THIS LINE
 
 // Register Chart.js components
 Chart.register(...registerables)
-
-// Types
-interface Contact {
-  id: string
-  first_name?: string
-  last_name?: string
-  name?: string
-  email: string
-  company?: string
-  engagement_score?: number
-  engagement_status?: 'hot' | 'warm' | 'cold'
-  last_interaction?: string
-  created_at?: string
-}
 
 interface EngagementMetric {
   id: string
@@ -239,10 +227,12 @@ const styles = `
     border-radius: 12px;
     padding: 1.25rem;
     transition: all 0.2s ease;
+    cursor: pointer;
   }
   .ri-contact-card:hover {
     border-color: rgba(100, 181, 246, 0.5);
     transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(100, 181, 246, 0.2);
   }
   .ri-contact-card.hot {
     border-left: 3px solid #ef5350;
@@ -399,6 +389,10 @@ export default function RelationshipIntelligence() {
   const [loading, setLoading] = useState(true)
   const [currentTipIndex, setCurrentTipIndex] = useState(0)
   const [chartInstance, setChartInstance] = useState<Chart | null>(null)
+  
+  // Modal state
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
 
   // Initialize data on mount
   useEffect(() => {
@@ -526,12 +520,12 @@ export default function RelationshipIntelligence() {
   const currentTip = outreachTips[currentTipIndex] || getFallbackTips()[0]
 
   const getContactName = (contact: Contact) => {
-    if (contact.name) return contact.name
-    if (contact.first_name || contact.last_name) {
-      return `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
-    }
-    return contact.email?.split('@')[0] || 'Unknown'
+  if (contact.first_name || contact.last_name) {
+    return `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
   }
+  return contact.email?.split('@')[0] || 'Unknown'
+}
+
 
   const getEngagementStatus = (contact: Contact): 'hot' | 'warm' | 'cold' => {
     if (contact.engagement_status) return contact.engagement_status
@@ -548,6 +542,25 @@ export default function RelationshipIntelligence() {
       case 'cold': return '❄️'
       default: return '⭐'
     }
+  }
+
+  // Handler to open modal
+  const handleContactClick = (contact: Contact) => {
+    setSelectedContact(contact)
+    setIsModalOpen(true)
+  }
+
+  // Handler to close modal
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedContact(null)
+  }
+
+  // Handler for contact updates from modal
+  const handleContactUpdate = (updatedContact: Contact) => {
+    setCallTodayContacts(prev =>
+      prev.map(c => c.id === updatedContact.id ? updatedContact : c)
+    )
   }
 
   if (loading) {
@@ -592,7 +605,11 @@ export default function RelationshipIntelligence() {
                 callTodayContacts.map((contact) => {
                   const status = getEngagementStatus(contact)
                   return (
-                    <div key={contact.id} className={`ri-contact-card ${status}`}>
+                    <div 
+                      key={contact.id} 
+                      className={`ri-contact-card ${status}`}
+                      onClick={() => handleContactClick(contact)}
+                    >
                       <div className="ri-contact-header">
                         <div className="ri-contact-info">
                           <div className="ri-contact-avatar">
@@ -610,7 +627,7 @@ export default function RelationshipIntelligence() {
                       <div className="ri-contact-meta">
                         <div><strong>Email:</strong> {contact.email}</div>
                       </div>
-                      <div className="ri-next-step">Call Now • Discuss Next Steps</div>
+                      <div className="ri-next-step">Click to View • Deep Enrich • Call Now</div>
                     </div>
                   )
                 })
@@ -660,6 +677,16 @@ export default function RelationshipIntelligence() {
           </div>
         </div>
       </div>
+
+      {/* Contact Detail Modal */}
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          onUpdate={handleContactUpdate}
+        />
+      )}
     </>
   )
 }
