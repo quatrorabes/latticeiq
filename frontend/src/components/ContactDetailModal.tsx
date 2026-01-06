@@ -1009,7 +1009,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
 
           {activeTab === 'outreach' && (
             <div className="tab-pane">
-              <OutreachTab contactId={contact.id} contact={contact} />
+              <OutreachTab contactId={contact.id} />
             </div>
           )}
         </div>
