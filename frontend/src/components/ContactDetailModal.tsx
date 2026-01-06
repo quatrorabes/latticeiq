@@ -1009,7 +1009,11 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
 
           {activeTab === 'outreach' && (
             <div className="tab-pane">
-              <OutreachTab contactId={contact.id} />
+              <OutreachTab 
+                contactId={contact.id} 
+                contactName={`${contact.first_name || ''} ${contact.last_name || ''}`.trim()}
+                hasEnrichment={contact.enrichment_status === 'completed'}
+              />
             </div>
           )}
         </div>
@@ -1017,3 +1021,4 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     </div>
   );
 };
+
