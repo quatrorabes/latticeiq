@@ -2,19 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Mail, Phone, Building2, Briefcase, Globe, Linkedin, Edit2, Save, 
   Sparkles, Trash2, ExternalLink, Target, DollarSign, Activity, Award, 
-  RefreshCw, CheckCircle, Brain, MessageSquare, Lightbulb, AlertCircle,
-  Send
+  RefreshCw, CheckCircle, Brain, AlertCircle, Send, Clock
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
-import { enrichContact, deepEnrichContact, getEnrichmentResult, pollEnrichmentComplete } from '../api/enrichment';
+import { enrichContact, deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
 import { supabase } from '../lib/supabaseClient';
-import { UnifiedEnrichmentResult, LegacyEnrichmentData } from '../types/enrichment';
+import { UnifiedEnrichmentResult } from '../types/enrichment';
 import { OutreachTab } from './OutreachTab';
 import '../styles/ContactDetailModal.css';
-
-
-
 
 
 interface Props {
@@ -22,7 +18,6 @@ interface Props {
   onClose: () => void;
   onUpdate?: () => void;
 }
-
 
 
 interface ParsedProfile {
@@ -34,11 +29,6 @@ interface ParsedProfile {
 }
 
 
-
-/**
- * Transform UnifiedEnrichmentResult into ParsedProfile for display
- * FIXED: Uses snake_case keys to match backend
- */
 function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedProfile {
   const sections: ParsedProfile = {
     professionalProfile: '',
@@ -48,53 +38,39 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
     keyInsights: [],
   };
 
-
-
-  // Professional Profile section
   if (enrichment.contact_profile) {
     const cp = enrichment.contact_profile;
-    let profText = 'PROFESSIONAL PROFILE:\n\n';
+    let profText = '';
     if (cp.headline) profText += cp.headline + '\n\n';
     if (cp.role_summary) profText += cp.role_summary + '\n\n';
     if (cp.seniority) profText += `Seniority: ${cp.seniority}\n\n`;
-    profText += 'Background:\n';
     if (Array.isArray(cp.background_bullets)) {
       cp.background_bullets.forEach((bullet: any) => {
-        profText += `- ${bullet.text}\n`;
+        profText += `• ${bullet.text}\n`;
       });
     }
     sections.professionalProfile = profText;
   }
 
-
-
-  // Company Profile section
   if (enrichment.company_profile) {
     const company = enrichment.company_profile;
-    let companyText = 'COMPANY PROFILE:\n\n';
+    let companyText = '';
     if (company.one_liner) companyText += company.one_liner + '\n\n';
     if (company.industry) companyText += `Industry: ${company.industry}\n`;
     if (company.size_segment) companyText += `Size: ${company.size_segment}\n`;
     if (company.region) companyText += `Region: ${company.region}\n\n`;
-    companyText += 'Key Products/Services:\n';
     if (Array.isArray(company.key_products_or_services)) {
       company.key_products_or_services.forEach((product: any) => {
-        companyText += `- ${product.text}\n`;
+        companyText += `• ${product.text}\n`;
       });
     }
     sections.companyProfile = companyText;
   }
 
-
-
-  // Extract pain points from risks & objections
   if (Array.isArray(enrichment.risks_and_objections?.risk_bullets)) {
     sections.painPoints = enrichment.risks_and_objections.risk_bullets.map((b: any) => b.text);
   }
 
-
-
-  // Extract talking points from messaging & current focus
   const talkingPoints: string[] = [];
   if (enrichment.messaging?.cold_openers) {
     enrichment.messaging.cold_openers.forEach((b: any) => talkingPoints.push(b.text));
@@ -104,9 +80,6 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
   }
   sections.talkingPoints = talkingPoints;
 
-
-
-  // Extract key insights from buying signals
   const insights: string[] = [];
   if (enrichment.buying_signals?.recent_news) {
     enrichment.buying_signals.recent_news.forEach((b: any) => insights.push(b.text));
@@ -119,69 +92,33 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
   }
   sections.keyInsights = insights;
 
-
-
   return sections;
 }
 
 
-
-// Legacy parser for old enrichment format (quick enrich)
-function parseDeepProfile(markdown: string): ParsedProfile {
-  const sections: ParsedProfile = {
-    professionalProfile: '',
-    companyProfile: '',
-    painPoints: [],
-    talkingPoints: [],
-    keyInsights: [],
-  };
-
-
-
-  if (!markdown) return sections;
-
-
-
-  // Extract major sections
-  const professionalMatch = markdown.match(/PROFESSIONAL PROFILE:?[\s\S]*?(?=COMPANY PROFILE|---)/i);
-  const companyMatch = markdown.match(/COMPANY PROFILE:?[\s\S]*?(?=STRATEGIC|---)/i);
-
-
-
-  if (professionalMatch) sections.professionalProfile = professionalMatch[0].trim();
-  if (companyMatch) sections.companyProfile = companyMatch[0].trim();
-
-
-
-  // Extract lists
-  const extractList = (sectionName: string): string[] => {
-    const regex = new RegExp(`${sectionName}:?[\\s\S]*?(?=\\n\\n|\\n###|---)`, 'i');
-    const match = markdown.match(regex);
-    if (!match) return [];
-    
-    return match[0]
-      .split('\n')
-      .filter((line: string) => line.trim().startsWith('-') || line.trim().match(/^\d\./))
-      .map((line: string) => line.replace(/^[- \d\.]+/, '').trim())
-      .filter(Boolean);
-  };
-
-
-
-  sections.painPoints = extractList('Pain Points');
-  sections.talkingPoints = extractList('Talking Points');
-  sections.keyInsights = extractList('Key Insights');
-
-
-
-  return sections;
+/**
+ * Extract deep enrichment data from contact's enrichment_data field
+ */
+function extractDeepEnrichmentFromContact(contact: Contact): UnifiedEnrichmentResult | null {
+  if (!contact.enrichment_data) return null;
+  
+  const ed = contact.enrichment_data as any;
+  
+  // Try multiple extraction patterns
+  if (ed.data?.contact_profile) {
+    return ed.data as UnifiedEnrichmentResult;
+  }
+  if (ed.contact_profile) {
+    return ed as UnifiedEnrichmentResult;
+  }
+  
+  return null;
 }
-
 
 
 export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, onClose, onUpdate }) => {
   const [contact, setContact] = useState<Contact>(initialContact);
-  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile' | 'outreach'>(initialContact.enrichment_data ? 'deepprofile' : 'info');
+  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile' | 'outreach'>('info');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
@@ -190,45 +127,52 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   const [editData, setEditData] = useState<Partial<Contact>>(initialContact);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-
-
   // Deep enrichment state
-  const [deepProfile, setDeepProfile] = useState<string | null>(null);
   const [deepEnrichmentData, setDeepEnrichmentData] = useState<UnifiedEnrichmentResult | null>(null);
-  const [parsedProfile, setParsedProfile] = useState<ParsedProfile | null>(null);
   const [lastDeepEnriched, setLastDeepEnriched] = useState<string | null>(null);
   const [enrichmentProgress, setEnrichmentProgress] = useState(0);
 
-
-
+  // ✅ Load existing deep enrichment on mount
   useEffect(() => {
     setContact(initialContact);
     setEditData(initialContact);
+    
+    // Extract and load existing deep enrichment data
+    const existingData = extractDeepEnrichmentFromContact(initialContact);
+    if (existingData) {
+      console.log('✅ Loaded existing deep enrichment from contact:', existingData);
+      setDeepEnrichmentData(existingData);
+      setLastDeepEnriched(existingData.meta?.generated_at || null);
+      // Auto-switch to deep profile tab if data exists
+      setActiveTab('deepprofile');
+    } else if (initialContact.enrichment_status === 'completed') {
+      setActiveTab('scoring');
+    }
   }, [initialContact]);
 
-
-
-  // ✅ NEW: useEffect to switch tabs when deepEnrichmentData is populated
+  // Switch to deepprofile tab when data is populated
   useEffect(() => {
     if (deepEnrichmentData && Object.keys(deepEnrichmentData).length > 0 && !isDeepEnriching) {
-      console.log('✅ Deep enrichment data populated, switching to deepprofile tab');
       setActiveTab('deepprofile');
     }
   }, [deepEnrichmentData, isDeepEnriching]);
-
-
 
   const refreshContact = async () => {
     try {
       const fresh = await fetchContact(contact.id);
       setContact(fresh);
       setEditData(fresh);
+      
+      // Also refresh deep enrichment data
+      const existingData = extractDeepEnrichmentFromContact(fresh);
+      if (existingData) {
+        setDeepEnrichmentData(existingData);
+        setLastDeepEnriched(existingData.meta?.generated_at || null);
+      }
     } catch (err) {
       console.error('Failed to refresh contact:', err);
     }
   };
-
-
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -237,7 +181,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       await updateContact(contact.id, editData);
       await refreshContact();
       setIsEditing(false);
-      setMessage({ type: 'success', text: 'Contact saved successfully!' });
+      setMessage({ type: 'success', text: 'Contact saved!' });
       onUpdate?.();
       setTimeout(() => setMessage(null), 3000);
     } catch (err: any) {
@@ -247,17 +191,15 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     }
   };
 
-
-
   const handleEnrich = async () => {
     setIsEnriching(true);
     setMessage(null);
     try {
       await enrichContact(contact.id);
       await refreshContact();
-      setMessage({ type: 'success', text: 'Enrichment complete! Scores calculated.' });
+      setMessage({ type: 'success', text: 'Quick enrichment complete!' });
       onUpdate?.();
-      setActiveTab('enrichment');
+      setActiveTab('scoring');
       setTimeout(() => setMessage(null), 3000);
     } catch (err: any) {
       setMessage({ type: 'error', text: err.message || 'Enrichment failed' });
@@ -266,19 +208,26 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     }
   };
 
-
-
-  // ✅ COMPLETELY FIXED: handleDeepEnrich with proper state management and useEffect
+  // ✅ FIXED: handleDeepEnrich with cost protection
   const handleDeepEnrich = async () => {
+    // ⚠️ COST PROTECTION: Confirm if already enriched
+    if (deepEnrichmentData) {
+      const lastDate = lastDeepEnriched ? new Date(lastDeepEnriched).toLocaleDateString() : 'previously';
+      const confirmed = confirm(
+        `⚠️ This contact was already deep enriched on ${lastDate}.\n\n` +
+        `Re-enriching will cost additional API credits.\n\n` +
+        `Are you sure you want to re-enrich?`
+      );
+      if (!confirmed) return;
+    }
+
     setIsDeepEnriching(true);
     setMessage(null);
     setEnrichmentProgress(0);
     
     try {
-      // Get token from Supabase
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
-
 
       if (!token) {
         setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
@@ -286,9 +235,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
         return;
       }
 
-
-      // Trigger deep enrichment
-      setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
+      setMessage({ type: 'success', text: 'Starting deep enrichment... (10-15 seconds)' });
       setEnrichmentProgress(10);
       
       const result = await deepEnrichContact(contact.id, token);
@@ -297,11 +244,9 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       if (result.status === 'completed' || result.status === 'processing') {
         setEnrichmentProgress(30);
         
-        // Poll for completion
         let completed = false;
         let attempts = 0;
         const maxAttempts = 30;
-
 
         while (!completed && attempts < maxAttempts) {
           attempts++;
@@ -309,12 +254,8 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           
           try {
             const response = await getEnrichmentResult(contact.id, token);
-            console.log(`🔍 Poll attempt ${attempts}:`, response);
             
-            // 🔧 CRITICAL FIX: Extract data from correct structure
             let actualData = null;
-            
-            // Try multiple extraction patterns
             if (response?.enrichment_data?.data) {
               actualData = response.enrichment_data.data;
             } else if (response?.enrichment_data) {
@@ -323,56 +264,35 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               actualData = response;
             }
             
-            console.log('🔍 Extracted actualData:', actualData);
-            console.log('📋 Data keys:', actualData ? Object.keys(actualData) : 'null');
-            
-            // Check if we have real data with contact_profile
             if (actualData && 
                 Object.keys(actualData).length > 0 && 
                 actualData.contact_profile &&
                 Object.keys(actualData.contact_profile).length > 0) {
               
-              console.log('✅ SUCCESS! Data ready with contact_profile:', actualData);
+              console.log('✅ SUCCESS! Data ready:', actualData);
               
-              // ✅ FIX #1: Set data and let useEffect handle tab switch
               setDeepEnrichmentData(actualData as UnifiedEnrichmentResult);
-              const parsed = transformDeepEnrichment(actualData as UnifiedEnrichmentResult);
-              setParsedProfile(parsed);
-              setDeepProfile(JSON.stringify(actualData, null, 2));
               setLastDeepEnriched(actualData.meta?.generated_at || new Date().toISOString());
               setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
               
-              // ✅ FIX #2: Refresh contact to sync all state
               await refreshContact();
               onUpdate?.();
               completed = true;
               setEnrichmentProgress(100);
               break;
-            } else {
-              console.log(`⏳ Poll ${attempts}: Data not ready or missing contact_profile`);
             }
           } catch (err) {
             console.log(`⚠️ Poll attempt ${attempts} error:`, err);
           }
 
-
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
 
-
         if (!completed) {
-          console.error('❌ Timed out after 30 attempts');
-          setMessage({ 
-            type: 'error', 
-            text: 'Enrichment took longer than expected (60s timeout). Please check backend logs.' 
-          });
+          setMessage({ type: 'error', text: 'Enrichment timed out. Please try again.' });
         }
       } else if (result.error) {
-        console.error('❌ Enrichment error from backend:', result.error);
         setMessage({ type: 'error', text: `Error: ${result.error}` });
-      } else {
-        console.warn('⚠️ Unexpected result status:', result.status);
-        setMessage({ type: 'error', text: `Unexpected status: ${result.status}` });
       }
     } catch (err: any) {
       console.error('❌ Deep enrichment error:', err);
@@ -382,8 +302,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       setTimeout(() => setMessage(null), 5000);
     }
   };
-
-
 
   const handleScore = async () => {
     setIsScoring(true);
@@ -402,8 +320,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     }
   };
 
-
-
   const handleDelete = async () => {
     if (!confirm(`Delete ${contact.first_name} ${contact.last_name}? This cannot be undone.`)) return;
     try {
@@ -415,8 +331,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     }
   };
 
-
-
   const getTierColor = (tier?: string) => {
     if (!tier) return '#6b7280';
     switch (tier.toLowerCase()) {
@@ -427,12 +341,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     }
   };
 
-
-
   const ScoreCard = ({ label, score, tier, icon: Icon }: { label: string, score?: number, tier?: string, icon: React.ElementType }) => (
     <div className={`score-card ${label.toLowerCase()}`}>
       <div className="score-card-icon" style={{ backgroundColor: getTierColor(tier) }}>
-        <Icon size={24} />
+        <Icon size={20} />
       </div>
       <div className="score-card-content">
         <span className="score-label">{label}</span>
@@ -444,31 +356,9 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     </div>
   );
 
-
-
-  const renderMarkdown = (text: string) => {
-    if (!text) return null;
-    return text.split('\n').map((line: string, i: number) => {
-      if (line.startsWith('## ')) return <h2 key={i} className="profile-h2">{line.replace('## ', '')}</h2>;
-      if (line.startsWith('### ')) return <h3 key={i} className="profile-h3">{line.replace('### ', '')}</h3>;
-      if (line.startsWith('- ')) return <li key={i} className="profile-li">{line.replace('- ', '')}</li>;
-      if (line.trim()) return <p key={i} className="profile-p">{line}</p>;
-      return null;
-    });
-  };
-
-
-
-  // ✅ IMPROVED: renderDeepEnrichmentSections with better null checks
   const renderDeepEnrichmentSections = () => {
-    if (!deepEnrichmentData) {
-      console.log('⚠️ renderDeepEnrichmentSections: No deepEnrichmentData');
-      return null;
-    }
+    if (!deepEnrichmentData) return null;
     
-    console.log('🎨 Rendering deep enrichment sections:', deepEnrichmentData);
-    
-    // ✅ SAFE EXTRACTION with defaults
     const contact_profile = deepEnrichmentData.contact_profile || {};
     const company_profile = deepEnrichmentData.company_profile || {};
     const current_focus = deepEnrichmentData.current_focus || {};
@@ -476,8 +366,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     const risks_and_objections = deepEnrichmentData.risks_and_objections || {};
     const messaging = deepEnrichmentData.messaging || {};
 
-
-    // Check if we have any meaningful data
     const hasAnyData = 
       Object.keys(contact_profile).length > 0 ||
       Object.keys(company_profile).length > 0 ||
@@ -486,268 +374,154 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       Object.keys(risks_and_objections).length > 0 ||
       Object.keys(messaging).length > 0;
 
-
     if (!hasAnyData) {
       return <div className="empty-state"><p>No enrichment data available</p></div>;
     }
 
-
     return (
       <div className="deep-enrichment-sections">
-        {/* Contact Profile Section */}
-        {contact_profile && Object.keys(contact_profile).length > 0 && (
-          <div className="enrichment-card contact-profile-card">
-            <div className="card-header">
-              <h4>👤 Contact Profile</h4>
-            </div>
+        {/* Contact Profile */}
+        {Object.keys(contact_profile).length > 0 && (
+          <div className="enrichment-card">
+            <div className="card-header"><h4>👤 Contact Profile</h4></div>
             <div className="card-body">
               {contact_profile.headline && <p className="headline"><strong>{contact_profile.headline}</strong></p>}
               {contact_profile.role_summary && <p className="role-summary">{contact_profile.role_summary}</p>}
-              {contact_profile.seniority && <p className="seniority"><strong>Seniority:</strong> {contact_profile.seniority}</p>}
-              
-              {contact_profile.background_bullets && contact_profile.background_bullets.length > 0 && (
+              {contact_profile.seniority && <p><strong>Seniority:</strong> {contact_profile.seniority}</p>}
+              {contact_profile.background_bullets?.length > 0 && (
                 <div className="bullets-section">
                   <h5>Background</h5>
-                  <ul>
-                    {contact_profile.background_bullets.map((bullet: any, i: number) => (
-                      <li key={i}>
-                        {bullet.text}
-                        {bullet.evidence && <span className="evidence"> [{bullet.evidence}]</span>}
-                      </li>
-                    ))}
-                  </ul>
+                  <ul>{contact_profile.background_bullets.map((b: any, i: number) => <li key={i}>{b.text}</li>)}</ul>
                 </div>
               )}
             </div>
           </div>
         )}
 
-
-        {/* Company Profile Section */}
-        {company_profile && Object.keys(company_profile).length > 0 && (
-          <div className="enrichment-card company-profile-card">
-            <div className="card-header">
-              <h4>🏢 Company Profile</h4>
-            </div>
+        {/* Company Profile */}
+        {Object.keys(company_profile).length > 0 && (
+          <div className="enrichment-card">
+            <div className="card-header"><h4>🏢 Company Profile</h4></div>
             <div className="card-body">
-              {company_profile.one_liner && <p className="one-liner italic">{company_profile.one_liner}</p>}
+              {company_profile.one_liner && <p className="italic">{company_profile.one_liner}</p>}
               <div className="company-meta">
                 {company_profile.industry && <span><strong>Industry:</strong> {company_profile.industry}</span>}
                 {company_profile.size_segment && <span><strong>Size:</strong> {company_profile.size_segment}</span>}
                 {company_profile.region && <span><strong>Region:</strong> {company_profile.region}</span>}
               </div>
-              
-              {company_profile.key_products_or_services && company_profile.key_products_or_services.length > 0 && (
+              {company_profile.key_products_or_services?.length > 0 && (
                 <div className="bullets-section">
-                  <h5>Key Products/Services</h5>
-                  <ul>
-                    {company_profile.key_products_or_services.map((product: any, i: number) => (
-                      <li key={i}>{product.text}</li>
-                    ))}
-                  </ul>
+                  <h5>Products/Services</h5>
+                  <ul>{company_profile.key_products_or_services.map((p: any, i: number) => <li key={i}>{p.text}</li>)}</ul>
                 </div>
               )}
             </div>
           </div>
         )}
 
-
-        {/* Current Focus Section */}
-        {current_focus && Object.keys(current_focus).length > 0 && (
-          <div className="enrichment-card current-focus-card">
-            <div className="card-header">
-              <h4>🎯 Current Focus</h4>
-            </div>
+        {/* Current Focus */}
+        {Object.keys(current_focus).length > 0 && (
+          <div className="enrichment-card">
+            <div className="card-header"><h4>🎯 Current Focus</h4></div>
             <div className="card-body">
-              {current_focus.strategic_initiatives && current_focus.strategic_initiatives.length > 0 && (
-                <div className="focus-subsection">
-                  <h5>Strategic Initiatives</h5>
-                  <ul>
-                    {current_focus.strategic_initiatives.map((init: any, i: number) => (
-                      <li key={i}>{init.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {current_focus.strategic_initiatives?.length > 0 && (
+                <div className="subsection"><h5>Strategic Initiatives</h5><ul>{current_focus.strategic_initiatives.map((i: any, idx: number) => <li key={idx}>{i.text}</li>)}</ul></div>
               )}
-              {current_focus.recent_projects && current_focus.recent_projects.length > 0 && (
-                <div className="focus-subsection">
-                  <h5>Recent Projects</h5>
-                  <ul>
-                    {current_focus.recent_projects.map((proj: any, i: number) => (
-                      <li key={i}>{proj.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {current_focus.recent_projects?.length > 0 && (
+                <div className="subsection"><h5>Recent Projects</h5><ul>{current_focus.recent_projects.map((p: any, idx: number) => <li key={idx}>{p.text}</li>)}</ul></div>
               )}
-              {current_focus.primary_kpis && current_focus.primary_kpis.length > 0 && (
-                <div className="focus-subsection">
-                  <h5>Primary KPIs</h5>
-                  <ul>
-                    {current_focus.primary_kpis.map((kpi: any, i: number) => (
-                      <li key={i}>{kpi.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {current_focus.primary_kpis?.length > 0 && (
+                <div className="subsection"><h5>Primary KPIs</h5><ul>{current_focus.primary_kpis.map((k: any, idx: number) => <li key={idx}>{k.text}</li>)}</ul></div>
               )}
             </div>
           </div>
         )}
 
-
-        {/* Buying Signals Section */}
-        {buying_signals && Object.keys(buying_signals).length > 0 && (
-          <div className="enrichment-card buying-signals-card signal-card">
-            <div className="card-header">
-              <h4>🚀 Buying Signals</h4>
-            </div>
+        {/* Buying Signals */}
+        {Object.keys(buying_signals).length > 0 && (
+          <div className="enrichment-card signal-card">
+            <div className="card-header"><h4>🚀 Buying Signals</h4></div>
             <div className="card-body">
-              {buying_signals.recent_news && buying_signals.recent_news.length > 0 && (
-                <div className="signal-subsection">
-                  <h5>Recent News</h5>
-                  <ul>
-                    {buying_signals.recent_news.map((news: any, i: number) => (
-                      <li key={i}>{news.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {buying_signals.recent_news?.length > 0 && (
+                <div className="subsection"><h5>Recent News</h5><ul>{buying_signals.recent_news.map((n: any, i: number) => <li key={i}>{n.text}</li>)}</ul></div>
               )}
-              {buying_signals.timing_triggers && buying_signals.timing_triggers.length > 0 && (
-                <div className="signal-subsection">
-                  <h5>Timing Triggers</h5>
-                  <ul>
-                    {buying_signals.timing_triggers.map((trigger: any, i: number) => (
-                      <li key={i}>{trigger.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {buying_signals.timing_triggers?.length > 0 && (
+                <div className="subsection"><h5>Timing Triggers</h5><ul>{buying_signals.timing_triggers.map((t: any, i: number) => <li key={i}>{t.text}</li>)}</ul></div>
               )}
-              {buying_signals.hiring_signals && buying_signals.hiring_signals.length > 0 && (
-                <div className="signal-subsection">
-                  <h5>Hiring Signals</h5>
-                  <ul>
-                    {buying_signals.hiring_signals.map((hire: any, i: number) => (
-                      <li key={i}>{hire.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {buying_signals.hiring_signals?.length > 0 && (
+                <div className="subsection"><h5>Hiring Signals</h5><ul>{buying_signals.hiring_signals.map((h: any, i: number) => <li key={i}>{h.text}</li>)}</ul></div>
               )}
-              {buying_signals.tech_changes && buying_signals.tech_changes.length > 0 && (
-                <div className="signal-subsection">
-                  <h5>Tech Changes</h5>
-                  <ul>
-                    {buying_signals.tech_changes.map((tech: any, i: number) => (
-                      <li key={i}>{tech.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {buying_signals.tech_changes?.length > 0 && (
+                <div className="subsection"><h5>Tech Changes</h5><ul>{buying_signals.tech_changes.map((t: any, i: number) => <li key={i}>{t.text}</li>)}</ul></div>
               )}
             </div>
           </div>
         )}
 
-
-        {/* Risks & Objections Section */}
-        {risks_and_objections && Object.keys(risks_and_objections).length > 0 && (
+        {/* Risks & Objections */}
+        {Object.keys(risks_and_objections).length > 0 && (
           <div className="enrichment-card risks-card">
-            <div className="card-header">
-              <h4>⚠️ Risks & Objections</h4>
-            </div>
+            <div className="card-header"><h4>⚠️ Risks & Objections</h4></div>
             <div className="card-body">
-              {risks_and_objections.risk_bullets && risks_and_objections.risk_bullets.length > 0 && (
-                <div className="risk-subsection">
-                  <h5>Risk Factors</h5>
-                  <ul>
-                    {risks_and_objections.risk_bullets.map((risk: any, i: number) => (
-                      <li key={i}>{risk.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {risks_and_objections.risk_bullets?.length > 0 && (
+                <div className="subsection"><h5>Risk Factors</h5><ul>{risks_and_objections.risk_bullets.map((r: any, i: number) => <li key={i}>{r.text}</li>)}</ul></div>
               )}
-              {risks_and_objections.likely_objections && risks_and_objections.likely_objections.length > 0 && (
-                <div className="risk-subsection">
-                  <h5>Likely Objections</h5>
-                  <ul>
-                    {risks_and_objections.likely_objections.map((obj: any, i: number) => (
-                      <li key={i}>{obj.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {risks_and_objections.likely_objections?.length > 0 && (
+                <div className="subsection"><h5>Likely Objections</h5><ul>{risks_and_objections.likely_objections.map((o: any, i: number) => <li key={i}>{o.text}</li>)}</ul></div>
               )}
-              {risks_and_objections.landmines && risks_and_objections.landmines.length > 0 && (
-                <div className="risk-subsection">
-                  <h5>Landmines to Avoid</h5>
-                  <ul>
-                    {risks_and_objections.landmines.map((landmine: any, i: number) => (
-                      <li key={i}>{landmine.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {risks_and_objections.landmines?.length > 0 && (
+                <div className="subsection"><h5>Landmines</h5><ul>{risks_and_objections.landmines.map((l: any, i: number) => <li key={i}>{l.text}</li>)}</ul></div>
               )}
             </div>
           </div>
         )}
 
-
-        {/* Messaging Section */}
-        {messaging && Object.keys(messaging).length > 0 && (
-          <div className="enrichment-card messaging-card">
-            <div className="card-header">
-              <h4>💬 Messaging</h4>
-            </div>
+        {/* Messaging */}
+        {Object.keys(messaging).length > 0 && (
+          <div className="enrichment-card">
+            <div className="card-header"><h4>💬 Messaging</h4></div>
             <div className="card-body">
-              {messaging.cold_openers && messaging.cold_openers.length > 0 && (
-                <div className="messaging-subsection">
-                  <h5>Cold Openers</h5>
-                  <ul>
-                    {messaging.cold_openers.map((opener: any, i: number) => (
-                      <li key={i}>{opener.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {messaging.cold_openers?.length > 0 && (
+                <div className="subsection"><h5>Cold Openers</h5><ul>{messaging.cold_openers.map((o: any, i: number) => <li key={i}>{o.text}</li>)}</ul></div>
               )}
-              {messaging.value_props && messaging.value_props.length > 0 && (
-                <div className="messaging-subsection">
-                  <h5>Value Propositions</h5>
-                  <ul>
-                    {messaging.value_props.map((prop: any, i: number) => (
-                      <li key={i}>{prop.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {messaging.value_props?.length > 0 && (
+                <div className="subsection"><h5>Value Props</h5><ul>{messaging.value_props.map((v: any, i: number) => <li key={i}>{v.text}</li>)}</ul></div>
               )}
-              {messaging.call_to_action_ideas && messaging.call_to_action_ideas.length > 0 && (
-                <div className="messaging-subsection">
-                  <h5>Call-to-Action Ideas</h5>
-                  <ul>
-                    {messaging.call_to_action_ideas.map((cta: any, i: number) => (
-                      <li key={i}>{cta.text}</li>
-                    ))}
-                  </ul>
-                </div>
+              {messaging.call_to_action_ideas?.length > 0 && (
+                <div className="subsection"><h5>CTA Ideas</h5><ul>{messaging.call_to_action_ideas.map((c: any, i: number) => <li key={i}>{c.text}</li>)}</ul></div>
               )}
             </div>
           </div>
         )}
-
 
         {/* Metadata */}
         {deepEnrichmentData.meta && (
           <div className="enrichment-meta">
+            <Clock size={14} />
             <span>Generated: {deepEnrichmentData.meta.generated_at ? new Date(deepEnrichmentData.meta.generated_at).toLocaleString() : 'N/A'}</span>
-            <span>Source: {deepEnrichmentData.meta.source || 'N/A'}</span>
-            {deepEnrichmentData.meta.model && <span>Model: {deepEnrichmentData.meta.model}</span>}
-            {deepEnrichmentData.meta.provider && <span>Provider: {deepEnrichmentData.meta.provider}</span>}
+            {deepEnrichmentData.meta.model && <span>• {deepEnrichmentData.meta.model}</span>}
           </div>
         )}
       </div>
     );
   };
 
+  const outreachContact = {
+    id: contact.id,
+    firstname: contact.first_name || '',
+    lastname: contact.last_name || '',
+    email: contact.email || '',
+    company: contact.company,
+    title: contact.title
+  };
 
+  // Check enrichment status for button states
+  const hasQuickEnrich = contact.enrichment_status === 'completed';
+  const hasDeepEnrich = !!deepEnrichmentData;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
+      <div className="modal-content modal-wide" onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div className="modal-header">
           <div className="header-left">
@@ -757,20 +531,8 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             <div className="header-info">
               {isEditing ? (
                 <div className="edit-name-row">
-                  <input 
-                    type="text" 
-                    value={editData.first_name} 
-                    onChange={e => setEditData({...editData, first_name: e.target.value})}
-                    placeholder="First name"
-                    className="input-name"
-                  />
-                  <input 
-                    type="text" 
-                    value={editData.last_name} 
-                    onChange={e => setEditData({...editData, last_name: e.target.value})}
-                    placeholder="Last name"
-                    className="input-name"
-                  />
+                  <input type="text" value={editData.first_name} onChange={e => setEditData({...editData, first_name: e.target.value})} placeholder="First" className="input-name" />
+                  <input type="text" value={editData.last_name} onChange={e => setEditData({...editData, last_name: e.target.value})} placeholder="Last" className="input-name" />
                 </div>
               ) : (
                 <>
@@ -780,20 +542,18 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               )}
             </div>
           </div>
-          <button className="btn-close" onClick={onClose}><X size={24} /></button>
+          <button className="btn-close" onClick={onClose}><X size={20} /></button>
         </div>
-
 
         {/* Message Banner */}
         {message && (
           <div className={`message-banner ${message.type}`}>
-            {message.type === 'success' ? <CheckCircle size={18}/> : <AlertCircle size={18}/>}
+            {message.type === 'success' ? <CheckCircle size={16}/> : <AlertCircle size={16}/>}
             {message.text}
           </div>
         )}
 
-
-        {/* Progress Bar for Deep Enrichment */}
+        {/* Progress Bar */}
         {isDeepEnriching && (
           <div className="progress-bar-container">
             <div className="progress-bar" style={{ width: `${enrichmentProgress}%` }} />
@@ -801,193 +561,154 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           </div>
         )}
 
-
-        {/* Action Buttons */}
-        <div className="modal-actions">
+        {/* ✅ REORGANIZED Action Buttons - Compact Row */}
+        <div className="modal-actions compact">
           {isEditing ? (
             <>
-              <button className="btn-action btn-save" onClick={handleSave} disabled={isSaving}>
-                <Save size={18} /> {isSaving ? 'Saving...' : 'Save'}
+              <button className="btn-sm btn-save" onClick={handleSave} disabled={isSaving}>
+                <Save size={14} /> {isSaving ? 'Saving...' : 'Save'}
               </button>
-              <button className="btn-action" onClick={() => { setIsEditing(false); setEditData(contact); }}>Cancel</button>
+              <button className="btn-sm" onClick={() => { setIsEditing(false); setEditData(contact); }}>Cancel</button>
             </>
           ) : (
             <>
-              <button className="btn-action" onClick={() => setIsEditing(true)}><Edit2 size={18} /> Edit</button>
-              <button className="btn-action btn-enrich" onClick={handleEnrich} disabled={isEnriching}>
-                <Sparkles size={18} className={isEnriching ? 'spin' : ''} />
-                {isEnriching ? 'Enriching...' : 'Quick Enrich'}
-              </button>
+              <button className="btn-sm" onClick={() => setIsEditing(true)}><Edit2 size={14} /> Edit</button>
+              
               <button 
-                className={`btn-action btn-deep-enrich ${deepEnrichmentData ? 'has-profile' : ''}`} 
+                className={`btn-sm btn-enrich ${hasQuickEnrich ? 'completed' : ''}`} 
+                onClick={handleEnrich} 
+                disabled={isEnriching}
+                title={hasQuickEnrich ? 'Already enriched' : 'Run quick enrichment'}
+              >
+                <Sparkles size={14} className={isEnriching ? 'spin' : ''} />
+                {hasQuickEnrich ? 'Enriched ✓' : isEnriching ? 'Running...' : 'Quick Enrich'}
+              </button>
+              
+              <button 
+                className={`btn-sm btn-deep ${hasDeepEnrich ? 'completed' : ''}`} 
                 onClick={handleDeepEnrich} 
                 disabled={isDeepEnriching}
-                title={deepEnrichmentData ? `Last enriched: ${lastDeepEnriched ? new Date(lastDeepEnriched).toLocaleDateString() : 'Unknown'}` : ''}
+                title={hasDeepEnrich ? `Enriched ${lastDeepEnriched ? new Date(lastDeepEnriched).toLocaleDateString() : ''} - Click to re-enrich (costs credits)` : 'Run deep enrichment (~$0.02)'}
               >
-                <Brain size={18} className={isDeepEnriching ? 'spin' : ''} />
-                {isDeepEnriching ? 'Deep Researching...' : deepEnrichmentData ? 'Re-Enrich Deep' : 'Deep Enrich'}
+                <Brain size={14} className={isDeepEnriching ? 'spin' : ''} />
+                {hasDeepEnrich ? 'Deep ✓' : isDeepEnriching ? 'Running...' : 'Deep Enrich'}
               </button>
-              <button className="btn-action btn-score" onClick={handleScore} disabled={isScoring}>
-                <RefreshCw size={18} className={isScoring ? 'spin' : ''} />
-                {isScoring ? 'Scoring...' : 'Recalculate Score'}
+              
+              <button className="btn-sm btn-score" onClick={handleScore} disabled={isScoring}>
+                <RefreshCw size={14} className={isScoring ? 'spin' : ''} />
+                {isScoring ? 'Scoring...' : 'Rescore'}
               </button>
-              <button className="btn-action btn-delete" onClick={handleDelete}><Trash2 size={18} /></button>
+              
+              <button className="btn-sm btn-delete" onClick={handleDelete}><Trash2 size={14} /></button>
             </>
           )}
         </div>
 
-
         {/* Tabs */}
         <div className="modal-tabs">
-          <button className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Contact Info</button>
-          <button 
-            className={`tab-btn ${activeTab === 'enrichment' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('enrichment')}
-          >
-            Quick Enrich {contact.enrichment_status === 'completed' && '✓'}
+          <button className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Info</button>
+          <button className={`tab-btn ${activeTab === 'enrichment' ? 'active' : ''}`} onClick={() => setActiveTab('enrichment')}>
+            Quick {hasQuickEnrich && '✓'}
           </button>
-          <button 
-            className={`tab-btn ${activeTab === 'deepprofile' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('deepprofile')}
-          >
-            <Brain size={14} /> Deep Profile {deepEnrichmentData && '✨'}
+          <button className={`tab-btn ${activeTab === 'deepprofile' ? 'active' : ''}`} onClick={() => setActiveTab('deepprofile')}>
+            <Brain size={12} /> Deep {hasDeepEnrich && '✨'}
           </button>
-          <button 
-            className={`tab-btn ${activeTab === 'scoring' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('scoring')}
-          >
-            Scoring {contact.overall_score && `(${contact.overall_score})`}
+          <button className={`tab-btn ${activeTab === 'scoring' ? 'active' : ''}`} onClick={() => setActiveTab('scoring')}>
+            Score {contact.overall_score && `(${contact.overall_score})`}
           </button>
-          <button 
-            className={`tab-btn ${activeTab === 'outreach' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('outreach')}
-          >
-            <Send size={14} /> Outreach
+          <button className={`tab-btn ${activeTab === 'outreach' ? 'active' : ''}`} onClick={() => setActiveTab('outreach')}>
+            <Send size={12} /> Outreach
           </button>
         </div>
-
 
         {/* Tab Content */}
         <div className="modal-body">
           {activeTab === 'info' && (
             <div className="tab-pane">
-              <div className="info-grid">
+              <div className="info-grid compact">
                 <div className="info-field">
-                  <label><Mail size={16}/> Email</label>
+                  <label><Mail size={14}/> Email</label>
                   {isEditing ? (
-                    <input 
-                      type="email" 
-                      value={editData.email || ''} 
-                      onChange={e => setEditData({...editData, email: e.target.value})}
-                      className="input-field"
-                    />
+                    <input type="email" value={editData.email || ''} onChange={e => setEditData({...editData, email: e.target.value})} className="input-field" />
                   ) : (
                     <a href={`mailto:${contact.email}`} className="info-value link">{contact.email}</a>
                   )}
                 </div>
                 <div className="info-field">
-                  <label><Phone size={16}/> Phone</label>
+                  <label><Phone size={14}/> Phone</label>
                   {isEditing ? (
-                    <input 
-                      type="text" 
-                      value={editData.phone || ''} 
-                      onChange={e => setEditData({...editData, phone: e.target.value})}
-                      className="input-field"
-                    />
+                    <input type="text" value={editData.phone || ''} onChange={e => setEditData({...editData, phone: e.target.value})} className="input-field" />
                   ) : (
-                    <span className="info-value">{contact.phone || 'No phone'}</span>
+                    <span className="info-value">{contact.phone || '—'}</span>
                   )}
                 </div>
                 <div className="info-field">
-                  <label><Linkedin size={16}/> LinkedIn</label>
+                  <label><Linkedin size={14}/> LinkedIn</label>
                   {isEditing ? (
-                    <input 
-                      type="text" 
-                      value={editData.linkedin_url || ''} 
-                      onChange={e => setEditData({...editData, linkedin_url: e.target.value})}
-                      className="input-field"
-                    />
+                    <input type="text" value={editData.linkedin_url || ''} onChange={e => setEditData({...editData, linkedin_url: e.target.value})} className="input-field" />
                   ) : (
                     <a href={contact.linkedin_url || '#'} target="_blank" rel="noreferrer" className="info-value link">
-                      {contact.linkedin_url ? 'View Profile' : 'No URL'} <ExternalLink size={12}/>
+                      {contact.linkedin_url ? 'View' : '—'} {contact.linkedin_url && <ExternalLink size={10}/>}
                     </a>
                   )}
                 </div>
                 <div className="info-field">
-                  <label><Building2 size={16}/> Company</label>
+                  <label><Building2 size={14}/> Company</label>
                   {isEditing ? (
-                    <input 
-                      type="text" 
-                      value={editData.company || ''} 
-                      onChange={e => setEditData({...editData, company: e.target.value})}
-                      className="input-field"
-                    />
+                    <input type="text" value={editData.company || ''} onChange={e => setEditData({...editData, company: e.target.value})} className="input-field" />
                   ) : (
-                    <span className="info-value">{contact.company || 'No company'}</span>
+                    <span className="info-value">{contact.company || '—'}</span>
                   )}
                 </div>
                 <div className="info-field">
-                  <label><Briefcase size={16}/> Job Title</label>
+                  <label><Briefcase size={14}/> Title</label>
                   {isEditing ? (
-                    <input 
-                      type="text" 
-                      value={editData.title || ''} 
-                      onChange={e => setEditData({...editData, title: e.target.value})}
-                      className="input-field"
-                    />
+                    <input type="text" value={editData.title || ''} onChange={e => setEditData({...editData, title: e.target.value})} className="input-field" />
                   ) : (
-                    <span className="info-value">{contact.title || 'No title'}</span>
+                    <span className="info-value">{contact.title || '—'}</span>
                   )}
                 </div>
                 <div className="info-field">
-                  <label><Globe size={16}/> Website</label>
+                  <label><Globe size={14}/> Website</label>
                   {isEditing ? (
-                    <input 
-                      type="text" 
-                      value={editData.website || ''} 
-                      onChange={e => setEditData({...editData, website: e.target.value})}
-                      className="input-field"
-                    />
+                    <input type="text" value={editData.website || ''} onChange={e => setEditData({...editData, website: e.target.value})} className="input-field" />
                   ) : (
-                    <a href={contact.website || '#'} target="_blank" rel="noreferrer" className="info-value link">
-                      {contact.website || 'No website'}
-                    </a>
+                    <a href={contact.website || '#'} target="_blank" rel="noreferrer" className="info-value link">{contact.website || '—'}</a>
                   )}
                 </div>
               </div>
             </div>
           )}
 
-
           {activeTab === 'enrichment' && (
             <div className="tab-pane">
-              {contact.enrichment_status === 'completed' ? (
+              {hasQuickEnrich ? (
                 <div className="enrichment-results">
-                  <p>Standard enrichment data is available. Check scoring or deep profile for details.</p>
+                  <CheckCircle size={24} className="success-icon" />
+                  <p>Quick enrichment completed. View scores in the Scoring tab or run Deep Enrich for detailed research.</p>
                 </div>
               ) : (
                 <div className="empty-state">
-                  <Sparkles size={48} className="empty-icon" />
-                  <h3>No enrichment data</h3>
-                  <p>Run quick enrich to get basic firmographics and initial scoring.</p>
+                  <Sparkles size={40} className="empty-icon" />
+                  <h3>No enrichment yet</h3>
+                  <p>Run quick enrich for basic firmographics.</p>
                   <button className="btn-generate" onClick={handleEnrich} disabled={isEnriching}>
-                    {isEnriching ? 'Enriching...' : 'Run Quick Enrich'}
+                    {isEnriching ? 'Running...' : 'Quick Enrich'}
                   </button>
                 </div>
               )}
             </div>
           )}
 
-
           {activeTab === 'deepprofile' && (
             <div className="tab-pane">
-              {deepEnrichmentData && Object.keys(deepEnrichmentData).length > 0 ? (
+              {hasDeepEnrich ? (
                 renderDeepEnrichmentSections()
               ) : (
                 <div className="empty-state">
-                  <Brain size={48} className="empty-icon" />
+                  <Brain size={40} className="empty-icon" />
                   <h3>No deep profile yet</h3>
-                  <p>Deep enrich uses Perplexity AI for comprehensive research. (10-15 seconds)</p>
+                  <p>Deep enrich uses Perplexity AI (10-15 sec, ~$0.02)</p>
                   <button className="btn-generate" onClick={handleDeepEnrich} disabled={isDeepEnriching}>
                     {isDeepEnriching ? 'Researching...' : 'Generate Deep Profile'}
                   </button>
@@ -995,7 +716,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
               )}
             </div>
           )}
-
 
           {activeTab === 'scoring' && (
             <div className="tab-pane">
@@ -1008,25 +728,168 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           )}
 
-
           {activeTab === 'outreach' && (
             <div className="tab-pane">
-              <OutreachTab 
-                contact={{
-                  id: contact.id,
-                  firstname: contact.first_name || '',
-                  lastname: contact.last_name || '',
-                  email: contact.email || '',
-                  company: contact.company,
-                  title: contact.title
-                }} 
-                onUpdate={refreshContact}
-              />
+              <OutreachTab contact={outreachContact} onUpdate={refreshContact} />
             </div>
           )}
         </div>
       </div>
+
+      {/* ✅ INLINE STYLES for wider modal & compact UI */}
+      <style>{`
+        .modal-wide {
+          max-width: 900px !important;
+          width: 95vw !important;
+        }
+        
+        .modal-actions.compact {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 0.5rem;
+          padding: 0.75rem 1.25rem;
+        }
+        
+        .btn-sm {
+          display: inline-flex;
+          align-items: center;
+          gap: 0.35rem;
+          padding: 0.4rem 0.75rem;
+          font-size: 0.8rem;
+          font-weight: 600;
+          border-radius: 6px;
+          border: 1px solid rgba(148, 163, 184, 0.2);
+          background: rgba(30, 41, 59, 0.8);
+          color: #e2e8f0;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+        
+        .btn-sm:hover:not(:disabled) {
+          background: rgba(51, 65, 85, 0.9);
+          border-color: rgba(148, 163, 184, 0.4);
+        }
+        
+        .btn-sm:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+        
+        .btn-sm.btn-enrich {
+          background: linear-gradient(135deg, #8b5cf6, #6366f1);
+          border-color: transparent;
+          color: white;
+        }
+        
+        .btn-sm.btn-enrich.completed {
+          background: rgba(34, 197, 94, 0.2);
+          border-color: rgba(34, 197, 94, 0.4);
+          color: #22c55e;
+        }
+        
+        .btn-sm.btn-deep {
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          border-color: transparent;
+          color: white;
+        }
+        
+        .btn-sm.btn-deep.completed {
+          background: rgba(99, 102, 241, 0.2);
+          border-color: rgba(99, 102, 241, 0.4);
+          color: #a5b4fc;
+        }
+        
+        .btn-sm.btn-score {
+          background: rgba(34, 197, 94, 0.15);
+          border-color: rgba(34, 197, 94, 0.3);
+          color: #22c55e;
+        }
+        
+        .btn-sm.btn-delete {
+          background: rgba(239, 68, 68, 0.1);
+          border-color: rgba(239, 68, 68, 0.2);
+          color: #ef4444;
+        }
+        
+        .btn-sm.btn-save {
+          background: #22c55e;
+          border-color: #22c55e;
+          color: white;
+        }
+        
+        .modal-tabs {
+          font-size: 0.85rem;
+        }
+        
+        .tab-btn {
+          padding: 0.6rem 1rem;
+          font-size: 0.8rem;
+        }
+        
+        .info-grid.compact {
+          gap: 0.75rem;
+        }
+        
+        .info-field label {
+          font-size: 0.75rem;
+        }
+        
+        .info-value {
+          font-size: 0.85rem;
+        }
+        
+        .enrichment-card {
+          font-size: 0.85rem;
+        }
+        
+        .enrichment-card h4 {
+          font-size: 0.95rem;
+        }
+        
+        .enrichment-card h5 {
+          font-size: 0.8rem;
+          margin: 0.5rem 0 0.25rem;
+        }
+        
+        .enrichment-card li {
+          font-size: 0.8rem;
+          line-height: 1.4;
+        }
+        
+        .enrichment-meta {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          font-size: 0.7rem;
+          color: #64748b;
+          margin-top: 1rem;
+          padding-top: 0.75rem;
+          border-top: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        
+        .score-card {
+          padding: 0.75rem;
+        }
+        
+        .score-card-icon {
+          width: 36px;
+          height: 36px;
+        }
+        
+        .success-icon {
+          color: #22c55e;
+          margin-bottom: 0.5rem;
+        }
+        
+        .spin {
+          animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };
-
