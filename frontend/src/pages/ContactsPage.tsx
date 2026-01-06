@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, RefreshCw, Upload, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
 import { enrichContact } from '../api/enrichment';
+import { ContactsTable } from '../components/ContactsTable';
 import '../styles/ContactsPage.css';
-
 
 export const ContactsPage: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -14,11 +14,9 @@ export const ContactsPage: React.FC = () => {
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
 
-
   useEffect(() => {
     loadContacts();
   }, []);
-
 
   const loadContacts = async () => {
     setLoading(true);
@@ -33,7 +31,6 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
-
   const filteredContacts = contacts.filter(contact => {
     const matchesSearch = 
       contact.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -47,14 +44,12 @@ export const ContactsPage: React.FC = () => {
     return matchesSearch && matchesTier;
   });
 
-
   const toggleSelectContact = (id: string) => {
     const newSelected = new Set(selectedContacts);
     if (newSelected.has(id)) newSelected.delete(id);
     else newSelected.add(id);
     setSelectedContacts(newSelected);
   };
-
 
   const toggleSelectAll = () => {
     if (selectedContacts.size === filteredContacts.length) {
@@ -63,7 +58,6 @@ export const ContactsPage: React.FC = () => {
       setSelectedContacts(new Set(filteredContacts.map(c => c.id)));
     }
   };
-
 
   const enrichSelected = async () => {
     if (selectedContacts.size === 0) return;
@@ -82,7 +76,6 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
-
   const deleteSelected = async () => {
     if (selectedContacts.size === 0) return;
     if (!confirm(`Delete ${selectedContacts.size} contact(s)?`)) return;
@@ -95,23 +88,21 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
-
-  const getScoreColor = (tier?: string) => {
-    switch (tier?.toLowerCase()) {
-      case 'hot': return '#ef4444';
-      case 'warm': return '#f59e0b';
-      case 'cold': return '#3b82f6';
-      default: return '#6b7280';
+  const handleDeleteContact = async (contactId: string) => {
+    if (!confirm('Delete this contact?')) return;
+    try {
+      await deleteContacts([contactId]);
+      loadContacts();
+    } catch (err: any) {
+      alert(`❌ Failed: ${err.message}`);
     }
   };
-
 
   const tierCounts = {
     hot: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'hot').length,
     warm: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'warm').length,
     cold: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'cold').length,
   };
-
 
   if (error) {
     return (
@@ -127,7 +118,6 @@ export const ContactsPage: React.FC = () => {
       </div>
     );
   }
-
 
   return (
     <div className="contacts-page">
@@ -152,7 +142,6 @@ export const ContactsPage: React.FC = () => {
         </div>
       </div>
 
-
       {/* Toolbar */}
       <div className="contacts-toolbar">
         <div className="search-box">
@@ -164,7 +153,6 @@ export const ContactsPage: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
-
 
         <div className="filter-buttons">
           <button className={`filter-btn ${filterTier === 'all' ? 'active' : ''}`} onClick={() => setFilterTier('all')}>
@@ -181,7 +169,6 @@ export const ContactsPage: React.FC = () => {
           </button>
         </div>
 
-
         {selectedContacts.size > 0 && (
           <div className="bulk-actions">
             <span>{selectedContacts.size} selected</span>
@@ -197,7 +184,6 @@ export const ContactsPage: React.FC = () => {
         )}
       </div>
 
-
       {/* Table */}
       {loading ? (
         <div className="loading-state">
@@ -205,101 +191,15 @@ export const ContactsPage: React.FC = () => {
           <p>Loading contacts...</p>
         </div>
       ) : (
-        <div className="contacts-table-container">
-          <table className="contacts-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    checked={selectedContacts.size === filteredContacts.length && filteredContacts.length > 0}
-                    onChange={toggleSelectAll}
-                  />
-                </th>
-                <th>Contact</th>
-                <th>Company</th>
-                <th>Title</th>
-                <th>MDCP</th>
-                <th>BANT</th>
-                <th>SPICE</th>
-                <th>Overall</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredContacts.map(contact => (
-                <tr 
-                  key={contact.id}
-                  className="clickable-row"
-                >
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <input
-                      type="checkbox"
-                      checked={selectedContacts.has(contact.id)}
-                      onChange={() => toggleSelectContact(contact.id)}
-                    />
-                  </td>
-                  <td>
-                    <div className="contact-cell">
-                      <div className="contact-avatar">
-                        {contact.first_name?.[0]}{contact.last_name?.[0]}
-                      </div>
-                      <div>
-                        <div className="contact-name">{contact.first_name} {contact.last_name}</div>
-                        <div className="contact-email">{contact.email}</div>
-                      </div>
-                    </div>
-                  </td>
-                  <td>{contact.company || '—'}</td>
-                  <td>{contact.title || '—'}</td>
-                  <td>
-                    {contact.mdcp_score ? (
-                      <span className="score-badge" style={{ backgroundColor: getScoreColor(contact.mdcp_tier) }}>
-                        {contact.mdcp_score}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td>
-                    {contact.bant_score ? (
-                      <span className="score-badge-small">{contact.bant_score}</span>
-                    ) : '—'}
-                  </td>
-                  <td>
-                    {contact.spice_score ? (
-                      <span className="score-badge-small">{contact.spice_score}</span>
-                    ) : '—'}
-                  </td>
-                  <td>
-                    {contact.overall_score ? (
-                      <span className="score-badge-overall" style={{ backgroundColor: getScoreColor(contact.overall_tier) }}>
-                        {contact.overall_score}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td>
-                    <span className={`status-badge status-${contact.enrichment_status || 'pending'}`}>
-                      {contact.enrichment_status === 'completed' ? '✓' : '○'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-
-          {filteredContacts.length === 0 && (
-            <div className="empty-state">
-              <Users size={64} />
-              <h3>No contacts found</h3>
-              <p>Try adjusting your search or import some contacts</p>
-            </div>
-          )}
-        </div>
+        <ContactsTable
+          contacts={filteredContacts}
+          onEnrichContact={(contactId) => enrichContact(contactId).then(() => loadContacts())}
+          onDeleteContact={handleDeleteContact}
+          enrichingIds={new Set()}
+        />
       )}
-      {/* ✅ MODAL REMOVED - Rows now navigate via ContactsTable */}
     </div>
   );
 };
-
 
 export default ContactsPage;
