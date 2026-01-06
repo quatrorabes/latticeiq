@@ -10,9 +10,9 @@ import { enrichContact, deepEnrichContact, getEnrichmentResult, pollEnrichmentCo
 import { calculateScores } from '../api/scoring';
 import { supabase } from '../lib/supabaseClient';
 import { UnifiedEnrichmentResult, LegacyEnrichmentData } from '../types/enrichment';
-import OutreachTab from '../components/OutreachTab';
-import '../styles/ContactDetailModal.css';
 import { OutreachTab } from './OutreachTab';
+import '../styles/ContactDetailModal.css';
+
 
 
 
@@ -1012,9 +1012,15 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           {activeTab === 'outreach' && (
             <div className="tab-pane">
               <OutreachTab 
-                contactId={contact.id} 
-                contactName={`${contact.first_name || ''} ${contact.last_name || ''}`.trim()}
-                hasEnrichment={contact.enrichment_status === 'completed'}
+                contact={{
+                  id: contact.id,
+                  firstname: contact.first_name || '',
+                  lastname: contact.last_name || '',
+                  email: contact.email || '',
+                  company: contact.company,
+                  title: contact.title
+                }} 
+                onUpdate={refreshContact}
               />
             </div>
           )}
