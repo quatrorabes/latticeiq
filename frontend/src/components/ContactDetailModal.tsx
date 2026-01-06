@@ -102,17 +102,17 @@ export default function ContactDetailModal({
           const result = await resultResponse.json();
           console.log('Poll attempt', attempts, ':', result);
           
-          // Backend returns enrichment data directly OR nested - handle both
-          const hasEnrichmentData = result.contactprofile || 
-                                    result.data?.contactprofile || 
-                                    result.enrichment_data?.contactprofile;
-          
+          // Backend returns enrichment data with snake_case field names
+          const hasEnrichmentData = result.contact_profile || 
+                          result.data?.contact_profile || 
+                          result.enrichment_data?.contact_profile;
+
           if (hasEnrichmentData) {
-            // Determine where the data actually is
-            const enrichData = result.contactprofile 
-              ? result  // Data is at top level
-              : (result.data?.contactprofile ? result.data : result.enrichment_data);
-            
+          // Determine where the data actually is
+          const enrichData = result.contact_profile 
+           ? result  // Data is at top level
+           : (result.data?.contact_profile ? result.data : result.enrichment_data);
+  
             setEnrichmentData(enrichData);
             setEnrichmentStatus('completed');
             
@@ -618,14 +618,15 @@ export default function ContactDetailModal({
               {/* Enrichment Sections - NEW 6-SECTION FORMAT */}
               {enrichmentData && !isEnriching && (
                 <div className="enrichment-sections">
-                  {renderContactProfile(enrichmentData.contactprofile)}
-                  {renderCompanyProfile(enrichmentData.companyprofile)}
-                  {renderCurrentFocus(enrichmentData.currentfocus)}
-                  {renderBuyingSignals(enrichmentData.buyingsignals)}
-                  {renderRisksAndObjections(enrichmentData.risksandobjections)}
+                  {renderContactProfile(enrichmentData.contact_profile)}
+                  {renderCompanyProfile(enrichmentData.company_profile)}
+                  {renderCurrentFocus(enrichmentData.current_focus)}
+                  {renderBuyingSignals(enrichmentData.buying_signals)}
+                  {renderRisksAndObjections(enrichmentData.risks_and_objections)}
                   {renderMessaging(enrichmentData.messaging)}
                 </div>
               )}
+
 
               {/* Empty State */}
               {!enrichmentData && !isEnriching && (
