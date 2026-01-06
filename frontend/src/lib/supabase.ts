@@ -150,31 +150,45 @@ export function subscribeToEngagementMetrics(
   callback: (data: EngagementMetric[]) => void
 ) {
   const subscription = supabase
-    .from('engagement_metrics')
-    .on('*', (payload) => {
-      console.log('Engagement metrics updated:', payload)
-      // Re-fetch latest data
-      fetchEngagementVelocity().then((data) => {
-        if (data) callback(data)
-      })
-    })
+    .channel('engagement_metrics_changes', { config: { broadcast: { self: true } } })
+    .on<EngagementMetric>(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'engagement_metrics' },
+      (payload: any) => {
+        console.log('Engagement metrics updated:', payload)
+        fetchEngagementVelocity().then((data) => {
+          if (data) callback(data)
+        })
+      }
+    )
     .subscribe()
 
-  return subscription
+  return {
+    unsubscribe: async () => {
+      await subscription.unsubscribe()
+    },
+  }
 }
 
 // Real-time subscription to contact updates
 export function subscribeToContacts(callback: (data: Contact[]) => void) {
   const subscription = supabase
-    .from('contacts')
-    .on('*', (payload) => {
-      console.log('Contacts updated:', payload)
-      // Re-fetch call today contacts
-      fetchCallTodayContacts().then((data) => {
-        if (data) callback(data)
-      })
-    })
+    .channel('contacts_changes', { config: { broadcast: { self: true } } })
+    .on<Contact>(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'contacts' },
+      (payload: any) => {
+        console.log('Contacts updated:', payload)
+        fetchCallTodayContacts().then((data) => {
+          if (data) callback(data)
+        })
+      }
+    )
     .subscribe()
 
-  return subscription
+  return {
+    unsubscribe: async () => {
+      await subscription.unsubscribe()
+    },
+  }
 }
