@@ -1,18 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Search, RefreshCw, Upload, Trash2, Sparkles, AlertCircle } from 'lucide-react';
-import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
-import { enrichContact } from '../api/enrichment';
-import { ContactsTable } from '../components/ContactsTable';
-import '../styles/ContactsPage.css';
+// frontend/src/pages/ContactsPage.tsx
+import { useState, useEffect } from 'react';
+import { Loader2, RefreshCw, Upload, Zap, Trash2, Users } from 'lucide-react';
+import { fetchContacts, deleteContact } from '../api/contacts';
+import { Contact } from '../types';
+import ContactDetailModal from '../components/ContactDetailModal';
 
-export const ContactsPage: React.FC = () => {
+export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterTier, setFilterTier] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
-  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
-  const [enriching, setEnriching] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filter, setFilter] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
   useEffect(() => {
     loadContacts();
@@ -20,186 +18,438 @@ export const ContactsPage: React.FC = () => {
 
   const loadContacts = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const response = await fetchContacts(1000, 0);
-      setContacts(response.contacts || []);
-    } catch (err: any) {
-      setError(err.message || 'Failed to load contacts');
+      const data = await fetchContacts();
+      setContacts(data);
+    } catch (error) {
+      console.error('Failed to load contacts:', error);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to delete this contact?')) return;
+    try {
+      await deleteContact(id);
+      setContacts(contacts.filter(c => c.id !== id));
+    } catch (error) {
+      console.error('Failed to delete contact:', error);
+    }
+  };
+
+  const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
+    const score = contact.mdcp_score || 0;
+    if (score >= 70) return 'hot';
+    if (score >= 40) return 'warm';
+    return 'cold';
+  };
+
   const filteredContacts = contacts.filter(contact => {
     const matchesSearch = 
-      contact.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.last_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      contact.company?.toLowerCase().includes(searchQuery.toLowerCase());
+      contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
     
-    const tier = contact.mdcp_tier || contact.overall_tier;
-    const matchesTier = filterTier === 'all' || tier === filterTier;
-    
-    return matchesSearch && matchesTier;
+    if (filter === 'all') return matchesSearch;
+    return matchesSearch && getTier(contact) === filter;
   });
 
-  const toggleSelectContact = (id: string) => {
-    const newSelected = new Set(selectedContacts);
-    if (newSelected.has(id)) newSelected.delete(id);
-    else newSelected.add(id);
-    setSelectedContacts(newSelected);
+  const counts = {
+    all: contacts.length,
+    hot: contacts.filter(c => getTier(c) === 'hot').length,
+    warm: contacts.filter(c => getTier(c) === 'warm').length,
+    cold: contacts.filter(c => getTier(c) === 'cold').length,
   };
 
-  const toggleSelectAll = () => {
-    if (selectedContacts.size === filteredContacts.length) {
-      setSelectedContacts(new Set());
-    } else {
-      setSelectedContacts(new Set(filteredContacts.map(c => c.id)));
-    }
+  // Inline styles to guarantee they apply (matching Contact Detail page exactly)
+  const styles = {
+    page: {
+      minHeight: '100vh',
+      background: '#0f172a',
+      padding: '2rem',
+      color: '#f8fafc',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    } as React.CSSProperties,
+    
+    header: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: '2rem',
+      paddingBottom: '1.5rem',
+      borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+    } as React.CSSProperties,
+    
+    headerLeft: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem',
+    } as React.CSSProperties,
+    
+    headerIcon: {
+      width: '48px',
+      height: '48px',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.3)',
+      borderRadius: '12px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#6366f1',
+    } as React.CSSProperties,
+    
+    title: {
+      fontSize: '2rem',
+      fontWeight: 800,
+      margin: 0,
+      letterSpacing: '-0.02em',
+    } as React.CSSProperties,
+    
+    subtitle: {
+      fontSize: '0.95rem',
+      color: '#94a3b8',
+      margin: '0.25rem 0 0 0',
+    } as React.CSSProperties,
+    
+    headerActions: {
+      display: 'flex',
+      gap: '1rem',
+    } as React.CSSProperties,
+    
+    btnPrimary: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.75rem 1.5rem',
+      background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+      border: 'none',
+      borderRadius: '10px',
+      color: 'white',
+      fontWeight: 600,
+      fontSize: '0.95rem',
+      cursor: 'pointer',
+      boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+    } as React.CSSProperties,
+    
+    btnSecondary: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.75rem 1.5rem',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.3)',
+      borderRadius: '10px',
+      color: '#f8fafc',
+      fontWeight: 600,
+      fontSize: '0.95rem',
+      cursor: 'pointer',
+    } as React.CSSProperties,
+    
+    controlsCard: {
+      background: '#1e293b',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+    
+    searchInput: {
+      width: '100%',
+      padding: '0.875rem 1.25rem',
+      background: '#0f172a',
+      border: '1px solid rgba(148, 163, 184, 0.15)',
+      borderRadius: '10px',
+      color: '#f8fafc',
+      fontSize: '0.95rem',
+      marginBottom: '1rem',
+      outline: 'none',
+    } as React.CSSProperties,
+    
+    filterTabs: {
+      display: 'flex',
+      gap: '0.75rem',
+      flexWrap: 'wrap' as const,
+    } as React.CSSProperties,
+    
+    filterTab: {
+      padding: '0.6rem 1.25rem',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '8px',
+      color: '#f8fafc',
+      fontWeight: 600,
+      fontSize: '0.9rem',
+      cursor: 'pointer',
+    } as React.CSSProperties,
+    
+    filterTabActive: {
+      padding: '0.6rem 1.25rem',
+      background: '#6366f1',
+      border: '1px solid #6366f1',
+      borderRadius: '8px',
+      color: 'white',
+      fontWeight: 600,
+      fontSize: '0.9rem',
+      cursor: 'pointer',
+    } as React.CSSProperties,
+    
+    tableCard: {
+      background: '#1e293b',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '16px',
+      overflow: 'hidden',
+      boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15)',
+    } as React.CSSProperties,
+    
+    table: {
+      width: '100%',
+      borderCollapse: 'collapse' as const,
+    } as React.CSSProperties,
+    
+    th: {
+      padding: '1.25rem 1rem',
+      textAlign: 'left' as const,
+      fontWeight: 700,
+      fontSize: '0.7rem',
+      textTransform: 'uppercase' as const,
+      letterSpacing: '0.1em',
+      color: '#64748b',
+      background: 'rgba(99, 102, 241, 0.05)',
+      borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+    } as React.CSSProperties,
+    
+    tr: {
+      borderBottom: '1px solid rgba(148, 163, 184, 0.06)',
+      cursor: 'pointer',
+      transition: 'background 200ms ease',
+    } as React.CSSProperties,
+    
+    td: {
+      padding: '1rem',
+      color: '#e2e8f0',
+      fontSize: '0.95rem',
+    } as React.CSSProperties,
+    
+    contactInfo: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem',
+    } as React.CSSProperties,
+    
+    avatar: {
+      width: '40px',
+      height: '40px',
+      background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+      borderRadius: '10px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      fontWeight: 700,
+      fontSize: '0.8rem',
+      color: 'white',
+      flexShrink: 0,
+    } as React.CSSProperties,
+    
+    contactName: {
+      fontWeight: 600,
+      color: '#f8fafc',
+      display: 'block',
+    } as React.CSSProperties,
+    
+    contactEmail: {
+      fontSize: '0.85rem',
+      color: '#64748b',
+      display: 'block',
+    } as React.CSSProperties,
+    
+    statusBadge: (status: string) => ({
+      display: 'inline-flex',
+      padding: '0.4rem 0.9rem',
+      borderRadius: '6px',
+      fontSize: '0.8rem',
+      fontWeight: 700,
+      textTransform: 'capitalize' as const,
+      background: status === 'completed' ? 'rgba(34, 197, 94, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+      color: status === 'completed' ? '#22c55e' : '#f59e0b',
+      border: `1px solid ${status === 'completed' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
+    }) as React.CSSProperties,
+    
+    actionButtons: {
+      display: 'flex',
+      gap: '0.5rem',
+    } as React.CSSProperties,
+    
+    actionBtn: {
+      width: '34px',
+      height: '34px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'transparent',
+      border: '1px solid rgba(148, 163, 184, 0.15)',
+      borderRadius: '8px',
+      color: '#64748b',
+      cursor: 'pointer',
+    } as React.CSSProperties,
+    
+    loading: {
+      display: 'flex',
+      flexDirection: 'column' as const,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: '60vh',
+      gap: '1.5rem',
+      color: '#94a3b8',
+    } as React.CSSProperties,
+    
+    emptyState: {
+      padding: '4rem 2rem',
+      textAlign: 'center' as const,
+      color: '#64748b',
+    } as React.CSSProperties,
   };
 
-  const enrichSelected = async () => {
-    if (selectedContacts.size === 0) return;
-    setEnriching(true);
-    try {
-      await Promise.all(
-        Array.from(selectedContacts).map(contactId => enrichContact(contactId))
-      );
-      alert(`✅ Enriched ${selectedContacts.size} contacts with scores!`);
-      setSelectedContacts(new Set());
-      loadContacts();
-    } catch (err: any) {
-      alert(`❌ Failed: ${err.message}`);
-    } finally {
-      setEnriching(false);
-    }
-  };
-
-  const deleteSelected = async () => {
-    if (selectedContacts.size === 0) return;
-    if (!confirm(`Delete ${selectedContacts.size} contact(s)?`)) return;
-    try {
-      await deleteContacts(Array.from(selectedContacts));
-      setSelectedContacts(new Set());
-      loadContacts();
-    } catch (err: any) {
-      alert(`❌ Failed: ${err.message}`);
-    }
-  };
-
-  const handleDeleteContact = async (contactId: string) => {
-    if (!confirm('Delete this contact?')) return;
-    try {
-      await deleteContacts([contactId]);
-      loadContacts();
-    } catch (err: any) {
-      alert(`❌ Failed: ${err.message}`);
-    }
-  };
-
-  const tierCounts = {
-    hot: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'hot').length,
-    warm: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'warm').length,
-    cold: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'cold').length,
-  };
-
-  if (error) {
+  if (loading) {
     return (
-      <div className="contacts-page">
-        <div className="error-state">
-          <AlertCircle size={64} color="#ef4444" />
-          <h2>Failed to Load Contacts</h2>
-          <p>{error}</p>
-          <button className="btn-primary" onClick={loadContacts}>
-            <RefreshCw size={20} /> Retry
-          </button>
+      <div style={styles.page}>
+        <div style={styles.loading}>
+          <Loader2 size={48} style={{ animation: 'spin 1s linear infinite', color: '#6366f1' }} />
+          <p>Loading contacts...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="contacts-page">
+    <div style={styles.page}>
       {/* Header */}
-      <div className="page-header">
-        <div className="header-main">
-          <Users size={32} />
+      <div style={styles.header}>
+        <div style={styles.headerLeft}>
+          <div style={styles.headerIcon}>
+            <Users size={24} />
+          </div>
           <div>
-            <h1>Contacts</h1>
-            <p>{contacts.length} contacts • {tierCounts.hot} hot • {tierCounts.warm} warm</p>
+            <h1 style={styles.title}>Contacts</h1>
+            <p style={styles.subtitle}>{contacts.length} contacts • {counts.hot} hot • {counts.warm} warm</p>
           </div>
         </div>
-        <div className="header-actions">
-          <button className="btn-secondary" onClick={loadContacts} disabled={loading}>
-            <RefreshCw size={20} className={loading ? 'spin' : ''} />
+        <div style={styles.headerActions}>
+          <button style={styles.btnSecondary} onClick={loadContacts}>
+            <RefreshCw size={18} />
             Refresh
           </button>
-          <button className="btn-primary" onClick={() => window.location.href = '/crm'}>
-            <Upload size={20} />
+          <button style={styles.btnPrimary}>
+            <Upload size={18} />
             Import
           </button>
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="contacts-toolbar">
-        <div className="search-box">
-          <Search size={20} />
-          <input
-            type="text"
-            placeholder="Search contacts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-
-        <div className="filter-buttons">
-          <button className={`filter-btn ${filterTier === 'all' ? 'active' : ''}`} onClick={() => setFilterTier('all')}>
-            All ({contacts.length})
-          </button>
-          <button className={`filter-btn ${filterTier === 'hot' ? 'active' : ''}`} onClick={() => setFilterTier('hot')}>
-            🔥 Hot ({tierCounts.hot})
-          </button>
-          <button className={`filter-btn ${filterTier === 'warm' ? 'active' : ''}`} onClick={() => setFilterTier('warm')}>
-            ⭐ Warm ({tierCounts.warm})
-          </button>
-          <button className={`filter-btn ${filterTier === 'cold' ? 'active' : ''}`} onClick={() => setFilterTier('cold')}>
-            ❄️ Cold ({tierCounts.cold})
-          </button>
-        </div>
-
-        {selectedContacts.size > 0 && (
-          <div className="bulk-actions">
-            <span>{selectedContacts.size} selected</span>
-            <button className="btn-small" onClick={enrichSelected} disabled={enriching}>
-              <Sparkles size={16} />
-              {enriching ? 'Enriching...' : 'Enrich + Score'}
+      {/* Search & Filters Card */}
+      <div style={styles.controlsCard}>
+        <input
+          type="text"
+          placeholder="Search contacts..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={styles.searchInput}
+        />
+        <div style={styles.filterTabs}>
+          {(['all', 'hot', 'warm', 'cold'] as const).map((f) => (
+            <button
+              key={f}
+              style={filter === f ? styles.filterTabActive : styles.filterTab}
+              onClick={() => setFilter(f)}
+            >
+              {f === 'hot' && '🔥 '}
+              {f === 'warm' && '⭐ '}
+              {f === 'cold' && '❄️ '}
+              {f.charAt(0).toUpperCase() + f.slice(1)} ({counts[f]})
             </button>
-            <button className="btn-small btn-danger" onClick={deleteSelected}>
-              <Trash2 size={16} />
-              Delete
-            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table Card */}
+      <div style={styles.tableCard}>
+        <table style={styles.table}>
+          <thead>
+            <tr>
+              <th style={styles.th}>Contact</th>
+              <th style={styles.th}>Company</th>
+              <th style={styles.th}>Title</th>
+              <th style={styles.th}>MDCP</th>
+              <th style={styles.th}>BANT</th>
+              <th style={styles.th}>SPICE</th>
+              <th style={styles.th}>Status</th>
+              <th style={styles.th}>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredContacts.map((contact) => (
+              <tr 
+                key={contact.id} 
+                style={styles.tr}
+                onClick={() => setSelectedContact(contact)}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+              >
+                <td style={styles.td}>
+                  <div style={styles.contactInfo}>
+                    <div style={styles.avatar}>
+                      {contact.name?.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??'}
+                    </div>
+                    <div>
+                      <span style={styles.contactName}>{contact.name || 'Unknown'}</span>
+                      <span style={styles.contactEmail}>{contact.email || 'No email'}</span>
+                    </div>
+                  </div>
+                </td>
+                <td style={styles.td}>{contact.company || '—'}</td>
+                <td style={styles.td}>{contact.title || '—'}</td>
+                <td style={styles.td}>{contact.mdcp_score || '—'}</td>
+                <td style={styles.td}>{contact.bant_score || '—'}</td>
+                <td style={styles.td}>{contact.spice_score || '—'}</td>
+                <td style={styles.td}>
+                  <span style={styles.statusBadge(contact.enrichment_status || 'pending')}>
+                    {contact.enrichment_status || 'pending'}
+                  </span>
+                </td>
+                <td style={styles.td}>
+                  <div style={styles.actionButtons} onClick={(e) => e.stopPropagation()}>
+                    <button style={styles.actionBtn} title="Enrich">
+                      <Zap size={16} />
+                    </button>
+                    <button 
+                      style={styles.actionBtn}
+                      title="Delete"
+                      onClick={(e) => handleDelete(contact.id, e)}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+
+        {filteredContacts.length === 0 && (
+          <div style={styles.emptyState}>
+            <p>No contacts found matching your criteria.</p>
           </div>
         )}
       </div>
 
-      {/* Table */}
-      {loading ? (
-        <div className="loading-state">
-          <RefreshCw className="spin" size={48} />
-          <p>Loading contacts...</p>
-        </div>
-      ) : (
-        <ContactsTable
-          contacts={filteredContacts}
-          onEnrichContact={(contactId) => enrichContact(contactId).then(() => loadContacts())}
-          onDeleteContact={handleDeleteContact}
-          enrichingIds={new Set()}
+      {/* Modal */}
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          onClose={() => setSelectedContact(null)}
         />
       )}
     </div>
   );
-};
-
-export default ContactsPage;
+}
