@@ -153,7 +153,6 @@ export default function RelationshipIntelligence() {
             },
             grid: {
               display: false,
-              drawBorder: false,
             },
           },
         },
