@@ -93,7 +93,7 @@ export default function CampaignsPage() {
 
 
   const getContactName = (contact: Contact): string => {
-    return `${contact.firstname || ''} ${contact.lastname || ''}`.trim() || 'Unknown';
+    return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
   };
 
 

@@ -54,7 +54,7 @@ export default function ContactsPage() {
 
   // Helper function for contact name
   const getContactName = (contact: Contact): string => {
-    return `${contact.firstname || ''} ${contact.lastname || ''}`.trim() || 'Unknown';
+    return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
   };
 
   // Helper function for initials
