@@ -40,7 +40,7 @@ export default function ContactDetailModal({
   useEffect(() => {
     if (contact.enrichment_data) {
       // Handle nested data structure
-      const data = contact.enrichment_data.data || contact.enrichment_data;
+      const data = (contact.enrichment_data as any)?.data || contact.enrichment_data;
       setEnrichmentData(data);
       setEnrichmentStatus('completed');
     } else {
@@ -168,7 +168,7 @@ export default function ContactDetailModal({
             if (onUpdate) {
               onUpdate({
                 ...contact,
-                enrichment_data: { data: enrichData },
+                enrichment_data: enrichData as any,
                 mdcp_score: scoresData?.mdcp,
                 bant_score: scoresData?.bant,
                 spice_score: scoresData?.spice
