@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { useEffect, useState } from 'react';
 import { supabase } from './supabaseClient';
 import Layout from './components/Layout';
-import PremiumDashboard from './pages/PremiumDashboard';  // CHANGE THIS LINE
+import PremiumDashboard from './pages/PremiumDashboard';
 import ContactsPage from './pages/ContactsPage';
 import CRMPage from './pages/CRMPage';
 import ScoringPage from './pages/ScoringPage';
@@ -17,10 +17,13 @@ import ICPsPage from './pages/ICPsPage';
 import CampaignsPage from './pages/CampaignsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
+import RelationshipIntelligence from './pages/RelationshipIntelligence';
+
 
 function App() {
   const [session, setSession] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
 
   useEffect(() => {
     // Get initial session
@@ -29,6 +32,7 @@ function App() {
       setLoading(false);
     });
 
+
     // Listen for auth changes
     const {
       data: { subscription },
@@ -36,8 +40,10 @@ function App() {
       setSession(session);
     });
 
+
     return () => subscription.unsubscribe();
   }, []);
+
 
   if (loading) {
     return (
@@ -54,6 +60,7 @@ function App() {
     );
   }
 
+
   if (!session) {
     return (
       <Router>
@@ -66,13 +73,15 @@ function App() {
     );
   }
 
+
   return (
   <Router>
     <Layout>
       <Routes>
         <Route path="/" element={<PremiumDashboard />} />
+        <Route path="/intelligence" element={<RelationshipIntelligence />} />
         <Route path="/contacts" element={<ContactsPage />} />
-        <Route path="/contacts/:contactId" element={<ContactDetailPage />} />  {/* MOVED HERE */}
+        <Route path="/contacts/:contactId" element={<ContactDetailPage />} />
         <Route path="/crm" element={<CRMPage />} />
         <Route path="/smart-lists" element={<SmartListsPage />} />
         <Route path="/pipeline" element={<PipelinePage />} />
@@ -83,11 +92,12 @@ function App() {
         <Route path="/icps" element={<ICPsPage />} />
         <Route path="/campaigns" element={<CampaignsPage />} />
         <Route path="/templates" element={<TemplatesPage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />  {/* CATCH-ALL MUST BE LAST */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Layout>
   </Router>
   );
 }
+
 
 export default App;
