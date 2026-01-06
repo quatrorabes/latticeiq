@@ -1,6 +1,11 @@
 // frontend/src/components/ContactDetailModal.tsx
+
 import React, { useState, useEffect } from 'react';
-import { X, Building2, TrendingUp, DollarSign, Users, Newspaper, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Briefcase, AlertTriangle, MessageSquare, Zap } from 'lucide-react';
+import { 
+  X, Building2, Target, Loader2, RefreshCw, 
+  AlertCircle, CheckCircle2, Clock, User, 
+  AlertTriangle, MessageSquare, Zap 
+} from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
 import { Contact } from '../types';
 
@@ -47,7 +52,7 @@ export default function ContactDetailModal({
       spice: contact.spice_score ?? 0
     });
     setEnrichmentError(null);
-  }, [contact.id]);
+  }, [contact.id, contact.enrichment_data, contact.mdcp_score, contact.bant_score, contact.spice_score]);
 
   if (!isOpen) return null;
 
@@ -56,106 +61,105 @@ export default function ContactDetailModal({
   // ============================================================
 
   const handleDeepEnrich = async () => {
-  setIsEnriching(true);
-  setEnrichmentStatus('processing');
-  setEnrichmentError(null);
+    setIsEnriching(true);
+    setEnrichmentStatus('processing');
+    setEnrichmentError(null);
 
-  try {
-    const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
-    
-    // Get auth token
-    const { data: { session } } = await supabase.auth.getSession();
-    const token = session?.access_token;
-
-    // Trigger deep enrichment
-    const response = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token && { 'Authorization': `Bearer ${token}` })
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Enrichment failed: ${response.status}`);
-    }
-
-    // Poll for results (deep enrichment takes 10-18 seconds)
-    let attempts = 0;
-    const maxAttempts = 30;
-    
-    while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 1000));
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
       
-      const resultResponse = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`, {
+      // Get auth token
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Trigger deep enrichment
+      const response = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`, {
+        method: 'POST',
         headers: {
+          'Content-Type': 'application/json',
           ...(token && { 'Authorization': `Bearer ${token}` })
         }
       });
 
-      if (resultResponse.ok) {
-        const result = await resultResponse.json();
-        console.log('Poll attempt', attempts, ':', result);
+      if (!response.ok) {
+        throw new Error(`Enrichment failed: ${response.status}`);
+      }
+
+      // Poll for results (deep enrichment takes ~10-18 seconds)
+      let attempts = 0;
+      const maxAttempts = 30;
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Backend returns enrichment data directly OR nested - handle both
-        const hasEnrichmentData = result.contactprofile || 
-                                  result.data?.contactprofile || 
-                                  result.enrichment_data?.contactprofile;
-        
-        if (hasEnrichmentData) {
-          // Determine where the data actually is
-          const enrichData = result.contactprofile 
-            ? result  // Data is at top level
-            : (result.data?.contactprofile ? result.data : result.enrichment_data);
+        const resultResponse = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`, {
+          headers: {
+            ...(token && { 'Authorization': `Bearer ${token}` })
+          }
+        });
+
+        if (resultResponse.ok) {
+          const result = await resultResponse.json();
+          console.log('Poll attempt', attempts, ':', result);
           
-          setEnrichmentData(enrichData);
-          setEnrichmentStatus('completed');
+          // Backend returns enrichment data directly OR nested - handle both
+          const hasEnrichmentData = result.contactprofile || 
+                                    result.data?.contactprofile || 
+                                    result.enrichment_data?.contactprofile;
           
-          // Check for scores in various locations
-          const scoresData = result.scores || result.data?.scores || enrichData?.scores;
-          if (scoresData) {
-            setScores({
-              mdcp: scoresData.mdcp ?? 0,
-              bant: scoresData.bant ?? 0,
-              spice: scoresData.spice ?? 0
-            });
+          if (hasEnrichmentData) {
+            // Determine where the data actually is
+            const enrichData = result.contactprofile 
+              ? result  // Data is at top level
+              : (result.data?.contactprofile ? result.data : result.enrichment_data);
+            
+            setEnrichmentData(enrichData);
+            setEnrichmentStatus('completed');
+            
+            // Check for scores in various locations
+            const scoresData = result.scores || result.data?.scores || enrichData?.scores;
+            if (scoresData) {
+              setScores({
+                mdcp: scoresData.mdcp ?? 0,
+                bant: scoresData.bant ?? 0,
+                spice: scoresData.spice ?? 0
+              });
+            }
+            
+            // Notify parent of update
+            if (onUpdate) {
+              onUpdate({
+                ...contact,
+                enrichment_data: enrichData,
+                mdcp_score: scoresData?.mdcp,
+                bant_score: scoresData?.bant,
+                spice_score: scoresData?.spice
+              });
+            }
+            
+            setIsEnriching(false);
+            return;
           }
           
-          // Notify parent of update
-          if (onUpdate) {
-            onUpdate({
-              ...contact,
-              enrichment_data: enrichData,
-              mdcp_score: scoresData?.mdcp,
-              bant_score: scoresData?.bant,
-              spice_score: scoresData?.spice
-            });
+          // Check for explicit failed status
+          if (result.status === 'failed') {
+            throw new Error(result.error || 'Enrichment failed');
           }
-          
-          setIsEnriching(false);
-          return;
         }
         
-        // Check for explicit failed status
-        if (result.status === 'failed') {
-          throw new Error(result.error || 'Enrichment failed');
-        }
+        attempts++;
       }
       
-      attempts++;
+      throw new Error('Enrichment timed out. Please try again.');
+      
+    } catch (error) {
+      console.error('Deep enrichment error:', error);
+      setEnrichmentError(error instanceof Error ? error.message : 'Unknown error');
+      setEnrichmentStatus('failed');
+    } finally {
+      setIsEnriching(false);
     }
-    
-    throw new Error('Enrichment timed out. Please try again.');
-    
-  } catch (error) {
-    console.error('Deep enrichment error:', error);
-    setEnrichmentError(error instanceof Error ? error.message : 'Unknown error');
-    setEnrichmentStatus('failed');
-  } finally {
-    setIsEnriching(false);
-  }
-};
-
+  };
 
   // ============================================================
   // RENDER HELPERS
@@ -548,7 +552,7 @@ export default function ContactDetailModal({
                 {contact.phone && <DetailItem label="Phone" value={contact.phone} />}
                 {contact.company && <DetailItem label="Company" value={contact.company} />}
                 {contact.title && <DetailItem label="Title" value={contact.title} />}
-                <DetailItem label="Created" value={formatDate(contact.created_at)} />
+                <DetailItem label="Created" value={formatDate(contact.created_at as unknown as string)} />
               </div>
             </div>
           )}
@@ -642,7 +646,7 @@ export default function ContactDetailModal({
                 <div className="score-card mdcp">
                   <div className="score-header">
                     <span className="score-title">MDCP</span>
-                    <span className={`tier-badge ${getTierBadge(contact.mdcp_tier)}`}>
+                    <span className={`tier-badge ${getTierBadge(contact.mdcp_tier || undefined)}`}>
                       {contact.mdcp_tier || '-'}
                     </span>
                   </div>
@@ -657,7 +661,7 @@ export default function ContactDetailModal({
                 <div className="score-card bant">
                   <div className="score-header">
                     <span className="score-title">BANT</span>
-                    <span className={`tier-badge ${getTierBadge(contact.bant_tier)}`}>
+                    <span className={`tier-badge ${getTierBadge(contact.bant_tier || undefined)}`}>
                       {contact.bant_tier || '-'}
                     </span>
                   </div>
@@ -672,7 +676,7 @@ export default function ContactDetailModal({
                 <div className="score-card spice">
                   <div className="score-header">
                     <span className="score-title">SPICE</span>
-                    <span className={`tier-badge ${getTierBadge(contact.spice_tier)}`}>
+                    <span className={`tier-badge ${getTierBadge(contact.spice_tier || undefined)}`}>
                       {contact.spice_tier || '-'}
                     </span>
                   </div>

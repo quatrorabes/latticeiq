@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import { Chart, registerables } from 'chart.js'
 import { supabase } from '../lib/supabaseClient'
 import ContactDetailModal from '../components/ContactDetailModal'
-import { Contact } from '../types'  // <-- ADD THIS LINE
+import { Contact } from '../types'  // <-- Shared Contact type
 
 // Register Chart.js components
 Chart.register(...registerables)
@@ -389,7 +389,7 @@ export default function RelationshipIntelligence() {
   const [loading, setLoading] = useState(true)
   const [currentTipIndex, setCurrentTipIndex] = useState(0)
   const [chartInstance, setChartInstance] = useState<Chart | null>(null)
-  
+
   // Modal state
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
@@ -520,12 +520,11 @@ export default function RelationshipIntelligence() {
   const currentTip = outreachTips[currentTipIndex] || getFallbackTips()[0]
 
   const getContactName = (contact: Contact) => {
-  if (contact.first_name || contact.last_name) {
-    return `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
+    if (contact.first_name || contact.last_name) {
+      return `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
+    }
+    return contact.email?.split('@')[0] || 'Unknown'
   }
-  return contact.email?.split('@')[0] || 'Unknown'
-}
-
 
   const getEngagementStatus = (contact: Contact): 'hot' | 'warm' | 'cold' => {
     if (contact.engagement_status) return contact.engagement_status
