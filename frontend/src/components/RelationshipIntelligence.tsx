@@ -4,7 +4,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import Chart from 'chart.js/auto'
+import Chart from 'chart.js'
 import {
   fetchEngagementVelocity,
   fetchCallTodayContacts,
