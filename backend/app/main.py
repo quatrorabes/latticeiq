@@ -35,7 +35,9 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
-from app.routers import outreach
+from app.routers.outreach import router as outreach_router
+
+
 
 
 
@@ -402,6 +404,29 @@ except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
 
 
+# ============================================================================
+# OUTREACH ROUTER - Email Generation + DISC Call Scripts
+# ============================================================================
+
+try:
+    from app.routers.outreach import router as outreach_router
+    app.include_router(outreach_router)  # Note: No prefix needed - router already has /api/v3/outreach
+    logger.info({"event": "router_registered", "router": "outreach", "endpoints": [
+        "GET /api/v3/outreach/business-profile",
+        "POST /api/v3/outreach/business-profile",
+        "POST /api/v3/outreach/generate-emails",
+        "POST /api/v3/outreach/generate-call-scripts",
+        "GET /api/v3/outreach/emails/{contact_id}",
+        "GET /api/v3/outreach/call-scripts/{contact_id}",
+        "PATCH /api/v3/outreach/emails/{email_id}/favorite",
+        "PATCH /api/v3/outreach/emails/{email_id}/sent",
+        "DELETE /api/v3/outreach/emails/{email_id}",
+        "GET /api/v3/outreach/health"
+    ]})
+    print("✅ Outreach router loaded (emails + DISC call scripts)")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "outreach", "error": str(e)})
+    print(f"⚠️ Outreach router not loaded: {e}")
 
 
 # ============================================================================

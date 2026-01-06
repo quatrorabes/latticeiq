@@ -12,6 +12,8 @@ import { supabase } from '../lib/supabaseClient';
 import { UnifiedEnrichmentResult, LegacyEnrichmentData } from '../types/enrichment';
 import OutreachTab from '../components/OutreachTab';
 import '../styles/ContactDetailModal.css';
+import { OutreachTab } from './OutreachTab';
+
 
 
 
