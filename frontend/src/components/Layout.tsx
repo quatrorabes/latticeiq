@@ -14,21 +14,26 @@ import {
   Settings,
   Menu,
   X,
-  LogOut
+  LogOut,
+  BarChart2
 } from 'lucide-react';
 import { supabase } from '../supabaseClient';
 import '../styles/Layout.css';
+
 
 interface LayoutProps {
   children: React.ReactNode;
 }
 
+
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
+
 const navItems = [
   { path: '/', icon: LayoutDashboard, label: 'Dashboard' },
+  { path: '/intelligence', icon: BarChart2, label: 'Intelligence' },
   { path: '/contacts', icon: Users, label: 'Contacts' },
   { path: '/smart-lists', icon: ListFilter, label: 'Smart Lists' },
   { path: '/pipeline', icon: LayoutGrid, label: 'Pipeline' },
@@ -38,15 +43,16 @@ const navItems = [
   { path: '/integrations', icon: Zap, label: 'Integrations' },
   { path: '/scoring', icon: Target, label: 'Scoring' },
   { path: '/icps', icon: Crosshair, label: 'ICPs' },
-  // REMOVED: { path: '/crm', icon: Upload, label: 'CRM Import' },
-  { path: '/settings', icon: Settings, label: 'Settings' },  // Now contains CRM import
+  { path: '/settings', icon: Settings, label: 'Settings' },
 ];
+
 
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     window.location.href = '/login';
   };
+
 
   return (
     <div className="layout">
@@ -61,6 +67,7 @@ const navItems = [
             {sidebarOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         </div>
+
 
         <nav className="sidebar-nav">
           {navItems.map((item) => {
@@ -80,6 +87,7 @@ const navItems = [
           })}
         </nav>
 
+
         <div className="sidebar-footer">
           <button className="nav-item logout-btn" onClick={handleLogout}>
             <LogOut size={20} />
@@ -88,6 +96,7 @@ const navItems = [
         </div>
       </aside>
 
+
       {/* Main Content */}
       <main className="main-content">
         {children}
@@ -95,5 +104,6 @@ const navItems = [
     </div>
   );
 };
+
 
 export default Layout;
