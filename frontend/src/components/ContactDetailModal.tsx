@@ -2,14 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Mail, Phone, Building2, Briefcase, Globe, Linkedin, Edit2, Save, 
   Sparkles, Trash2, ExternalLink, Target, DollarSign, Activity, Award, 
-  RefreshCw, CheckCircle, Brain, MessageSquare, Lightbulb, AlertCircle 
+  RefreshCw, CheckCircle, Brain, MessageSquare, Lightbulb, AlertCircle,
+  Send
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
 import { enrichContact, deepEnrichContact, getEnrichmentResult, pollEnrichmentComplete } from '../api/enrichment';
 import { calculateScores } from '../api/scoring';
 import { supabase } from '../lib/supabaseClient';
 import { UnifiedEnrichmentResult, LegacyEnrichmentData } from '../types/enrichment';
+import OutreachTab from '../components/OutreachTab';
 import '../styles/ContactDetailModal.css';
+
 
 
 interface Props {
@@ -19,6 +22,7 @@ interface Props {
 }
 
 
+
 interface ParsedProfile {
   professionalProfile: string;
   companyProfile: string;
@@ -26,6 +30,7 @@ interface ParsedProfile {
   talkingPoints: string[];
   keyInsights: string[];
 }
+
 
 
 /**
@@ -40,6 +45,7 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
     talkingPoints: [],
     keyInsights: [],
   };
+
 
 
   // Professional Profile section
@@ -57,6 +63,7 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
     }
     sections.professionalProfile = profText;
   }
+
 
 
   // Company Profile section
@@ -77,10 +84,12 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
   }
 
 
+
   // Extract pain points from risks & objections
   if (Array.isArray(enrichment.risks_and_objections?.risk_bullets)) {
     sections.painPoints = enrichment.risks_and_objections.risk_bullets.map((b: any) => b.text);
   }
+
 
 
   // Extract talking points from messaging & current focus
@@ -92,6 +101,7 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
     enrichment.current_focus.strategic_initiatives.forEach((b: any) => talkingPoints.push(`Initiative: ${b.text}`));
   }
   sections.talkingPoints = talkingPoints;
+
 
 
   // Extract key insights from buying signals
@@ -108,8 +118,10 @@ function transformDeepEnrichment(enrichment: UnifiedEnrichmentResult): ParsedPro
   sections.keyInsights = insights;
 
 
+
   return sections;
 }
+
 
 
 // Legacy parser for old enrichment format (quick enrich)
@@ -123,7 +135,9 @@ function parseDeepProfile(markdown: string): ParsedProfile {
   };
 
 
+
   if (!markdown) return sections;
+
 
 
   // Extract major sections
@@ -131,8 +145,10 @@ function parseDeepProfile(markdown: string): ParsedProfile {
   const companyMatch = markdown.match(/COMPANY PROFILE:?[\s\S]*?(?=STRATEGIC|---)/i);
 
 
+
   if (professionalMatch) sections.professionalProfile = professionalMatch[0].trim();
   if (companyMatch) sections.companyProfile = companyMatch[0].trim();
+
 
 
   // Extract lists
@@ -149,18 +165,21 @@ function parseDeepProfile(markdown: string): ParsedProfile {
   };
 
 
+
   sections.painPoints = extractList('Pain Points');
   sections.talkingPoints = extractList('Talking Points');
   sections.keyInsights = extractList('Key Insights');
+
 
 
   return sections;
 }
 
 
+
 export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, onClose, onUpdate }) => {
   const [contact, setContact] = useState<Contact>(initialContact);
-  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile'>(initialContact.enrichment_data ? 'deepprofile' : 'info');
+  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile' | 'outreach'>(initialContact.enrichment_data ? 'deepprofile' : 'info');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
@@ -168,6 +187,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   const [isScoring, setIsScoring] = useState(false);
   const [editData, setEditData] = useState<Partial<Contact>>(initialContact);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
 
 
   // Deep enrichment state
@@ -178,10 +198,12 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   const [enrichmentProgress, setEnrichmentProgress] = useState(0);
 
 
+
   useEffect(() => {
     setContact(initialContact);
     setEditData(initialContact);
   }, [initialContact]);
+
 
 
   // ✅ NEW: useEffect to switch tabs when deepEnrichmentData is populated
@@ -193,6 +215,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   }, [deepEnrichmentData, isDeepEnriching]);
 
 
+
   const refreshContact = async () => {
     try {
       const fresh = await fetchContact(contact.id);
@@ -202,6 +225,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       console.error('Failed to refresh contact:', err);
     }
   };
+
 
 
   const handleSave = async () => {
@@ -222,6 +246,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
 
+
   const handleEnrich = async () => {
     setIsEnriching(true);
     setMessage(null);
@@ -240,6 +265,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
 
+
   // ✅ COMPLETELY FIXED: handleDeepEnrich with proper state management and useEffect
   const handleDeepEnrich = async () => {
     setIsDeepEnriching(true);
@@ -251,11 +277,13 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       const { data: { session } } = await supabase.auth.getSession();
       const token = session?.access_token;
 
+
       if (!token) {
         setMessage({ type: 'error', text: 'Not authenticated. Please log in.' });
         setIsDeepEnriching(false);
         return;
       }
+
 
       // Trigger deep enrichment
       setMessage({ type: 'success', text: 'Starting deep enrichment... (takes 10-15 seconds)' });
@@ -271,6 +299,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
         let completed = false;
         let attempts = 0;
         const maxAttempts = 30;
+
 
         while (!completed && attempts < maxAttempts) {
           attempts++;
@@ -324,8 +353,10 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             console.log(`⚠️ Poll attempt ${attempts} error:`, err);
           }
 
+
           await new Promise(resolve => setTimeout(resolve, 2000));
         }
+
 
         if (!completed) {
           console.error('❌ Timed out after 30 attempts');
@@ -351,6 +382,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
 
+
   const handleScore = async () => {
     setIsScoring(true);
     setMessage(null);
@@ -369,6 +401,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
 
+
   const handleDelete = async () => {
     if (!confirm(`Delete ${contact.first_name} ${contact.last_name}? This cannot be undone.`)) return;
     try {
@@ -381,6 +414,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   };
 
 
+
   const getTierColor = (tier?: string) => {
     if (!tier) return '#6b7280';
     switch (tier.toLowerCase()) {
@@ -390,6 +424,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       default: return '#6b7280';
     }
   };
+
 
 
   const ScoreCard = ({ label, score, tier, icon: Icon }: { label: string, score?: number, tier?: string, icon: React.ElementType }) => (
@@ -408,6 +443,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
   );
 
 
+
   const renderMarkdown = (text: string) => {
     if (!text) return null;
     return text.split('\n').map((line: string, i: number) => {
@@ -418,6 +454,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       return null;
     });
   };
+
 
 
   // ✅ IMPROVED: renderDeepEnrichmentSections with better null checks
@@ -437,6 +474,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     const risks_and_objections = deepEnrichmentData.risks_and_objections || {};
     const messaging = deepEnrichmentData.messaging || {};
 
+
     // Check if we have any meaningful data
     const hasAnyData = 
       Object.keys(contact_profile).length > 0 ||
@@ -446,9 +484,11 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       Object.keys(risks_and_objections).length > 0 ||
       Object.keys(messaging).length > 0;
 
+
     if (!hasAnyData) {
       return <div className="empty-state"><p>No enrichment data available</p></div>;
     }
+
 
     return (
       <div className="deep-enrichment-sections">
@@ -480,6 +520,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           </div>
         )}
 
+
         {/* Company Profile Section */}
         {company_profile && Object.keys(company_profile).length > 0 && (
           <div className="enrichment-card company-profile-card">
@@ -507,6 +548,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           </div>
         )}
+
 
         {/* Current Focus Section */}
         {current_focus && Object.keys(current_focus).length > 0 && (
@@ -548,6 +590,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           </div>
         )}
+
 
         {/* Buying Signals Section */}
         {buying_signals && Object.keys(buying_signals).length > 0 && (
@@ -600,6 +643,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           </div>
         )}
 
+
         {/* Risks & Objections Section */}
         {risks_and_objections && Object.keys(risks_and_objections).length > 0 && (
           <div className="enrichment-card risks-card">
@@ -640,6 +684,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           </div>
         )}
+
 
         {/* Messaging Section */}
         {messaging && Object.keys(messaging).length > 0 && (
@@ -682,6 +727,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           </div>
         )}
 
+
         {/* Metadata */}
         {deepEnrichmentData.meta && (
           <div className="enrichment-meta">
@@ -694,6 +740,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
       </div>
     );
   };
+
 
 
   return (
@@ -734,6 +781,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           <button className="btn-close" onClick={onClose}><X size={24} /></button>
         </div>
 
+
         {/* Message Banner */}
         {message && (
           <div className={`message-banner ${message.type}`}>
@@ -742,6 +790,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           </div>
         )}
 
+
         {/* Progress Bar for Deep Enrichment */}
         {isDeepEnriching && (
           <div className="progress-bar-container">
@@ -749,6 +798,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             <span className="progress-text">{Math.round(enrichmentProgress)}%</span>
           </div>
         )}
+
 
         {/* Action Buttons */}
         <div className="modal-actions">
@@ -784,6 +834,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           )}
         </div>
 
+
         {/* Tabs */}
         <div className="modal-tabs">
           <button className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Contact Info</button>
@@ -805,7 +856,14 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           >
             Scoring {contact.overall_score && `(${contact.overall_score})`}
           </button>
+          <button 
+            className={`tab-btn ${activeTab === 'outreach' ? 'active' : ''}`} 
+            onClick={() => setActiveTab('outreach')}
+          >
+            <Send size={14} /> Outreach
+          </button>
         </div>
+
 
         {/* Tab Content */}
         <div className="modal-body">
@@ -898,6 +956,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           )}
 
+
           {activeTab === 'enrichment' && (
             <div className="tab-pane">
               {contact.enrichment_status === 'completed' ? (
@@ -917,6 +976,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           )}
 
+
           {activeTab === 'deepprofile' && (
             <div className="tab-pane">
               {deepEnrichmentData && Object.keys(deepEnrichmentData).length > 0 ? (
@@ -934,6 +994,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           )}
 
+
           {activeTab === 'scoring' && (
             <div className="tab-pane">
               <div className="scores-grid">
@@ -942,6 +1003,13 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
                 <ScoreCard label="BANT" score={contact.bant_score} tier={contact.bant_tier} icon={DollarSign} />
                 <ScoreCard label="SPICE" score={contact.spice_score} tier={contact.spice_tier} icon={Activity} />
               </div>
+            </div>
+          )}
+
+
+          {activeTab === 'outreach' && (
+            <div className="tab-pane">
+              <OutreachTab contactId={contact.id} contact={contact} />
             </div>
           )}
         </div>
