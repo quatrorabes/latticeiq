@@ -17,7 +17,7 @@ import ICPsPage from './pages/ICPsPage';
 import CampaignsPage from './pages/CampaignsPage';
 import TemplatesPage from './pages/TemplatesPage';
 import { ContactDetailPage } from './pages/ContactDetailPage';
-import RelationshipIntelligence from './components/RelationshipIntelligence';
+import RelationshipIntelligence from './pages/RelationshipIntelligence';
 
 
 function App() {
