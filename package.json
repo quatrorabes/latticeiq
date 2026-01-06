@@ -1,9 +1,10 @@
 {
   "dependencies": {
     "@supabase/supabase-js": "^2.89.0",
-    "chart.js": "^4.5.1"
+    "chart.js": "^4.4.0"
   },
   "devDependencies": {
+    "@types/chart.js": "^2.9.41",
     "@types/node": "^25.0.3"
   }
 }
