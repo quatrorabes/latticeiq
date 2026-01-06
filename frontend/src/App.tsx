@@ -16,6 +16,7 @@ import SignupPage from './pages/SignupPage';
 import ICPsPage from './pages/ICPsPage';
 import CampaignsPage from './pages/CampaignsPage';
 import TemplatesPage from './pages/TemplatesPage';
+import { ContactDetailPage } from './pages/ContactDetailPage';
 
 function App() {
   const [session, setSession] = useState<any>(null);
@@ -82,6 +83,7 @@ function App() {
           <Route path="/icps" element={<ICPsPage />} />
           <Route path="/campaigns" element={<CampaignsPage />} />
           <Route path="/templates" element={<TemplatesPage />} />
+          <Route path="/contacts/:contactId" element={<ContactDetailPage />} />
         </Routes>
       </Layout>
     </Router>
