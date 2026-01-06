@@ -143,7 +143,7 @@ export default function RelationshipIntelligence() {
             },
             grid: {
               color: 'rgba(66, 165, 245, 0.1)',
-              drawBorder: false,
+              display: false,
             },
           },
           x: {
