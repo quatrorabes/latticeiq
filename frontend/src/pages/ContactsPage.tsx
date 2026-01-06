@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Loader2, RefreshCw, Upload, Zap, Trash2, Users } from 'lucide-react';
-import { fetchContacts, deleteContact } from '../api/contacts';
-import { Contact } from '../types';
+import { fetchContacts, deleteContact, Contact } from '../api/contacts';
 import { ContactDetailModal } from '../components/ContactDetailModal';
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
@@ -17,12 +17,14 @@ export default function ContactsPage() {
 
   const loadContacts = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetchContacts();
-      const data = Array.isArray(response) ? response : (response as any).data || [];
-      setContacts(data);
-    } catch (error) {
-      console.error('Failed to load contacts:', error);
+      // fetchContacts returns { contacts: [...], total, limit, offset }
+      setContacts(response.contacts || []);
+    } catch (err: any) {
+      console.error('Failed to load contacts:', err);
+      setError(err.message || 'Failed to load contacts');
     } finally {
       setLoading(false);
     }
@@ -34,8 +36,8 @@ export default function ContactsPage() {
     try {
       await deleteContact(id);
       setContacts(contacts.filter(c => c.id !== id));
-    } catch (error) {
-      console.error('Failed to delete contact:', error);
+    } catch (err) {
+      console.error('Failed to delete contact:', err);
     }
   };
 
@@ -47,9 +49,10 @@ export default function ContactsPage() {
   };
 
   const getDisplayName = (contact: Contact): string => {
-    return (contact as any).name || contact.first_name 
-      ? `${contact.first_name || ''} ${contact.last_name || ''}`.trim() 
-      : 'Unknown';
+    if (contact.first_name || contact.last_name) {
+      return `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
+    }
+    return 'Unknown';
   };
 
   const getInitials = (contact: Contact): string => {
@@ -294,6 +297,14 @@ export default function ContactsPage() {
       textAlign: 'center' as const,
       color: '#64748b',
     } as React.CSSProperties,
+    errorState: {
+      padding: '2rem',
+      textAlign: 'center' as const,
+      color: '#ef4444',
+      background: 'rgba(239, 68, 68, 0.1)',
+      borderRadius: '12px',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
   };
 
   if (loading) {
@@ -330,6 +341,12 @@ export default function ContactsPage() {
           </button>
         </div>
       </div>
+
+      {error && (
+        <div style={styles.errorState}>
+          <p>Error: {error}</p>
+        </div>
+      )}
 
       <div style={styles.controlsCard}>
         <input
@@ -391,9 +408,9 @@ export default function ContactsPage() {
                 </td>
                 <td style={styles.td}>{contact.company || '—'}</td>
                 <td style={styles.td}>{contact.title || '—'}</td>
-                <td style={styles.td}>{contact.mdcp_score || '—'}</td>
-                <td style={styles.td}>{contact.bant_score || '—'}</td>
-                <td style={styles.td}>{contact.spice_score || '—'}</td>
+                <td style={styles.td}>{contact.mdcp_score ?? '—'}</td>
+                <td style={styles.td}>{contact.bant_score ?? '—'}</td>
+                <td style={styles.td}>{contact.spice_score ?? '—'}</td>
                 <td style={styles.td}>
                   <span style={styles.statusBadge(contact.enrichment_status || 'pending')}>
                     {contact.enrichment_status || 'pending'}
@@ -418,7 +435,7 @@ export default function ContactsPage() {
           </tbody>
         </table>
 
-        {filteredContacts.length === 0 && (
+        {filteredContacts.length === 0 && !error && (
           <div style={styles.emptyState}>
             <p>No contacts found matching your criteria.</p>
           </div>
