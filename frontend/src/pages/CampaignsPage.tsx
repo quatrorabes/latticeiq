@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Contact } from '../types';
 import { fetchContacts } from '../api/contacts';
-import { ContactDetailModal } from '../components/ContactDetailModal';
+import ContactDetailModal from '../components/ContactDetailModal';
 
 
 interface Campaign {
@@ -523,13 +523,15 @@ export default function CampaignsPage() {
       )}
 
 
-      {/* Contact Modal */}
+           {/* Contact Modal */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
+          isOpen={!!selectedContact}
           onClose={() => setSelectedContact(null)}
         />
       )}
     </div>
   );
 }
+

@@ -58,6 +58,10 @@ export interface Contact {
   hubspot_id?: string;
   hubspot_metadata?: Record<string, any>;
   source?: string;
+
+  // Engagement (ADD THESE TWO LINES)
+  engagement_status?: 'hot' | 'warm' | 'cold';
+  engagement_score?: number;
   
   // Timestamps
   created_at: string;

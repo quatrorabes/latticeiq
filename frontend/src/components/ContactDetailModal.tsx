@@ -1,108 +1,8 @@
 // frontend/src/components/ContactDetailModal.tsx
-// Complete replacement - displays all 6 deep enrichment sections
-
 import React, { useState, useEffect } from 'react';
 import { X, Building2, TrendingUp, DollarSign, Users, Newspaper, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock } from 'lucide-react';
 import { supabase } from '../lib/supabaseClient';
-
-// ============================================================
-// TYPE DEFINITIONS
-// ============================================================
-
-interface Contact {
-  id: string;
-  firstname?: string;
-  lastname?: string;
-  email: string;
-  company?: string;
-  job_title?: string;
-  phone?: string;
-  engagement_score?: number;
-  engagement_status?: 'hot' | 'warm' | 'cold';
-  mdcp_score?: number;
-  mdcp_tier?: string;
-  bant_score?: number;
-  bant_tier?: string;
-  spice_score?: number;
-  spice_tier?: string;
-  enrichment_data?: EnrichmentData;
-  last_interaction?: string;
-  created_at?: string;
-}
-
-interface EnrichmentData {
-  company_overview?: CompanyOverview;
-  market_position?: MarketPosition;
-  key_financials?: KeyFinancials;
-  executive_team?: ExecutiveTeam;
-  recent_news?: RecentNews;
-  engagement_signals?: EngagementSignals;
-  enriched_at?: string;
-  provider?: string;
-}
-
-interface CompanyOverview {
-  description?: string;
-  founded?: string;
-  headquarters?: string;
-  employee_count?: string;
-  industry?: string;
-  website?: string;
-  linkedin_url?: string;
-}
-
-interface MarketPosition {
-  market_share?: string;
-  competitors?: string[];
-  unique_value_proposition?: string;
-  target_market?: string;
-  growth_trajectory?: string;
-}
-
-interface KeyFinancials {
-  revenue?: string;
-  funding_total?: string;
-  last_funding_round?: string;
-  valuation?: string;
-  profitability?: string;
-  financial_health?: string;
-}
-
-interface ExecutiveTeam {
-  ceo?: string;
-  cto?: string;
-  cfo?: string;
-  key_decision_makers?: string[];
-  recent_leadership_changes?: string;
-}
-
-interface RecentNews {
-  headlines?: string[];
-  press_releases?: string[];
-  industry_mentions?: string[];
-  sentiment?: string;
-}
-
-interface EngagementSignals {
-  buying_signals?: string[];
-  pain_points?: string[];
-  technology_stack?: string[];
-  recent_initiatives?: string[];
-  recommended_approach?: string;
-}
-
-interface DeepEnrichResponse {
-  contact_id: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  data?: EnrichmentData;
-  scores?: {
-    mdcp: number;
-    bant: number;
-    spice: number;
-  };
-  error?: string;
-  enriched_at?: string;
-}
+import { Contact } from '../types';
 
 interface ContactDetailModalProps {
   contact: Contact;
@@ -122,7 +22,7 @@ export default function ContactDetailModal({
   onUpdate 
 }: ContactDetailModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'scores'>('overview');
-  const [enrichmentData, setEnrichmentData] = useState<EnrichmentData | null>(contact.enrichment_data || null);
+  const [enrichmentData, setEnrichmentData] = useState<any>(contact.enrichment_data || null);
   const [isEnriching, setIsEnriching] = useState(false);
   const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle');
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
@@ -194,7 +94,7 @@ export default function ContactDetailModal({
         });
 
         if (resultResponse.ok) {
-          const result: DeepEnrichResponse = await resultResponse.json();
+          const result = await resultResponse.json();
           
           if (result.status === 'completed' && result.data) {
             setEnrichmentData(result.data);
@@ -276,7 +176,7 @@ export default function ContactDetailModal({
   // ENRICHMENT SECTION RENDERERS
   // ============================================================
 
-  const renderCompanyOverview = (data: CompanyOverview | undefined) => {
+  const renderCompanyOverview = (data: any) => {
     if (!data) return null;
     return (
       <div className="enrichment-section">
@@ -305,7 +205,7 @@ export default function ContactDetailModal({
     );
   };
 
-  const renderMarketPosition = (data: MarketPosition | undefined) => {
+  const renderMarketPosition = (data: any) => {
     if (!data) return null;
     return (
       <div className="enrichment-section">
@@ -326,7 +226,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label">Key Competitors:</span>
               <div className="tag-list">
-                {data.competitors.map((competitor, i) => (
+                {data.competitors.map((competitor: string, i: number) => (
                   <span key={i} className="tag">{competitor}</span>
                 ))}
               </div>
@@ -337,7 +237,7 @@ export default function ContactDetailModal({
     );
   };
 
-  const renderKeyFinancials = (data: KeyFinancials | undefined) => {
+  const renderKeyFinancials = (data: any) => {
     if (!data) return null;
     return (
       <div className="enrichment-section">
@@ -359,7 +259,7 @@ export default function ContactDetailModal({
     );
   };
 
-  const renderExecutiveTeam = (data: ExecutiveTeam | undefined) => {
+  const renderExecutiveTeam = (data: any) => {
     if (!data) return null;
     return (
       <div className="enrichment-section">
@@ -377,7 +277,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label">Key Decision Makers:</span>
               <ul className="bullet-list">
-                {data.key_decision_makers.map((person, i) => (
+                {data.key_decision_makers.map((person: string, i: number) => (
                   <li key={i}>{person}</li>
                 ))}
               </ul>
@@ -393,7 +293,7 @@ export default function ContactDetailModal({
     );
   };
 
-  const renderRecentNews = (data: RecentNews | undefined) => {
+  const renderRecentNews = (data: any) => {
     if (!data) return null;
     return (
       <div className="enrichment-section">
@@ -411,7 +311,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label">Headlines:</span>
               <ul className="bullet-list">
-                {data.headlines.map((headline, i) => (
+                {data.headlines.map((headline: string, i: number) => (
                   <li key={i}>{headline}</li>
                 ))}
               </ul>
@@ -421,7 +321,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label">Press Releases:</span>
               <ul className="bullet-list">
-                {data.press_releases.map((pr, i) => (
+                {data.press_releases.map((pr: string, i: number) => (
                   <li key={i}>{pr}</li>
                 ))}
               </ul>
@@ -432,7 +332,7 @@ export default function ContactDetailModal({
     );
   };
 
-  const renderEngagementSignals = (data: EngagementSignals | undefined) => {
+  const renderEngagementSignals = (data: any) => {
     if (!data) return null;
     return (
       <div className="enrichment-section">
@@ -451,7 +351,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label success">🔥 Buying Signals:</span>
               <ul className="bullet-list">
-                {data.buying_signals.map((signal, i) => (
+                {data.buying_signals.map((signal: string, i: number) => (
                   <li key={i}>{signal}</li>
                 ))}
               </ul>
@@ -461,7 +361,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label warning">⚠️ Pain Points:</span>
               <ul className="bullet-list">
-                {data.pain_points.map((point, i) => (
+                {data.pain_points.map((point: string, i: number) => (
                   <li key={i}>{point}</li>
                 ))}
               </ul>
@@ -471,7 +371,7 @@ export default function ContactDetailModal({
             <div className="list-section">
               <span className="list-label">Tech Stack:</span>
               <div className="tag-list">
-                {data.technology_stack.map((tech, i) => (
+                {data.technology_stack.map((tech: string, i: number) => (
                   <span key={i} className="tag tech">{tech}</span>
                 ))}
               </div>
@@ -497,6 +397,9 @@ export default function ContactDetailModal({
   // MAIN RENDER
   // ============================================================
 
+  const contactName = `${contact.first_name} ${contact.last_name}`.trim();
+  const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??';
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-container" onClick={e => e.stopPropagation()}>
@@ -504,15 +407,13 @@ export default function ContactDetailModal({
         <div className="modal-header">
           <div className="header-content">
             <div className="avatar">
-              {(contact.firstname?.[0] || contact.email[0]).toUpperCase()}
+              {initials}
             </div>
             <div className="header-info">
-              <h2>
-                {contact.firstname} {contact.lastname}
-              </h2>
+              <h2>{contactName}</h2>
               <p className="subtitle">
-                {contact.job_title && <span>{contact.job_title}</span>}
-                {contact.job_title && contact.company && <span> at </span>}
+                {contact.title && <span>{contact.title}</span>}
+                {contact.title && contact.company && <span> at </span>}
                 {contact.company && <span className="company">{contact.company}</span>}
               </p>
               <div className="badges">
@@ -564,11 +465,8 @@ export default function ContactDetailModal({
                 <DetailItem label="Email" value={contact.email} />
                 {contact.phone && <DetailItem label="Phone" value={contact.phone} />}
                 {contact.company && <DetailItem label="Company" value={contact.company} />}
-                {contact.job_title && <DetailItem label="Title" value={contact.job_title} />}
+                {contact.title && <DetailItem label="Title" value={contact.title} />}
                 <DetailItem label="Created" value={formatDate(contact.created_at)} />
-                {contact.last_interaction && (
-                  <DetailItem label="Last Interaction" value={formatDate(contact.last_interaction)} />
-                )}
               </div>
             </div>
           )}
@@ -708,7 +606,7 @@ export default function ContactDetailModal({
         </div>
       </div>
 
-      {/* Inline Styles */}
+      {/* Inline Styles - KEEP EXACTLY AS IS FROM PREVIOUS FILE */}
       <style>{`
         .modal-overlay {
           position: fixed;
@@ -859,7 +757,6 @@ export default function ContactDetailModal({
           padding: 1.5rem;
         }
         
-        /* Overview Tab */
         .info-grid {
           display: grid;
           grid-template-columns: repeat(2, 1fr);
@@ -884,7 +781,6 @@ export default function ContactDetailModal({
           font-size: 0.875rem;
         }
         
-        /* Enrichment Tab */
         .enrich-action {
           display: flex;
           align-items: center;
@@ -1121,7 +1017,6 @@ export default function ContactDetailModal({
           line-height: 1.6;
         }
         
-        /* Scores Tab */
         .score-cards {
           display: grid;
           grid-template-columns: repeat(3, 1fr);

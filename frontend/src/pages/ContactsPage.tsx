@@ -3,8 +3,7 @@ import { useState, useEffect } from 'react';
 import { Loader2, RefreshCw, Upload, Zap, Trash2, Users } from 'lucide-react';
 import { fetchContacts, deleteContact } from '../api/contacts';
 import { Contact } from '../types';
-import { ContactDetailModal } from '../components/ContactDetailModal';
-
+import ContactDetailModal from '../components/ContactDetailModal';
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -13,24 +12,21 @@ export default function ContactsPage() {
   const [filter, setFilter] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
 
-
   useEffect(() => {
     loadContacts();
   }, []);
-
 
   const loadContacts = async () => {
     setLoading(true);
     try {
       const data = await fetchContacts();
-      setContacts(data.contacts || data);  // FIXED: changed 'response' to 'data'
+      setContacts(data.contacts || data);
     } catch (error) {
       console.error('Failed to load contacts:', error);
     } finally {
       setLoading(false);
     }
   };
-
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -43,7 +39,6 @@ export default function ContactsPage() {
     }
   };
 
-
   const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
     const score = contact.mdcp_score || 0;
     if (score >= 70) return 'hot';
@@ -51,18 +46,14 @@ export default function ContactsPage() {
     return 'cold';
   };
 
-
-  // Helper function for contact name
   const getContactName = (contact: Contact): string => {
     return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
   };
 
-  // Helper function for initials
   const getInitials = (contact: Contact): string => {
     const name = getContactName(contact);
     return name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '??';
   };
-
 
   const filteredContacts = contacts.filter(contact => {
     const matchesSearch = 
@@ -74,7 +65,6 @@ export default function ContactsPage() {
     return matchesSearch && getTier(contact) === filter;
   });
 
-
   const counts = {
     all: contacts.length,
     hot: contacts.filter(c => getTier(c) === 'hot').length,
@@ -82,8 +72,6 @@ export default function ContactsPage() {
     cold: contacts.filter(c => getTier(c) === 'cold').length,
   };
 
-
-  // Inline styles to guarantee they apply (matching Contact Detail page exactly)
   const styles = {
     page: {
       minHeight: '100vh',
@@ -331,7 +319,6 @@ export default function ContactsPage() {
     } as React.CSSProperties,
   };
 
-
   if (loading) {
     return (
       <div style={styles.page}>
@@ -343,10 +330,8 @@ export default function ContactsPage() {
     );
   }
 
-
   return (
     <div style={styles.page}>
-      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.headerIcon}>
@@ -369,8 +354,6 @@ export default function ContactsPage() {
         </div>
       </div>
 
-
-      {/* Search & Filters Card */}
       <div style={styles.controlsCard}>
         <input
           type="text"
@@ -395,8 +378,6 @@ export default function ContactsPage() {
         </div>
       </div>
 
-
-      {/* Table Card */}
       <div style={styles.tableCard}>
         <table style={styles.table}>
           <thead>
@@ -460,7 +441,6 @@ export default function ContactsPage() {
           </tbody>
         </table>
 
-
         {filteredContacts.length === 0 && (
           <div style={styles.emptyState}>
             <p>No contacts found matching your criteria.</p>
@@ -468,11 +448,10 @@ export default function ContactsPage() {
         )}
       </div>
 
-
-      {/* Modal */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
+          isOpen={!!selectedContact}
           onClose={() => setSelectedContact(null)}
         />
       )}
