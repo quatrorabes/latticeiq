@@ -34,29 +34,34 @@ export const ContactDetailPage: React.FC = () => {
   }, [contactId]);
 
   const loadContact = async () => {
-    if (!contactId) return;
-    try {
-      setLoading(true);
-      const contact = await fetchContact(contactId);
-      setContact(contact);
+  if (!contactId) return;
+  try {
+    setLoading(true);
+    const contact = await fetchContact(contactId);
+    setContact(contact);
 
-      // If contact already has enrichment data, parse it
-      if (contact.enrichment_data) {
-        try {
-          const parsed = JSON.parse(contact.enrichment_data);
-          setEnrichmentData(parsed);
-          setRawJson(JSON.stringify(parsed, null, 2));
-        } catch (e) {
-          console.log('Could not parse stored enrichment data:', e);
-        }
+    // If contact already has enrichment data, parse it
+    if (contact.enrichment_data) {
+      try {
+        // THIS IS THE FIX - handle both string and object
+        const parsed = typeof contact.enrichment_data === 'string' 
+          ? JSON.parse(contact.enrichment_data) 
+          : contact.enrichment_data;
+        setEnrichmentData(parsed);
+        setRawJson(JSON.stringify(parsed, null, 2));
+      } catch (e) {
+        console.log('Could not parse stored enrichment data:', e);
       }
-    } catch (err) {
-      console.error('Failed to load contact:', err);
-      setMessage({ type: 'error', text: 'Failed to load contact' });
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (err) {
+    console.error('Failed to load contact:', err);
+    setMessage({ type: 'error', text: 'Failed to load contact' });
+  } finally {
+    setLoading(false);
+  }
+};
+
+
 
   const handleDeepEnrich = async () => {
     if (!contactId) return;

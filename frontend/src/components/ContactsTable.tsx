@@ -5,6 +5,8 @@
 import { useState } from 'react';
 import { Contact } from '../types';
 import { Zap, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+
 
 interface ContactsTableProps {
   contacts: Contact[];
@@ -14,8 +16,10 @@ interface ContactsTableProps {
   enrichingIds: Set<string>;
 }
 
+
 type SortField = 'name' | 'email' | 'company' | 'status' | 'mdcp_score' | 'bant_score' | 'spice_score';
 type SortDirection = 'asc' | 'desc';
+
 
 // Score badge component
 function ScoreBadge({ score, label }: { score: number | null | undefined; label: string }) {
@@ -23,8 +27,10 @@ function ScoreBadge({ score, label }: { score: number | null | undefined; label:
     return <span className="text-slate-500 text-xs">—</span>;
   }
 
+
   let bgColor = 'bg-slate-700 text-slate-300';
   let tier = 'Cold';
+
 
   if (score >= 71) {
     bgColor = 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
@@ -37,6 +43,7 @@ function ScoreBadge({ score, label }: { score: number | null | undefined; label:
     tier = 'Cold';
   }
 
+
   return (
     <div className="flex flex-col items-center gap-0.5">
       <span className={`px-2 py-0.5 rounded text-xs font-medium ${bgColor}`}>
@@ -47,6 +54,7 @@ function ScoreBadge({ score, label }: { score: number | null | undefined; label:
   );
 }
 
+
 // Status badge component
 function StatusBadge({ status }: { status: string }) {
   const statusColors: Record<string, string> = {
@@ -56,12 +64,14 @@ function StatusBadge({ status }: { status: string }) {
     failed: 'bg-red-500/20 text-red-400 border border-red-500/30',
   };
 
+
   return (
     <span className={`px-2 py-1 rounded-full text-xs font-medium ${statusColors[status] || statusColors.pending}`}>
       {status || 'pending'}
     </span>
   );
 }
+
 
 export function ContactsTable({
   contacts,
@@ -70,8 +80,10 @@ export function ContactsTable({
   onDeleteContact,
   enrichingIds,
 }: ContactsTableProps) {
+  const navigate = useNavigate();
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -82,9 +94,11 @@ export function ContactsTable({
     }
   };
 
+
   const sortedContacts = [...contacts].sort((a, b) => {
     let aVal: any;
     let bVal: any;
+
 
     switch (sortField) {
       case 'name':
@@ -120,10 +134,12 @@ export function ContactsTable({
         bVal = '';
     }
 
+
     if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
     if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
     return 0;
   });
+
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null;
@@ -134,9 +150,11 @@ export function ContactsTable({
     );
   };
 
+
   const getInitials = (firstName: string, lastName: string) => {
     return `${firstName?.[0] || ''}${lastName?.[0] || ''}`.toUpperCase();
   };
+
 
   const getAvatarColor = (name: string) => {
     const colors = [
@@ -146,6 +164,13 @@ export function ContactsTable({
     const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
     return colors[index % colors.length];
   };
+
+
+  const handleRowClick = (contact: Contact) => {
+    // Navigate to detail page
+    navigate(`/contacts/${contact.id}`);
+  };
+
 
   return (
     <div className="overflow-x-auto">
@@ -201,11 +226,12 @@ export function ContactsTable({
             const isEnriching = enrichingIds.has(contact.id);
             const fullName = `${contact.first_name} ${contact.last_name}`;
 
+
             return (
               <tr
                 key={contact.id}
                 className="border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors"
-                onClick={() => onSelectContact(contact)}
+                onClick={() => handleRowClick(contact)}
               >
                 <td className="py-3 px-4">
                   <div className="flex items-center gap-3">
@@ -263,6 +289,7 @@ export function ContactsTable({
         </tbody>
       </table>
 
+
       {contacts.length === 0 && (
         <div className="text-center py-12 text-slate-500">
           No contacts found. Add your first contact to get started.
@@ -271,5 +298,6 @@ export function ContactsTable({
     </div>
   );
 }
+
 
 export default ContactsTable;
