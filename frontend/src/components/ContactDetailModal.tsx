@@ -341,21 +341,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
     }
   };
 
-  const ScoreCard = ({ label, score, tier, icon: Icon }: { label: string, score?: number, tier?: string, icon: React.ElementType }) => (
-    <div className={`score-card ${label.toLowerCase()}`}>
-      <div className="score-card-icon" style={{ backgroundColor: getTierColor(tier) }}>
-        <Icon size={20} />
-      </div>
-      <div className="score-card-content">
-        <span className="score-label">{label}</span>
-        <div className="score-row">
-          <span className="score-number" style={{ color: getTierColor(tier) }}>{score ?? '--'}</span>
-          {tier && <span className="tier-badge" style={{ backgroundColor: getTierColor(tier) }}>{tier.toUpperCase()}</span>}
-        </div>
-      </div>
-    </div>
-  );
-
   const renderDeepEnrichmentSections = () => {
     if (!deepEnrichmentData) return null;
     
@@ -717,13 +702,118 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
             </div>
           )}
 
+          {/* ✅ REDESIGNED SCORING TAB */}
           {activeTab === 'scoring' && (
-            <div className="tab-pane">
-              <div className="scores-grid">
-                <ScoreCard label="Overall" score={contact.overall_score} tier={contact.overall_tier} icon={Award} />
-                <ScoreCard label="MDCP" score={contact.mdcp_score} tier={contact.mdcp_tier} icon={Target} />
-                <ScoreCard label="BANT" score={contact.bant_score} tier={contact.bant_tier} icon={DollarSign} />
-                <ScoreCard label="SPICE" score={contact.spice_score} tier={contact.spice_tier} icon={Activity} />
+            <div className="tab-pane scoring-redesign">
+              {/* Hero Score with Visual Gauge */}
+              <div className="score-hero">
+                <div className="score-gauge">
+                  <svg viewBox="0 0 120 120" className="gauge-ring">
+                    <circle cx="60" cy="60" r="54" fill="none" stroke="rgba(148,163,184,0.1)" strokeWidth="12" />
+                    <circle 
+                      cx="60" cy="60" r="54" fill="none" 
+                      stroke={getTierColor(contact.overall_tier)} 
+                      strokeWidth="12"
+                      strokeLinecap="round"
+                      strokeDasharray={`${(contact.overall_score || 0) * 3.39} 339`}
+                      transform="rotate(-90 60 60)"
+                    />
+                  </svg>
+                  <div className="gauge-center">
+                    <span className="gauge-score">{contact.overall_score || '--'}</span>
+                    <span className="gauge-tier" style={{ color: getTierColor(contact.overall_tier) }}>
+                      {contact.overall_tier?.toUpperCase() || 'UNSCORED'}
+                    </span>
+                  </div>
+                </div>
+                <div className="score-hero-text">
+                  <h3>Lead Quality Score</h3>
+                  <p className="score-summary">
+                    {contact.overall_tier === 'hot' && '🔥 High-priority lead. Ready for immediate outreach.'}
+                    {contact.overall_tier === 'warm' && '👍 Good prospect. Consider nurturing with targeted content.'}
+                    {contact.overall_tier === 'cold' && '❄️ Needs more qualification. May require warming up.'}
+                    {!contact.overall_tier && 'Run enrichment to calculate lead score.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Framework Scores - Compact Row */}
+              <div className="framework-scores">
+                <div className="framework-card">
+                  <div className="framework-header">
+                    <Target size={16} style={{ color: getTierColor(contact.mdcp_tier) }} />
+                    <span className="framework-name">MDCP</span>
+                    <span className="framework-score" style={{ color: getTierColor(contact.mdcp_tier) }}>
+                      {contact.mdcp_score || '--'}
+                    </span>
+                  </div>
+                  <div className="framework-bar">
+                    <div className="bar-fill" style={{ width: `${contact.mdcp_score || 0}%`, background: getTierColor(contact.mdcp_tier) }} />
+                  </div>
+                  <span className="framework-label">Market, Decision, Capability, Profile</span>
+                </div>
+
+                <div className="framework-card">
+                  <div className="framework-header">
+                    <DollarSign size={16} style={{ color: getTierColor(contact.bant_tier) }} />
+                    <span className="framework-name">BANT</span>
+                    <span className="framework-score" style={{ color: getTierColor(contact.bant_tier) }}>
+                      {contact.bant_score || '--'}
+                    </span>
+                  </div>
+                  <div className="framework-bar">
+                    <div className="bar-fill" style={{ width: `${contact.bant_score || 0}%`, background: getTierColor(contact.bant_tier) }} />
+                  </div>
+                  <span className="framework-label">Budget, Authority, Need, Timeline</span>
+                </div>
+
+                <div className="framework-card">
+                  <div className="framework-header">
+                    <Activity size={16} style={{ color: getTierColor(contact.spice_tier) }} />
+                    <span className="framework-name">SPICE</span>
+                    <span className="framework-score" style={{ color: getTierColor(contact.spice_tier) }}>
+                      {contact.spice_score || '--'}
+                    </span>
+                  </div>
+                  <div className="framework-bar">
+                    <div className="bar-fill" style={{ width: `${contact.spice_score || 0}%`, background: getTierColor(contact.spice_tier) }} />
+                  </div>
+                  <span className="framework-label">Situation, Pain, Impact, Critical Event</span>
+                </div>
+              </div>
+
+              {/* Next Best Action */}
+              <div className="next-action-card">
+                <div className="action-header">
+                  <Sparkles size={16} />
+                  <span>Recommended Next Step</span>
+                </div>
+                <div className="action-content">
+                  {contact.overall_tier === 'hot' && (
+                    <>
+                      <strong>📞 Call within 24 hours</strong>
+                      <p>This lead shows strong buying signals. Check the Outreach tab for AI-generated call scripts.</p>
+                    </>
+                  )}
+                  {contact.overall_tier === 'warm' && (
+                    <>
+                      <strong>✉️ Send personalized email</strong>
+                      <p>Build rapport with value-driven content. Check Deep Profile for talking points.</p>
+                    </>
+                  )}
+                  {contact.overall_tier === 'cold' && (
+                    <>
+                      <strong>🔍 Research & qualify further</strong>
+                      <p>Run Deep Enrich to uncover pain points and timing triggers.</p>
+                    </>
+                  )}
+                  {!contact.overall_tier && (
+                    <>
+                      <strong>⚡ Enrich this contact</strong>
+                      <p>Run Quick Enrich to get firmographics and calculate lead scores.</p>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -736,7 +826,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
         </div>
       </div>
 
-      {/* ✅ INLINE STYLES for wider modal & compact UI */}
+      {/* ✅ INLINE STYLES - UPDATED WITH SCORING REDESIGN */}
       <style>{`
         .modal-wide {
           max-width: 900px !important;
@@ -867,15 +957,6 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           border-top: 1px solid rgba(148, 163, 184, 0.1);
         }
         
-        .score-card {
-          padding: 0.75rem;
-        }
-        
-        .score-card-icon {
-          width: 36px;
-          height: 36px;
-        }
-        
         .success-icon {
           color: #22c55e;
           margin-bottom: 0.5rem;
@@ -888,6 +969,172 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
         @keyframes spin {
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
+        }
+
+        /* ✅ NEW SCORING TAB STYLES */
+        .scoring-redesign {
+          display: flex;
+          flex-direction: column;
+          gap: 1.25rem;
+        }
+
+        .score-hero {
+          display: flex;
+          align-items: center;
+          gap: 1.5rem;
+          padding: 1.25rem;
+          background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.9));
+          border-radius: 12px;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .score-gauge {
+          position: relative;
+          width: 100px;
+          height: 100px;
+          flex-shrink: 0;
+        }
+
+        .gauge-ring {
+          width: 100%;
+          height: 100%;
+        }
+
+        .gauge-center {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          text-align: center;
+        }
+
+        .gauge-score {
+          display: block;
+          font-size: 1.75rem;
+          font-weight: 800;
+          color: #f8fafc;
+          line-height: 1;
+        }
+
+        .gauge-tier {
+          font-size: 0.7rem;
+          font-weight: 700;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .score-hero-text h3 {
+          margin: 0 0 0.25rem;
+          font-size: 1rem;
+          font-weight: 700;
+          color: #f8fafc;
+        }
+
+        .score-summary {
+          margin: 0;
+          font-size: 0.85rem;
+          color: #94a3b8;
+          line-height: 1.4;
+        }
+
+        .framework-scores {
+          display: grid;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 0.75rem;
+        }
+
+        .framework-card {
+          padding: 0.875rem;
+          background: rgba(30, 41, 59, 0.6);
+          border-radius: 10px;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+        }
+
+        .framework-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          margin-bottom: 0.5rem;
+        }
+
+        .framework-name {
+          font-weight: 700;
+          font-size: 0.8rem;
+          color: #e2e8f0;
+          flex: 1;
+        }
+
+        .framework-score {
+          font-weight: 800;
+          font-size: 1.1rem;
+        }
+
+        .framework-bar {
+          height: 4px;
+          background: rgba(148, 163, 184, 0.1);
+          border-radius: 2px;
+          overflow: hidden;
+          margin-bottom: 0.5rem;
+        }
+
+        .bar-fill {
+          height: 100%;
+          border-radius: 2px;
+          transition: width 0.3s ease;
+        }
+
+        .framework-label {
+          font-size: 0.65rem;
+          color: #64748b;
+          line-height: 1.2;
+        }
+
+        .next-action-card {
+          background: rgba(99, 102, 241, 0.08);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          border-radius: 10px;
+          overflow: hidden;
+        }
+
+        .action-header {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.6rem 1rem;
+          background: rgba(99, 102, 241, 0.1);
+          font-size: 0.75rem;
+          font-weight: 600;
+          color: #a5b4fc;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .action-content {
+          padding: 0.875rem 1rem;
+        }
+
+        .action-content strong {
+          display: block;
+          font-size: 0.9rem;
+          color: #f8fafc;
+          margin-bottom: 0.25rem;
+        }
+
+        .action-content p {
+          margin: 0;
+          font-size: 0.8rem;
+          color: #94a3b8;
+        }
+
+        /* Responsive: stack on mobile */
+        @media (max-width: 640px) {
+          .framework-scores {
+            grid-template-columns: 1fr;
+          }
+          .score-hero {
+            flex-direction: column;
+            text-align: center;
+          }
         }
       `}</style>
     </div>
