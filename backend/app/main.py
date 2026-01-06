@@ -35,6 +35,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
+from app.routers import outreach
 
 
 
@@ -1048,7 +1049,15 @@ try:
 except Exception as e:
     print(f"⚠️ Import router not loaded: {e}")
 
+# ============================================================================
+# OUTREACH MODULE - Email Generation
+# ============================================================================
 
+try:
+    app.include_router(outreach.router)  # Already imported at top
+    print("✅ Outreach router loaded (Email Generation)")
+except Exception as e:
+    print(f"⚠️ Outreach router not loaded: {e}")
 
 
 # ============================================================================

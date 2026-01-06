@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 =============================================================================
-APEX COLD CALL ENGINE - Minimal Data Contact Handling
+COLD CALL ENGINE - Minimal Data Contact Handling
 =============================================================================
 Location: apps/backend/intelligence/cold_call/cold_call_engine.py
 
