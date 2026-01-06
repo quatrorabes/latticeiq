@@ -1,11 +1,16 @@
 import { useState } from 'react';
-import { User, Database, Bell, Users, Key, Mail } from 'lucide-react';
+import { User, Database, Bell, Users, Key, Mail, Briefcase } from 'lucide-react';
 import '../styles/SettingsPage.css';
+import BusinessProfileForm from '../components/BusinessProfileForm';
 
-type TabType = 'profile' | 'data-sources' | 'notifications' | 'workspace';
+
+
+type TabType = 'profile' | 'business' | 'data-sources' | 'notifications' | 'workspace';
+
 
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('profile');
+
 
   return (
     <div className="settings-page">
@@ -19,6 +24,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
+
       {/* Tab Navigation */}
       <div className="settings-tabs">
         <button
@@ -27,6 +33,13 @@ export default function SettingsPage() {
         >
           <User size={20} />
           <span>Profile</span>
+        </button>
+        <button
+          className={`settings-tab ${activeTab === 'business' ? 'active' : ''}`}
+          onClick={() => setActiveTab('business')}
+        >
+          <Briefcase size={20} />
+          <span>Business</span>
         </button>
         <button
           className={`settings-tab ${activeTab === 'data-sources' ? 'active' : ''}`}
@@ -51,9 +64,11 @@ export default function SettingsPage() {
         </button>
       </div>
 
+
       {/* Tab Content */}
       <div className="settings-content">
         {activeTab === 'profile' && <ProfileTab />}
+        {activeTab === 'business' && <BusinessProfileForm />}
         {activeTab === 'data-sources' && <DataSourcesTab />}
         {activeTab === 'notifications' && <NotificationsTab />}
         {activeTab === 'workspace' && <WorkspaceTab />}
@@ -62,6 +77,7 @@ export default function SettingsPage() {
   );
 }
 
+
 function ProfileTab() {
   const [name, setName] = useState('John Doe');
   const [email, setEmail] = useState('john@example.com');
@@ -69,9 +85,11 @@ function ProfileTab() {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
+
   const handleSaveProfile = () => {
     alert('Profile updated successfully!');
   };
+
 
   const handleChangePassword = () => {
     if (newPassword !== confirmPassword) {
@@ -84,11 +102,13 @@ function ProfileTab() {
     setConfirmPassword('');
   };
 
+
   return (
     <div className="tab-content">
       <div className="settings-section">
         <h2>Profile Information</h2>
         <p className="section-description">Update your personal information</p>
+
 
         <div className="form-group">
           <label className="form-label">Full Name</label>
@@ -100,6 +120,7 @@ function ProfileTab() {
           />
         </div>
 
+
         <div className="form-group">
           <label className="form-label">Email Address</label>
           <input
@@ -110,14 +131,17 @@ function ProfileTab() {
           />
         </div>
 
+
         <button onClick={handleSaveProfile} className="btn-primary">
           Save Changes
         </button>
       </div>
 
+
       <div className="settings-section">
         <h2>Change Password</h2>
         <p className="section-description">Ensure your account stays secure</p>
+
 
         <div className="form-group">
           <label className="form-label">Current Password</label>
@@ -129,6 +153,7 @@ function ProfileTab() {
           />
         </div>
 
+
         <div className="form-group">
           <label className="form-label">New Password</label>
           <input
@@ -138,6 +163,7 @@ function ProfileTab() {
             className="form-input"
           />
         </div>
+
 
         <div className="form-group">
           <label className="form-label">Confirm New Password</label>
@@ -149,6 +175,7 @@ function ProfileTab() {
           />
         </div>
 
+
         <button onClick={handleChangePassword} className="btn-primary">
           Change Password
         </button>
@@ -157,10 +184,12 @@ function ProfileTab() {
   );
 }
 
+
 function DataSourcesTab() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [hubspotToken, setHubspotToken] = useState('');
   const [batchSize, setBatchSize] = useState(50);
+
 
   const handleCsvUpload = () => {
     if (!csvFile) {
@@ -170,6 +199,7 @@ function DataSourcesTab() {
     alert(`Uploading ${csvFile.name}...`);
   };
 
+
   const handleHubspotImport = () => {
     if (!hubspotToken) {
       alert('Please enter your HubSpot API token');
@@ -177,6 +207,7 @@ function DataSourcesTab() {
     }
     alert(`Importing ${batchSize} contacts from HubSpot...`);
   };
+
 
   return (
     <div className="tab-content">
@@ -187,6 +218,7 @@ function DataSourcesTab() {
             <p className="section-description">Import contacts from a CSV file</p>
           </div>
         </div>
+
 
         <div className="upload-area">
           <input
@@ -205,11 +237,13 @@ function DataSourcesTab() {
           </label>
         </div>
 
+
         {csvFile && (
           <button onClick={handleCsvUpload} className="btn-primary">
             Upload CSV
           </button>
         )}
+
 
         <div className="info-box">
           <strong>CSV Format Requirements:</strong>
@@ -221,6 +255,7 @@ function DataSourcesTab() {
         </div>
       </div>
 
+
       <div className="settings-section">
         <div className="section-header">
           <div>
@@ -228,6 +263,7 @@ function DataSourcesTab() {
             <p className="section-description">Connect your HubSpot account to import contacts</p>
           </div>
         </div>
+
 
         <div className="form-group">
           <label className="form-label">HubSpot Private App Token</label>
@@ -242,6 +278,7 @@ function DataSourcesTab() {
             HubSpot → Settings → Integrations → Private Apps → Create app with "crm.objects.contacts.read" scope
           </span>
         </div>
+
 
         <div className="form-group">
           <label className="form-label">Import Settings</label>
@@ -266,6 +303,7 @@ function DataSourcesTab() {
           </span>
         </div>
 
+
         <div className="checkbox-group">
           <label className="checkbox-label">
             <input type="checkbox" defaultChecked />
@@ -274,10 +312,12 @@ function DataSourcesTab() {
           <span className="form-hint">Skip contacts that already exist (by email)</span>
         </div>
 
+
         <button onClick={handleHubspotImport} className="btn-primary">
           <Mail size={20} />
           Import {batchSize} Contacts
         </button>
+
 
         <div className="info-box">
           <strong>Need help getting your HubSpot API key?</strong>
@@ -287,6 +327,7 @@ function DataSourcesTab() {
         </div>
       </div>
 
+
       <div className="settings-section">
         <div className="section-header">
           <div>
@@ -294,6 +335,7 @@ function DataSourcesTab() {
             <p className="section-description">Additional data source integrations</p>
           </div>
         </div>
+
 
         <div className="coming-soon-grid">
           <div className="coming-soon-card">
@@ -320,6 +362,7 @@ function DataSourcesTab() {
   );
 }
 
+
 function NotificationsTab() {
   const [emailNotifications, setEmailNotifications] = useState(true);
   const [hotLeadAlerts, setHotLeadAlerts] = useState(true);
@@ -327,15 +370,18 @@ function NotificationsTab() {
   const [slackWebhook, setSlackWebhook] = useState('');
   const [minScore, setMinScore] = useState(70);
 
+
   const handleSaveNotifications = () => {
     alert('Notification settings saved!');
   };
+
 
   return (
     <div className="tab-content">
       <div className="settings-section">
         <h2>Email Notifications</h2>
         <p className="section-description">Control when we send you emails</p>
+
 
         <div className="checkbox-group">
           <label className="checkbox-label">
@@ -348,6 +394,7 @@ function NotificationsTab() {
           </label>
         </div>
 
+
         <div className="checkbox-group">
           <label className="checkbox-label">
             <input
@@ -358,6 +405,7 @@ function NotificationsTab() {
             <span>Notify for hot leads (score ≥ 70)</span>
           </label>
         </div>
+
 
         <div className="checkbox-group">
           <label className="checkbox-label">
@@ -371,9 +419,11 @@ function NotificationsTab() {
         </div>
       </div>
 
+
       <div className="settings-section">
         <h2>Slack Integration</h2>
         <p className="section-description">Get real-time alerts in Slack</p>
+
 
         <div className="form-group">
           <label className="form-label">Slack Webhook URL</label>
@@ -389,6 +439,7 @@ function NotificationsTab() {
           </span>
         </div>
 
+
         <div className="form-group">
           <label className="form-label">Minimum score for notifications</label>
           <input
@@ -402,6 +453,7 @@ function NotificationsTab() {
           <span className="form-hint">Only notify for leads with ICP score above this threshold</span>
         </div>
 
+
         <button onClick={handleSaveNotifications} className="btn-primary">
           Save Notification Settings
         </button>
@@ -410,19 +462,23 @@ function NotificationsTab() {
   );
 }
 
+
 function WorkspaceTab() {
   const [workspaceName, setWorkspaceName] = useState('Acme Corp Sales');
   const [teamSize, setTeamSize] = useState('5-10');
 
+
   const handleSaveWorkspace = () => {
     alert('Workspace settings saved!');
   };
+
 
   return (
     <div className="tab-content">
       <div className="settings-section">
         <h2>Workspace Settings</h2>
         <p className="section-description">Manage your team workspace</p>
+
 
         <div className="form-group">
           <label className="form-label">Workspace Name</label>
@@ -433,6 +489,7 @@ function WorkspaceTab() {
             className="form-input"
           />
         </div>
+
 
         <div className="form-group">
           <label className="form-label">Team Size</label>
@@ -449,23 +506,28 @@ function WorkspaceTab() {
           </select>
         </div>
 
+
         <button onClick={handleSaveWorkspace} className="btn-primary">
           Save Workspace Settings
         </button>
       </div>
 
+
       <div className="settings-section">
         <h2>Team Members</h2>
         <p className="section-description">Manage who has access to your workspace</p>
+
 
         <div className="info-box">
           <strong>Coming Soon:</strong> Invite team members, manage roles and permissions
         </div>
       </div>
 
+
       <div className="settings-section danger-zone">
         <h2>Danger Zone</h2>
         <p className="section-description">Irreversible actions</p>
+
 
         <button className="btn-danger">
           Delete Workspace
