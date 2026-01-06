@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Users, Search, RefreshCw, Upload, Trash2, Sparkles, AlertCircle } from 'lucide-react';
 import { fetchContacts, deleteContacts, Contact } from '../api/contacts';
 import { enrichContact } from '../api/enrichment';
-import { ContactDetailModal } from '../components/ContactDetailModal';
 import '../styles/ContactsPage.css';
+
 
 export const ContactsPage: React.FC = () => {
   const [contacts, setContacts] = useState<Contact[]>([]);
@@ -13,11 +13,12 @@ export const ContactsPage: React.FC = () => {
   const [filterTier, setFilterTier] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [enriching, setEnriching] = useState(false);
-  const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+
 
   useEffect(() => {
     loadContacts();
   }, []);
+
 
   const loadContacts = async () => {
     setLoading(true);
@@ -32,6 +33,7 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
+
   const filteredContacts = contacts.filter(contact => {
     const matchesSearch = 
       contact.first_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -45,12 +47,14 @@ export const ContactsPage: React.FC = () => {
     return matchesSearch && matchesTier;
   });
 
+
   const toggleSelectContact = (id: string) => {
     const newSelected = new Set(selectedContacts);
     if (newSelected.has(id)) newSelected.delete(id);
     else newSelected.add(id);
     setSelectedContacts(newSelected);
   };
+
 
   const toggleSelectAll = () => {
     if (selectedContacts.size === filteredContacts.length) {
@@ -60,23 +64,23 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
+
   const enrichSelected = async () => {
     if (selectedContacts.size === 0) return;
     setEnriching(true);
     try {
-    // Enrich all contacts in parallel
       await Promise.all(
-      Array.from(selectedContacts).map(contactId => enrichContact(contactId))
+        Array.from(selectedContacts).map(contactId => enrichContact(contactId))
       );
       alert(`✅ Enriched ${selectedContacts.size} contacts with scores!`);
       setSelectedContacts(new Set());
       loadContacts();
-  } catch (err: any) {
+    } catch (err: any) {
       alert(`❌ Failed: ${err.message}`);
-  } finally {
-    setEnriching(false);
-  }
-};
+    } finally {
+      setEnriching(false);
+    }
+  };
 
 
   const deleteSelected = async () => {
@@ -91,6 +95,7 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
+
   const getScoreColor = (tier?: string) => {
     switch (tier?.toLowerCase()) {
       case 'hot': return '#ef4444';
@@ -100,11 +105,13 @@ export const ContactsPage: React.FC = () => {
     }
   };
 
+
   const tierCounts = {
     hot: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'hot').length,
     warm: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'warm').length,
     cold: contacts.filter(c => (c.mdcp_tier || c.overall_tier) === 'cold').length,
   };
+
 
   if (error) {
     return (
@@ -120,6 +127,7 @@ export const ContactsPage: React.FC = () => {
       </div>
     );
   }
+
 
   return (
     <div className="contacts-page">
@@ -144,6 +152,7 @@ export const ContactsPage: React.FC = () => {
         </div>
       </div>
 
+
       {/* Toolbar */}
       <div className="contacts-toolbar">
         <div className="search-box">
@@ -155,6 +164,7 @@ export const ContactsPage: React.FC = () => {
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
+
 
         <div className="filter-buttons">
           <button className={`filter-btn ${filterTier === 'all' ? 'active' : ''}`} onClick={() => setFilterTier('all')}>
@@ -171,6 +181,7 @@ export const ContactsPage: React.FC = () => {
           </button>
         </div>
 
+
         {selectedContacts.size > 0 && (
           <div className="bulk-actions">
             <span>{selectedContacts.size} selected</span>
@@ -185,6 +196,7 @@ export const ContactsPage: React.FC = () => {
           </div>
         )}
       </div>
+
 
       {/* Table */}
       {loading ? (
@@ -217,8 +229,7 @@ export const ContactsPage: React.FC = () => {
             <tbody>
               {filteredContacts.map(contact => (
                 <tr 
-                  key={contact.id} 
-                  onClick={() => setSelectedContact(contact)}
+                  key={contact.id}
                   className="clickable-row"
                 >
                   <td onClick={(e) => e.stopPropagation()}>
@@ -275,6 +286,7 @@ export const ContactsPage: React.FC = () => {
             </tbody>
           </table>
 
+
           {filteredContacts.length === 0 && (
             <div className="empty-state">
               <Users size={64} />
@@ -284,20 +296,10 @@ export const ContactsPage: React.FC = () => {
           )}
         </div>
       )}
-
-      {/* Modal - NO isOpen prop needed */}
-      {selectedContact && (
-        <ContactDetailModal
-          contact={selectedContact}
-          onClose={() => setSelectedContact(null)}
-          onUpdate={() => {
-            loadContacts();
-            setSelectedContact(null);
-          }}
-        />
-      )}
+      {/* ✅ MODAL REMOVED - Rows now navigate via ContactsTable */}
     </div>
   );
 };
+
 
 export default ContactsPage;
