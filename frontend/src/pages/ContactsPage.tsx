@@ -1,34 +1,36 @@
+// frontend/src/pages/ContactsPage.tsx
 import { useState, useEffect } from 'react';
 import { Loader2, RefreshCw, Upload, Zap, Trash2, Users } from 'lucide-react';
-import { fetchContacts, deleteContact, Contact } from '../api/contacts';
+import { fetchContacts, deleteContact } from '../api/contacts';
+import { Contact } from '../types';
 import { ContactDetailModal } from '../components/ContactDetailModal';
+
 
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+
 
   useEffect(() => {
     loadContacts();
   }, []);
 
+
   const loadContacts = async () => {
     setLoading(true);
-    setError(null);
     try {
-      const response = await fetchContacts();
-      // fetchContacts returns { contacts: [...], total, limit, offset }
-      setContacts(response.contacts || []);
-    } catch (err: any) {
-      console.error('Failed to load contacts:', err);
-      setError(err.message || 'Failed to load contacts');
+      const data = await fetchContacts();
+      setContacts(data.contacts || data);  // FIXED: changed 'response' to 'data'
+    } catch (error) {
+      console.error('Failed to load contacts:', error);
     } finally {
       setLoading(false);
     }
   };
+
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -36,10 +38,11 @@ export default function ContactsPage() {
     try {
       await deleteContact(id);
       setContacts(contacts.filter(c => c.id !== id));
-    } catch (err) {
-      console.error('Failed to delete contact:', err);
+    } catch (error) {
+      console.error('Failed to delete contact:', error);
     }
   };
+
 
   const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
     const score = contact.mdcp_score || 0;
@@ -48,28 +51,29 @@ export default function ContactsPage() {
     return 'cold';
   };
 
-  const getDisplayName = (contact: Contact): string => {
-    if (contact.first_name || contact.last_name) {
-      return `${contact.first_name || ''} ${contact.last_name || ''}`.trim();
-    }
-    return 'Unknown';
+
+  // Helper function for contact name
+  const getContactName = (contact: Contact): string => {
+    return `${contact.firstname || ''} ${contact.lastname || ''}`.trim() || 'Unknown';
   };
 
+  // Helper function for initials
   const getInitials = (contact: Contact): string => {
-    const name = getDisplayName(contact);
+    const name = getContactName(contact);
     return name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '??';
   };
 
+
   const filteredContacts = contacts.filter(contact => {
-    const displayName = getDisplayName(contact);
     const matchesSearch = 
-      displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      getContactName(contact).toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (filter === 'all') return matchesSearch;
     return matchesSearch && getTier(contact) === filter;
   });
+
 
   const counts = {
     all: contacts.length,
@@ -78,6 +82,8 @@ export default function ContactsPage() {
     cold: contacts.filter(c => getTier(c) === 'cold').length,
   };
 
+
+  // Inline styles to guarantee they apply (matching Contact Detail page exactly)
   const styles = {
     page: {
       minHeight: '100vh',
@@ -86,6 +92,7 @@ export default function ContactsPage() {
       color: '#f8fafc',
       fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
     } as React.CSSProperties,
+    
     header: {
       display: 'flex',
       alignItems: 'center',
@@ -94,11 +101,13 @@ export default function ContactsPage() {
       paddingBottom: '1.5rem',
       borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
     } as React.CSSProperties,
+    
     headerLeft: {
       display: 'flex',
       alignItems: 'center',
       gap: '1rem',
     } as React.CSSProperties,
+    
     headerIcon: {
       width: '48px',
       height: '48px',
@@ -110,21 +119,25 @@ export default function ContactsPage() {
       justifyContent: 'center',
       color: '#6366f1',
     } as React.CSSProperties,
+    
     title: {
       fontSize: '2rem',
       fontWeight: 800,
       margin: 0,
       letterSpacing: '-0.02em',
     } as React.CSSProperties,
+    
     subtitle: {
       fontSize: '0.95rem',
       color: '#94a3b8',
       margin: '0.25rem 0 0 0',
     } as React.CSSProperties,
+    
     headerActions: {
       display: 'flex',
       gap: '1rem',
     } as React.CSSProperties,
+    
     btnPrimary: {
       display: 'flex',
       alignItems: 'center',
@@ -139,6 +152,7 @@ export default function ContactsPage() {
       cursor: 'pointer',
       boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
     } as React.CSSProperties,
+    
     btnSecondary: {
       display: 'flex',
       alignItems: 'center',
@@ -152,6 +166,7 @@ export default function ContactsPage() {
       fontSize: '0.95rem',
       cursor: 'pointer',
     } as React.CSSProperties,
+    
     controlsCard: {
       background: '#1e293b',
       border: '1px solid rgba(148, 163, 184, 0.1)',
@@ -159,6 +174,7 @@ export default function ContactsPage() {
       padding: '1.5rem',
       marginBottom: '1.5rem',
     } as React.CSSProperties,
+    
     searchInput: {
       width: '100%',
       padding: '0.875rem 1.25rem',
@@ -169,13 +185,14 @@ export default function ContactsPage() {
       fontSize: '0.95rem',
       marginBottom: '1rem',
       outline: 'none',
-      boxSizing: 'border-box' as const,
     } as React.CSSProperties,
+    
     filterTabs: {
       display: 'flex',
       gap: '0.75rem',
       flexWrap: 'wrap' as const,
     } as React.CSSProperties,
+    
     filterTab: {
       padding: '0.6rem 1.25rem',
       background: 'rgba(99, 102, 241, 0.1)',
@@ -186,6 +203,7 @@ export default function ContactsPage() {
       fontSize: '0.9rem',
       cursor: 'pointer',
     } as React.CSSProperties,
+    
     filterTabActive: {
       padding: '0.6rem 1.25rem',
       background: '#6366f1',
@@ -196,6 +214,7 @@ export default function ContactsPage() {
       fontSize: '0.9rem',
       cursor: 'pointer',
     } as React.CSSProperties,
+    
     tableCard: {
       background: '#1e293b',
       border: '1px solid rgba(148, 163, 184, 0.1)',
@@ -203,10 +222,12 @@ export default function ContactsPage() {
       overflow: 'hidden',
       boxShadow: '0 4px 24px rgba(0, 0, 0, 0.15)',
     } as React.CSSProperties,
+    
     table: {
       width: '100%',
       borderCollapse: 'collapse' as const,
     } as React.CSSProperties,
+    
     th: {
       padding: '1.25rem 1rem',
       textAlign: 'left' as const,
@@ -218,21 +239,25 @@ export default function ContactsPage() {
       background: 'rgba(99, 102, 241, 0.05)',
       borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
     } as React.CSSProperties,
+    
     tr: {
       borderBottom: '1px solid rgba(148, 163, 184, 0.06)',
       cursor: 'pointer',
       transition: 'background 200ms ease',
     } as React.CSSProperties,
+    
     td: {
       padding: '1rem',
       color: '#e2e8f0',
       fontSize: '0.95rem',
     } as React.CSSProperties,
+    
     contactInfo: {
       display: 'flex',
       alignItems: 'center',
       gap: '1rem',
     } as React.CSSProperties,
+    
     avatar: {
       width: '40px',
       height: '40px',
@@ -246,16 +271,19 @@ export default function ContactsPage() {
       color: 'white',
       flexShrink: 0,
     } as React.CSSProperties,
+    
     contactName: {
       fontWeight: 600,
       color: '#f8fafc',
       display: 'block',
     } as React.CSSProperties,
+    
     contactEmail: {
       fontSize: '0.85rem',
       color: '#64748b',
       display: 'block',
     } as React.CSSProperties,
+    
     statusBadge: (status: string) => ({
       display: 'inline-flex',
       padding: '0.4rem 0.9rem',
@@ -267,10 +295,12 @@ export default function ContactsPage() {
       color: status === 'completed' ? '#22c55e' : '#f59e0b',
       border: `1px solid ${status === 'completed' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
     }) as React.CSSProperties,
+    
     actionButtons: {
       display: 'flex',
       gap: '0.5rem',
     } as React.CSSProperties,
+    
     actionBtn: {
       width: '34px',
       height: '34px',
@@ -283,6 +313,7 @@ export default function ContactsPage() {
       color: '#64748b',
       cursor: 'pointer',
     } as React.CSSProperties,
+    
     loading: {
       display: 'flex',
       flexDirection: 'column' as const,
@@ -292,20 +323,14 @@ export default function ContactsPage() {
       gap: '1.5rem',
       color: '#94a3b8',
     } as React.CSSProperties,
+    
     emptyState: {
       padding: '4rem 2rem',
       textAlign: 'center' as const,
       color: '#64748b',
     } as React.CSSProperties,
-    errorState: {
-      padding: '2rem',
-      textAlign: 'center' as const,
-      color: '#ef4444',
-      background: 'rgba(239, 68, 68, 0.1)',
-      borderRadius: '12px',
-      marginBottom: '1.5rem',
-    } as React.CSSProperties,
   };
+
 
   if (loading) {
     return (
@@ -318,8 +343,10 @@ export default function ContactsPage() {
     );
   }
 
+
   return (
     <div style={styles.page}>
+      {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerLeft}>
           <div style={styles.headerIcon}>
@@ -342,12 +369,8 @@ export default function ContactsPage() {
         </div>
       </div>
 
-      {error && (
-        <div style={styles.errorState}>
-          <p>Error: {error}</p>
-        </div>
-      )}
 
+      {/* Search & Filters Card */}
       <div style={styles.controlsCard}>
         <input
           type="text"
@@ -372,6 +395,8 @@ export default function ContactsPage() {
         </div>
       </div>
 
+
+      {/* Table Card */}
       <div style={styles.tableCard}>
         <table style={styles.table}>
           <thead>
@@ -401,16 +426,16 @@ export default function ContactsPage() {
                       {getInitials(contact)}
                     </div>
                     <div>
-                      <span style={styles.contactName}>{getDisplayName(contact)}</span>
+                      <span style={styles.contactName}>{getContactName(contact)}</span>
                       <span style={styles.contactEmail}>{contact.email || 'No email'}</span>
                     </div>
                   </div>
                 </td>
                 <td style={styles.td}>{contact.company || '—'}</td>
                 <td style={styles.td}>{contact.title || '—'}</td>
-                <td style={styles.td}>{contact.mdcp_score ?? '—'}</td>
-                <td style={styles.td}>{contact.bant_score ?? '—'}</td>
-                <td style={styles.td}>{contact.spice_score ?? '—'}</td>
+                <td style={styles.td}>{contact.mdcp_score || '—'}</td>
+                <td style={styles.td}>{contact.bant_score || '—'}</td>
+                <td style={styles.td}>{contact.spice_score || '—'}</td>
                 <td style={styles.td}>
                   <span style={styles.statusBadge(contact.enrichment_status || 'pending')}>
                     {contact.enrichment_status || 'pending'}
@@ -435,13 +460,16 @@ export default function ContactsPage() {
           </tbody>
         </table>
 
-        {filteredContacts.length === 0 && !error && (
+
+        {filteredContacts.length === 0 && (
           <div style={styles.emptyState}>
             <p>No contacts found matching your criteria.</p>
           </div>
         )}
       </div>
 
+
+      {/* Modal */}
       {selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
