@@ -67,26 +67,26 @@ function App() {
   }
 
   return (
-    <Router>
-      <Layout>
-        <Routes>
-          <Route path="/" element={<PremiumDashboard />} />
-          <Route path="/contacts" element={<ContactsPage />} />
-          <Route path="/crm" element={<CRMPage />} />
-          <Route path="/smart-lists" element={<SmartListsPage />} />
-          <Route path="/pipeline" element={<PipelinePage />} />
-          <Route path="/ai-writer" element={<AIWriterPage />} />
-          <Route path="/integrations" element={<IntegrationsPage />} />
-          <Route path="/scoring" element={<ScoringPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-          <Route path="/icps" element={<ICPsPage />} />
-          <Route path="/campaigns" element={<CampaignsPage />} />
-          <Route path="/templates" element={<TemplatesPage />} />
-          <Route path="/contacts/:contactId" element={<ContactDetailPage />} />
-        </Routes>
-      </Layout>
-    </Router>
+  <Router>
+    <Layout>
+      <Routes>
+        <Route path="/" element={<PremiumDashboard />} />
+        <Route path="/contacts" element={<ContactsPage />} />
+        <Route path="/contacts/:contactId" element={<ContactDetailPage />} />  {/* MOVED HERE */}
+        <Route path="/crm" element={<CRMPage />} />
+        <Route path="/smart-lists" element={<SmartListsPage />} />
+        <Route path="/pipeline" element={<PipelinePage />} />
+        <Route path="/ai-writer" element={<AIWriterPage />} />
+        <Route path="/integrations" element={<IntegrationsPage />} />
+        <Route path="/scoring" element={<ScoringPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/icps" element={<ICPsPage />} />
+        <Route path="/campaigns" element={<CampaignsPage />} />
+        <Route path="/templates" element={<TemplatesPage />} />
+        <Route path="*" element={<Navigate to="/" replace />} />  {/* CATCH-ALL MUST BE LAST */}
+      </Routes>
+    </Layout>
+  </Router>
   );
 }
 
