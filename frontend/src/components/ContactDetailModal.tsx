@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   X, Mail, Phone, Building2, Briefcase, Globe, Linkedin, Edit2, Save, 
   Sparkles, Trash2, ExternalLink, Target, DollarSign, Activity, Award, 
-  RefreshCw, CheckCircle, Brain, AlertCircle, Send, Clock
+  RefreshCw, CheckCircle, Brain, AlertCircle, Send, Clock, Calendar
 } from 'lucide-react';
 import { Contact, updateContact, deleteContact, fetchContact } from '../api/contacts';
 import { enrichContact, deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
@@ -10,6 +10,7 @@ import { calculateScores } from '../api/scoring';
 import { supabase } from '../lib/supabaseClient';
 import { UnifiedEnrichmentResult } from '../types/enrichment';
 import { OutreachTab } from './OutreachTab';
+import { CadenceTab } from './CadenceTab';
 import '../styles/ContactDetailModal.css';
 
 
@@ -118,7 +119,7 @@ function extractDeepEnrichmentFromContact(contact: Contact): UnifiedEnrichmentRe
 
 export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, onClose, onUpdate }) => {
   const [contact, setContact] = useState<Contact>(initialContact);
-  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile' | 'outreach'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'enrichment' | 'scoring' | 'deepprofile' | 'outreach' | 'cadence'>('info');
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isEnriching, setIsEnriching] = useState(false);
@@ -589,7 +590,7 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           )}
         </div>
 
-        {/* Tabs */}
+        {/* ✅ UPDATED Tabs - Now includes Cadence */}
         <div className="modal-tabs">
           <button className={`tab-btn ${activeTab === 'info' ? 'active' : ''}`} onClick={() => setActiveTab('info')}>Info</button>
           <button className={`tab-btn ${activeTab === 'enrichment' ? 'active' : ''}`} onClick={() => setActiveTab('enrichment')}>
@@ -603,6 +604,9 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           </button>
           <button className={`tab-btn ${activeTab === 'outreach' ? 'active' : ''}`} onClick={() => setActiveTab('outreach')}>
             <Send size={12} /> Outreach
+          </button>
+          <button className={`tab-btn ${activeTab === 'cadence' ? 'active' : ''}`} onClick={() => setActiveTab('cadence')}>
+            <Calendar size={12} /> Cadence
           </button>
         </div>
 
@@ -821,6 +825,17 @@ export const ContactDetailModal: React.FC<Props> = ({ contact: initialContact, o
           {activeTab === 'outreach' && (
             <div className="tab-pane">
               <OutreachTab contact={outreachContact} onUpdate={refreshContact} />
+            </div>
+          )}
+
+          {/* ✅ NEW: CADENCE TAB */}
+          {activeTab === 'cadence' && (
+            <div className="tab-pane">
+              <CadenceTab 
+                contactId={contact.id}
+                contactName={`${contact.first_name || ''} ${contact.last_name || ''}`.trim()}
+                onUpdate={refreshContact}
+              />
             </div>
           )}
         </div>
