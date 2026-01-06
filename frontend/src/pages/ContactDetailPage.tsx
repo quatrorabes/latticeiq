@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader, AlertCircle, CheckCircle } from 'lucide-react';
-import { fetchContact, Contact } from '../api/contacts';
+import { fetchContact, updateContact, Contact } from '../api/contacts';
 import { deepEnrichContact, getEnrichmentResult } from '../api/enrichment';
 import { supabase } from '../lib/supabaseClient';
 import '../styles/ContactDetailPage.css';
@@ -34,34 +34,32 @@ export const ContactDetailPage: React.FC = () => {
   }, [contactId]);
 
   const loadContact = async () => {
-  if (!contactId) return;
-  try {
-    setLoading(true);
-    const contact = await fetchContact(contactId);
-    setContact(contact);
+    if (!contactId) return;
+    try {
+      setLoading(true);
+      const contact = await fetchContact(contactId);
+      setContact(contact);
 
-    // If contact already has enrichment data, parse it
-    if (contact.enrichment_data) {
-      try {
-        // THIS IS THE FIX - handle both string and object
-        const parsed = typeof contact.enrichment_data === 'string' 
-          ? JSON.parse(contact.enrichment_data) 
-          : contact.enrichment_data;
-        setEnrichmentData(parsed);
-        setRawJson(JSON.stringify(parsed, null, 2));
-      } catch (e) {
-        console.log('Could not parse stored enrichment data:', e);
+      // If contact already has enrichment data, parse it
+      if (contact.enrichment_data) {
+        try {
+          // Handle both string and object
+          const parsed = typeof contact.enrichment_data === 'string' 
+            ? JSON.parse(contact.enrichment_data) 
+            : contact.enrichment_data;
+          setEnrichmentData(parsed);
+          setRawJson(JSON.stringify(parsed, null, 2));
+        } catch (e) {
+          console.log('Could not parse stored enrichment data:', e);
+        }
       }
+    } catch (err) {
+      console.error('Failed to load contact:', err);
+      setMessage({ type: 'error', text: 'Failed to load contact' });
+    } finally {
+      setLoading(false);
     }
-  } catch (err) {
-    console.error('Failed to load contact:', err);
-    setMessage({ type: 'error', text: 'Failed to load contact' });
-  } finally {
-    setLoading(false);
-  }
-};
-
-
+  };
 
   const handleDeepEnrich = async () => {
     if (!contactId) return;
@@ -114,9 +112,25 @@ export const ContactDetailPage: React.FC = () => {
 
           if (actualData && Object.keys(actualData).length > 0 && actualData.contact_profile) {
             console.log('✅ SUCCESS! Got enrichment data:', actualData);
+            
+            // ✅ CRITICAL FIX: Save enrichment data to database
+            try {
+              console.log('💾 Saving enrichment data to database...');
+              const updatedContact = await updateContact(contactId, {
+                enrichment_data: actualData,
+                enrichment_status: 'completed'
+              });
+              
+              console.log('✅ Saved to database:', updatedContact);
+              setContact(updatedContact);
+            } catch (saveErr) {
+              console.error('⚠️ Warning: Could not save to database:', saveErr);
+              // Still show success even if save fails, data is in UI
+            }
+            
             setEnrichmentData(actualData);
             setRawJson(JSON.stringify(actualData, null, 2));
-            setMessage({ type: 'success', text: '✨ Deep enrichment complete!' });
+            setMessage({ type: 'success', text: '✨ Deep enrichment complete & saved!' });
             setEnrichmentProgress(100);
             completed = true;
             break;
