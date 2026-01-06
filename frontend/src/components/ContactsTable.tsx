@@ -10,11 +10,11 @@ import { useNavigate } from 'react-router-dom';
 
 interface ContactsTableProps {
   contacts: Contact[];
-  onSelectContact: (contact: Contact) => void;
   onEnrichContact: (contactId: string) => void;
   onDeleteContact: (contactId: string) => void;
   enrichingIds: Set<string>;
 }
+
 
 
 type SortField = 'name' | 'email' | 'company' | 'status' | 'mdcp_score' | 'bant_score' | 'spice_score';
@@ -75,7 +75,6 @@ function StatusBadge({ status }: { status: string }) {
 
 export function ContactsTable({
   contacts,
-  onSelectContact,
   onEnrichContact,
   onDeleteContact,
   enrichingIds,
