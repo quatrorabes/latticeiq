@@ -1,0 +1,3408 @@
+there are no home repairs. that was a pun. The// frontend/src/components/ContactDetailModal.tsx
+
+import React, { useState, useEffect } from 'react';
+import { 
+  X, Building2, Target, Loader2, RefreshCw, 
+  AlertCircle, CheckCircle2, Clock, User, 
+  AlertTriangle, MessageSquare, Zap, Mail, Phone,
+  Send, Copy, ExternalLink
+} from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { Contact } from '../types';
+
+interface ContactDetailModalProps {
+  contact: Contact;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate?: (contact: Contact) => void;
+}
+
+// frontend/src/types/enrichment.ts
+
+
+export interface EnrichmentBullet {
+  text: string;
+  evidence?: string | null;
+  strength?: number | null;
+}
+
+
+export interface ContactProfileBox {
+  headline?: string | null;
+  role_summary?: string | null;
+  seniority?: string | null;
+  background_bullets: EnrichmentBullet[];
+}
+
+
+export interface CompanyProfileBox {
+  one_liner?: string | null;
+  industry?: string | null;
+  size_segment?: string | null;
+  region?: string | null;
+  key_products_or_services: EnrichmentBullet[];
+}
+
+
+export interface CurrentFocusBox {
+  strategic_initiatives: EnrichmentBullet[];
+  recent_projects: EnrichmentBullet[];
+  primary_kpis: EnrichmentBullet[];
+}
+
+
+export interface BuyingSignalsBox {
+  recent_news: EnrichmentBullet[];
+  hiring_signals: EnrichmentBullet[];
+  tech_changes: EnrichmentBullet[];
+  timing_triggers: EnrichmentBullet[];
+}
+
+
+export interface RisksAndObjectionsBox {
+  risk_bullets: EnrichmentBullet[];
+  likely_objections: EnrichmentBullet[];
+  landmines: EnrichmentBullet[];
+}
+
+
+export interface MessagingBox {
+  cold_openers: EnrichmentBullet[];
+  value_props: EnrichmentBullet[];
+  call_to_action_ideas: EnrichmentBullet[];
+}
+
+
+export interface EnrichmentMeta {
+  generated_at?: string;
+  source?: "quick" | "deep";
+  model?: string | null;
+  provider?: string | null;
+  confidence_score?: number | null;
+  version?: number;
+}
+
+
+export interface UnifiedEnrichmentResult {
+  contact_id: string;
+  contact_profile: ContactProfileBox;
+  company_profile: CompanyProfileBox;
+  current_focus: CurrentFocusBox;
+  buying_signals: BuyingSignalsBox;
+  risks_and_objections: RisksAndObjectionsBox;
+  messaging: MessagingBox;
+  meta?: EnrichmentMeta;
+}
+
+
+// Legacy support - maps old enrichment format to new schema
+export interface LegacyEnrichmentData {
+  summary?: string;
+  opening_line?: string;
+  talking_points?: string[] | string;
+  persona_type?: string;
+  company_description?: string;
+  company_size?: string;
+  industry?: string;
+  recent_news?: string;
+  company_name?: string;
+  company_website?: string;
+  linkedin_company_url?: string;
+  tech_stack?: string[];
+  decision_makers?: Array<{ name: string; title: string; email: string }>;
+  buying_signals?: string[];
+  [key: string]: any;
+}
+
+export default function ContactDetailModal({ 
+  contact, 
+  isOpen, 
+  onClose,
+  onUpdate 
+}: ContactDetailModalProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview');
+  const [enrichmentData, setEnrichmentData] = useState<any>(null);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [isQuickEnriching, setIsQuickEnriching] = useState(false);
+  const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle');
+  const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
+  const [scores, setScores] = useState({
+    mdcp: contact.mdcp_score ?? 0,
+    bant: contact.bant_score ?? 0,
+    spice: contact.spice_score ?? 0
+  });
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Load enrichment data on mount
+  useEffect(() => {
+    if (contact.enrichment_data) {
+      // Handle nested data structure
+      const data = (contact.enrichment_data as any)?.data || contact.enrichment_data;
+      setEnrichmentData(data);
+      setEnrichmentStatus('completed');
+    } else {
+      setEnrichmentData(null);
+      setEnrichmentStatus('idle');
+    }
+    setScores({
+      mdcp: contact.mdcp_score ?? 0,
+      bant: contact.bant_score ?? 0,
+      spice: contact.spice_score ?? 0
+    });
+    setEnrichmentError(null);
+  }, [contact.id, contact.enrichment_data, contact.mdcp_score, contact.bant_score, contact.spice_score]);
+
+  if (!isOpen) return null;
+
+  // ============================================================
+  // QUICK ENRICHMENT HANDLER
+  // ============================================================
+
+  const handleQuickEnrich = async () => {
+    setIsQuickEnriching(true);
+    setEnrichmentError(null);
+
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch(`${API_URL}/api/v3/enrichment/quick/${contact.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Quick enrichment failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.enrichment_data) {
+        const data = result.enrichment_data.data || result.enrichment_data;
+        setEnrichmentData(data);
+        setEnrichmentStatus('completed');
+        
+        if (onUpdate) {
+          onUpdate({ ...contact, enrichment_data: result.enrichment_data });
+        }
+      }
+    } catch (error) {
+      console.error('Quick enrichment error:', error);
+      setEnrichmentError(error instanceof Error ? error.message : 'Quick enrichment failed');
+    } finally {
+      setIsQuickEnriching(false);
+    }
+  };
+
+  // ============================================================
+  // DEEP ENRICHMENT HANDLER
+  // ============================================================
+
+  const handleDeepEnrich = async () => {
+    setIsEnriching(true);
+    setEnrichmentStatus('processing');
+    setEnrichmentError(null);
+
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Trigger deep enrichment
+      const response = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Enrichment failed: ${response.status}`);
+      }
+
+      // Poll for results
+      let attempts = 0;
+      const maxAttempts = 30;
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const resultResponse = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`, {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) }
+        });
+
+        if (resultResponse.ok) {
+          const result = await resultResponse.json();
+          console.log('Poll attempt', attempts, ':', result);
+          
+          // Check for enrichment data in various locations
+          const hasData = result.contact_profile || 
+                         result.data?.contact_profile || 
+                         result.enrichment_data?.contact_profile;
+          
+          if (hasData) {
+            // Extract the actual data
+            const enrichData = result.contact_profile 
+              ? result 
+              : (result.data?.contact_profile ? result.data : result.enrichment_data);
+            
+            setEnrichmentData(enrichData);
+            setEnrichmentStatus('completed');
+            
+            const scoresData = result.scores || result.data?.scores || enrichData?.scores;
+            if (scoresData) {
+              setScores({
+                mdcp: scoresData.mdcp ?? 0,
+                bant: scoresData.bant ?? 0,
+                spice: scoresData.spice ?? 0
+              });
+            }
+            
+            if (onUpdate) {
+              onUpdate({
+                ...contact,
+                enrichment_data: enrichData as any,
+                mdcp_score: scoresData?.mdcp,
+                bant_score: scoresData?.bant,
+                spice_score: scoresData?.spice
+              });
+            }
+            
+            setIsEnriching(false);
+            return;
+          }
+          
+          if (result.status === 'failed') {
+            throw new Error(result.error || 'Enrichment failed');
+          }
+        }
+        
+        attempts++;
+      }
+      
+      throw new Error('Enrichment timed out. Please try again.');
+      
+    } catch (error) {
+      console.error('Deep enrichment error:', error);
+      setEnrichmentError(error instanceof Error ? error.message : 'Unknown error');
+      setEnrichmentStatus('failed');
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  // ============================================================
+  // UTILITY FUNCTIONS
+  // ============================================================
+
+  const copyToClipboard = async (text: string, field: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const getStatusBadge = (status: string | undefined) => {
+    const styles: Record<string, string> = {
+      hot: 'bg-red-500/20 text-red-400 border-red-500/30',
+      warm: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+      cold: 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+    };
+    return styles[status || 'cold'] || styles.cold;
+  };
+
+  const getTierBadge = (tier: string | undefined) => {
+    const styles: Record<string, string> = {
+      A: 'bg-emerald-500/20 text-emerald-400',
+      B: 'bg-blue-500/20 text-blue-400',
+      C: 'bg-amber-500/20 text-amber-400',
+      D: 'bg-red-500/20 text-red-400'
+    };
+    return styles[tier || 'D'] || styles.D;
+  };
+
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    });
+  };
+
+  // Extract bullet text (handles both string and {text: string} formats)
+  const getBulletText = (bullet: any): string => {
+    if (typeof bullet === 'string') return bullet;
+    if (bullet?.text) return bullet.text;
+    return String(bullet);
+  };
+
+  const DetailItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="detail-item">
+      <span className="detail-label">{label}</span>
+      <span className="detail-value">{value || 'N/A'}</span>
+    </div>
+  );
+
+  // ============================================================
+  // ENRICHMENT SECTION RENDERERS
+  // ============================================================
+
+  const renderContactProfile = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <User className="w-5 h-5 text-indigo-400" />
+          <h4>Contact Profile</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          {data.rolesummary && <p className="description">{data.rolesummary}</p>}
+          <div className="detail-grid">
+            {data.seniority && <DetailItem label="Seniority" value={data.seniority} />}
+            {data.decisionmakingstyle && <DetailItem label="Decision Style" value={data.decisionmakingstyle} />}
+            {data.influencelevel && <DetailItem label="Influence" value={data.influencelevel} />}
+          </div>
+          {data.backgroundbullets && data.backgroundbullets.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Background:</span>
+              <ul className="bullet-list">
+                {data.backgroundbullets.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCompanyProfile = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Building2 className="w-5 h-5 text-emerald-400" />
+          <h4>Company Profile</h4>
+        </div>
+        <div className="section-content">
+          {data.oneliner && <p className="description">{data.oneliner}</p>}
+          <div className="detail-grid">
+            {data.industry && <DetailItem label="Industry" value={data.industry} />}
+            {data.sizesegment && <DetailItem label="Size" value={data.sizesegment} />}
+            {data.region && <DetailItem label="Region" value={data.region} />}
+            {data.fundingstatus && <DetailItem label="Funding" value={data.fundingstatus} />}
+          </div>
+          {data.keyproductsservices && data.keyproductsservices.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Products/Services:</span>
+              <div className="tag-list">
+                {data.keyproductsservices.map((item: any, i: number) => (
+                  <span key={i} className="tag">{getBulletText(item)}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCurrentFocus = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Target className="w-5 h-5 text-amber-400" />
+          <h4>Current Focus</h4>
+        </div>
+        <div className="section-content">
+          {data.strategicinitiatives && data.strategicinitiatives.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">🎯 Strategic Initiatives:</span>
+              <ul className="bullet-list">
+                {data.strategicinitiatives.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.recentprojects && data.recentprojects.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Recent Projects:</span>
+              <ul className="bullet-list">
+                {data.recentprojects.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.primarykpis && data.primarykpis.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Primary KPIs:</span>
+              <ul className="bullet-list">
+                {data.primarykpis.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderBuyingSignals = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Zap className="w-5 h-5 text-green-400" />
+          <h4>Buying Signals</h4>
+        </div>
+        <div className="section-content">
+          {data.recentnews && data.recentnews.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">📰 Recent News:</span>
+              <ul className="bullet-list">
+                {data.recentnews.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.timingtriggers && data.timingtriggers.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">⏰ Timing Triggers:</span>
+              <ul className="bullet-list">
+                {data.timingtriggers.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.hiringsignals && data.hiringsignals.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Hiring Signals:</span>
+              <ul className="bullet-list">
+                {data.hiringsignals.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderRisksAndObjections = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <AlertTriangle className="w-5 h-5 text-red-400" />
+          <h4>Risks & Objections</h4>
+        </div>
+        <div className="section-content">
+          {data.riskbullets && data.riskbullets.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">⚠️ Risk Factors:</span>
+              <ul className="bullet-list">
+                {data.riskbullets.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.likelyobjections && data.likelyobjections.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Likely Objections:</span>
+              <ul className="bullet-list">
+                {data.likelyobjections.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.landmines && data.landmines.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Landmines to Avoid:</span>
+              <ul className="bullet-list">
+                {data.landmines.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMessaging = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <MessageSquare className="w-5 h-5 text-purple-400" />
+          <h4>Recommended Messaging</h4>
+        </div>
+        <div className="section-content">
+          {data.coldopeners && data.coldopeners.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">💬 Cold Openers:</span>
+              <ul className="bullet-list">
+                {data.coldopeners.map((item: any, i: number) => (
+                  <li key={i} className="copyable" onClick={() => copyToClipboard(getBulletText(item), `opener-${i}`)}>
+                    {getBulletText(item)}
+                    {copiedField === `opener-${i}` && <span className="copied-badge">Copied!</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.valueprops && data.valueprops.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Value Props:</span>
+              <ul className="bullet-list">
+                {data.valueprops.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.calltoactionideas && data.calltoactionideas.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Call to Action Ideas:</span>
+              <ul className="bullet-list">
+                {data.calltoactionideas.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
+  // MAIN RENDER
+  // ============================================================
+
+  const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown';
+  const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-container" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-header">
+          <div className="header-content">
+            <div className="avatar">{initials}</div>
+            <div className="header-info">
+              <h2>{contactName}</h2>
+              <p className="subtitle">
+                {contact.title && <span>{contact.title}</span>}
+                {contact.title && contact.company && <span> at </span>}
+                {contact.company && <span className="company">{contact.company}</span>}
+              </p>
+              <div className="badges">
+                <span className={`status-badge ${getStatusBadge(contact.engagement_status)}`}>
+                  {contact.engagement_status?.toUpperCase() || 'NEW'}
+                </span>
+                {contact.engagement_score !== undefined && (
+                  <span className="score-badge">Score: {contact.engagement_score}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button className="close-btn" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="tab-bar">
+          <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+            Overview
+          </button>
+          <button className={`tab ${activeTab === 'enrichment' ? 'active' : ''}`} onClick={() => setActiveTab('enrichment')}>
+            Deep Enrichment
+            {enrichmentData && <CheckCircle2 className="w-4 h-4 ml-1 text-emerald-400" />}
+          </button>
+          <button className={`tab ${activeTab === 'outreach' ? 'active' : ''}`} onClick={() => setActiveTab('outreach')}>
+            Outreach
+          </button>
+          <button className={`tab ${activeTab === 'scores' ? 'active' : ''}`} onClick={() => setActiveTab('scores')}>
+            Scores
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="modal-content">
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div className="overview-tab">
+              <div className="info-grid">
+                <DetailItem label="Email" value={contact.email} />
+                {contact.phone && <DetailItem label="Phone" value={contact.phone} />}
+                {contact.company && <DetailItem label="Company" value={contact.company} />}
+                {contact.title && <DetailItem label="Title" value={contact.title} />}
+                <DetailItem label="Created" value={formatDate(contact.created_at as unknown as string)} />
+              </div>
+              
+              {/* Quick Actions */}
+              <div className="quick-actions">
+                <h3>Quick Actions</h3>
+                <div className="action-buttons">
+                  <button 
+                    className="action-btn quick-enrich"
+                    onClick={handleQuickEnrich}
+                    disabled={isQuickEnriching}
+                  >
+                    {isQuickEnriching ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Quick Enriching...</>
+                    ) : (
+                      <><Zap className="w-4 h-4" /> Quick Enrich</>
+                    )}
+                  </button>
+                  {contact.email && (
+                    <a href={`mailto:${contact.email}`} className="action-btn email">
+                      <Mail className="w-4 h-4" /> Send Email
+                    </a>
+                  )}
+                  {contact.phone && (
+                    <a href={`tel:${contact.phone}`} className="action-btn phone">
+                      <Phone className="w-4 h-4" /> Call
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Enrichment Tab */}
+          {activeTab === 'enrichment' && (
+            <div className="enrichment-tab">
+              <div className="enrich-action">
+                <button className="enrich-btn" onClick={handleDeepEnrich} disabled={isEnriching}>
+                  {isEnriching ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing... (10-18s)</>
+                  ) : enrichmentData ? (
+                    <><RefreshCw className="w-4 h-4" /> Re-Enrich Contact</>
+                  ) : (
+                    <><Target className="w-4 h-4" /> Deep Enrich Contact</>
+                  )}
+                </button>
+                {enrichmentData?.meta?.generatedat && (
+                  <span className="enriched-at">
+                    <Clock className="w-3 h-3" /> Last enriched: {formatDate(enrichmentData.meta.generatedat)}
+                  </span>
+                )}
+              </div>
+
+              {enrichmentError && (
+                <div className="error-banner">
+                  <AlertCircle className="w-4 h-4" /> {enrichmentError}
+                </div>
+              )}
+
+              {isEnriching && (
+                <div className="processing-state">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+                  <p>Analyzing contact from multiple sources...</p>
+                  <div className="processing-steps">
+                    <span className="step active">Gathering data</span>
+                    <span className="step">Analyzing market</span>
+                    <span className="step">Building profile</span>
+                  </div>
+                </div>
+              )}
+
+              {enrichmentData && !isEnriching && (
+                <div className="enrichment-sections">
+                  {renderContactProfile(enrichmentData.contact_profile)}
+                  {renderCompanyProfile(enrichmentData.company_profile)}
+                  {renderCurrentFocus(enrichmentData.current_focus)}
+                  {renderBuyingSignals(enrichmentData.buying_signals)}
+                  {renderRisksAndObjections(enrichmentData.risks_and_objections)}
+                  {renderMessaging(enrichmentData.messaging)}
+                </div>
+              )}
+
+              {!enrichmentData && !isEnriching && (
+                <div className="empty-state">
+                  <Building2 className="w-12 h-12 text-slate-600" />
+                  <h3>No Enrichment Data</h3>
+                  <p>Click "Deep Enrich Contact" to gather comprehensive intelligence including contact profile, company details, buying signals, and personalized messaging recommendations.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Outreach Tab */}
+          {activeTab === 'outreach' && (
+            <div className="outreach-tab">
+              <div className="outreach-section">
+                <h3>📧 Email Outreach</h3>
+                {enrichmentData?.messaging?.coldopeners ? (
+                  <div className="outreach-templates">
+                    {enrichmentData.messaging.coldopeners.map((opener: any, i: number) => (
+                      <div key={i} className="template-card">
+                        <p>{getBulletText(opener)}</p>
+                        <div className="template-actions">
+                          <button onClick={() => copyToClipboard(getBulletText(opener), `email-${i}`)}>
+                            <Copy className="w-4 h-4" />
+                            {copiedField === `email-${i}` ? 'Copied!' : 'Copy'}
+                          </button>
+                          {contact.email && (
+                            <a href={`mailto:${contact.email}?subject=${encodeURIComponent(`Quick question, ${contact.first_name}`)}&body=${encodeURIComponent(getBulletText(opener))}`}>
+                              <Send className="w-4 h-4" /> Send
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-data">Run Deep Enrichment to generate personalized outreach templates.</p>
+                )}
+              </div>
+
+              <div className="outreach-section">
+                <h3>📞 Call Scripts</h3>
+                {enrichmentData?.messaging?.valueprops ? (
+                  <div className="outreach-templates">
+                    {enrichmentData.messaging.valueprops.map((prop: any, i: number) => (
+                      <div key={i} className="template-card">
+                        <p>{getBulletText(prop)}</p>
+                        <button onClick={() => copyToClipboard(getBulletText(prop), `call-${i}`)}>
+                          <Copy className="w-4 h-4" />
+                          {copiedField === `call-${i}` ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-data">Run Deep Enrichment to generate call talking points.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Scores Tab */}
+          {activeTab === 'scores' && (
+            <div className="scores-tab">
+              <div className="score-cards">
+                <div className="score-card mdcp">
+                  <div className="score-header">
+                    <span className="score-title">MDCP</span>
+                    <span className={`tier-badge ${getTierBadge(contact.mdcp_tier || undefined)}`}>
+                      {contact.mdcp_tier || '-'}
+                    </span>
+                  </div>
+                  <div className="score-value">{scores.mdcp}</div>
+                  <div className="score-bar">
+                    <div className="score-fill" style={{ width: `${scores.mdcp}%` }} />
+                  </div>
+                  <p className="score-desc">Money • Decision • Champion • Process</p>
+                </div>
+
+                <div className="score-card bant">
+                  <div className="score-header">
+                    <span className="score-title">BANT</span>
+                    <span className={`tier-badge ${getTierBadge(contact.bant_tier || undefined)}`}>
+                      {contact.bant_tier || '-'}
+                    </span>
+                  </div>
+                  <div className="score-value">{scores.bant}</div>
+                  <div className="score-bar">
+                    <div className="score-fill" style={{ width: `${scores.bant}%` }} />
+                  </div>
+                  <p className="score-desc">Budget • Authority • Need • Timeline</p>
+                </div>
+
+                <div className="score-card spice">
+                  <div className="score-header">
+                    <span className="score-title">SPICE</span>
+                    <span className={`tier-badge ${getTierBadge(contact.spice_tier || undefined)}`}>
+                      {contact.spice_tier || '-'}
+                    </span>
+                  </div>
+                  <div className="score-value">{scores.spice}</div>
+                  <div className="score-bar">
+                    <div className="score-fill" style={{ width: `${scores.spice}%` }} />
+                  </div>
+                  <p className="score-desc">Situation • Problem • Implication • Consequence • Economic</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 50;
+          padding: 1rem;
+        }
+        .modal-container {
+          background: #1e293b;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 800px;
+          max-height: 90vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 1.5rem;
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .header-content { display: flex; gap: 1rem; align-items: flex-start; }
+        .avatar {
+          width: 56px;
+          height: 56px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: white;
+          flex-shrink: 0;
+        }
+        .header-info h2 { font-size: 1.25rem; font-weight: 700; color: #f8fafc; margin: 0; }
+        .header-info .subtitle { color: #94a3b8; font-size: 0.875rem; margin: 0.25rem 0; }
+        .header-info .company { color: #6366f1; font-weight: 500; }
+        .badges { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+        .status-badge {
+          padding: 0.25rem 0.75rem;
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          border: 1px solid;
+        }
+        .score-badge {
+          padding: 0.25rem 0.75rem;
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          background: rgba(99, 102, 241, 0.2);
+          color: #a5b4fc;
+        }
+        .close-btn {
+          background: rgba(148, 163, 184, 0.1);
+          border: none;
+          border-radius: 8px;
+          padding: 0.5rem;
+          cursor: pointer;
+          color: #94a3b8;
+          transition: all 0.2s;
+        }
+        .close-btn:hover { background: rgba(148, 163, 184, 0.2); color: #f8fafc; }
+        .tab-bar {
+          display: flex;
+          background: #0f172a;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .tab {
+          flex: 1;
+          padding: 1rem;
+          background: none;
+          border: none;
+          color: #94a3b8;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          border-bottom: 2px solid transparent;
+        }
+        .tab:hover { color: #f8fafc; background: rgba(99, 102, 241, 0.05); }
+        .tab.active { color: #6366f1; border-bottom-color: #6366f1; background: rgba(99, 102, 241, 0.1); }
+        .modal-content { flex: 1; overflow-y: auto; padding: 1.5rem; }
+        .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .detail-item { display: flex; flex-direction: column; gap: 0.25rem; }
+        .detail-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .detail-value { color: #f8fafc; font-size: 0.875rem; }
+        .quick-actions { margin-top: 1.5rem; }
+        .quick-actions h3 { color: #f8fafc; font-size: 0.875rem; margin-bottom: 0.75rem; }
+        .action-buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .action-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 1rem;
+          border-radius: 8px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-decoration: none;
+          border: none;
+        }
+        .action-btn.quick-enrich { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+        .action-btn.quick-enrich:hover:not(:disabled) { transform: translateY(-2px); }
+        .action-btn.quick-enrich:disabled { opacity: 0.7; cursor: not-allowed; }
+        .action-btn.email { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+        .action-btn.phone { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+        .enrich-action { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .enrich-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .enrich-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
+        .enrich-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+        .enriched-at { display: flex; align-items: center; gap: 0.25rem; color: #64748b; font-size: 0.75rem; }
+        .error-banner {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1rem;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          border-radius: 8px;
+          color: #f87171;
+          margin-bottom: 1rem;
+        }
+        .processing-state { text-align: center; padding: 3rem; color: #94a3b8; }
+        .processing-steps { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
+        .processing-steps .step {
+          padding: 0.25rem 0.75rem;
+          background: rgba(148, 163, 184, 0.1);
+          border-radius: 9999px;
+          font-size: 0.75rem;
+        }
+        .processing-steps .step.active { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+        .enrichment-sections { display: flex; flex-direction: column; gap: 1.5rem; }
+        .enrichment-section {
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 12px;
+          overflow: hidden;
+        }
+        .section-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 1rem 1.25rem;
+          background: rgba(148, 163, 184, 0.05);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .section-header h4 { margin: 0; font-size: 0.875rem; font-weight: 600; color: #f8fafc; }
+        .section-content { padding: 1.25rem; }
+        .section-content .description { color: #cbd5e1; font-size: 0.875rem; line-height: 1.6; margin: 0 0 1rem 0; }
+        .section-content .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+        .list-section { margin-top: 1rem; }
+        .list-label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 0.5rem; }
+        .list-label.success { color: #4ade80; }
+        .list-label.warning { color: #fbbf24; }
+        .tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .tag {
+          padding: 0.25rem 0.75rem;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          color: #a5b4fc;
+        }
+        .bullet-list { margin: 0; padding-left: 1.25rem; color: #cbd5e1; font-size: 0.875rem; }
+        .bullet-list li { margin-bottom: 0.5rem; line-height: 1.5; }
+        .bullet-list li.copyable { cursor: pointer; }
+        .bullet-list li.copyable:hover { color: #a5b4fc; }
+        .copied-badge { margin-left: 0.5rem; font-size: 0.7rem; color: #4ade80; }
+        .empty-state { text-align: center; padding: 4rem 2rem; color: #64748b; }
+        .empty-state h3 { margin: 1rem 0 0.5rem; color: #94a3b8; }
+        .empty-state p { max-width: 400px; margin: 0 auto; font-size: 0.875rem; line-height: 1.6; }
+        .outreach-tab { display: flex; flex-direction: column; gap: 2rem; }
+        .outreach-section h3 { color: #f8fafc; font-size: 1rem; margin-bottom: 1rem; }
+        .outreach-templates { display: flex; flex-direction: column; gap: 1rem; }
+        .template-card {
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 8px;
+          padding: 1rem;
+        }
+        .template-card p { color: #cbd5e1; font-size: 0.875rem; line-height: 1.6; margin: 0 0 0.75rem 0; }
+        .template-actions { display: flex; gap: 0.5rem; }
+        .template-actions button, .template-actions a {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          padding: 0.375rem 0.75rem;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          border-radius: 6px;
+          color: #a5b4fc;
+          font-size: 0.75rem;
+          cursor: pointer;
+          text-decoration: none;
+        }
+        .template-actions button:hover, .template-actions a:hover { background: rgba(99, 102, 241, 0.2); }
+        .no-data { color: #64748b; font-size: 0.875rem; }
+        .score-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        @media (max-width: 640px) { .score-cards { grid-template-columns: 1fr; } }
+        .score-card {
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 12px;
+          padding: 1.5rem;
+          text-align: center;
+        }
+        .score-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .score-title { font-weight: 700; font-size: 0.875rem; color: #f8fafc; }
+        .tier-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; }
+        .score-value { font-size: 3rem; font-weight: 300; color: #f8fafc; line-height: 1; margin-bottom: 1rem; }
+        .score-bar { height: 6px; background: rgba(148, 163, 184, 0.1); border-radius: 3px; overflow: hidden; margin-bottom: 0.75rem; }
+        .score-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+        .score-card.mdcp .score-fill { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+        .score-card.bant .score-fill { background: linear-gradient(90deg, #22c55e, #10b981); }
+        .score-card.spice .score-fill { background: linear-gradient(90deg, #f59e0b, #f97316); }
+        .score-desc { font-size: 0.7rem; color: #64748b; margin: 0; }
+      `}</style>
+    </div>
+  );
+}
+
+// frontend/src/api/enrichment.ts
+
+
+import { supabase } from '../lib/supabaseClient';
+
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+
+/**
+ * Trigger quick enrichment for a contact
+ */
+export async function enrichContact(contactId: string): Promise<{ status: string }> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+
+  if (!token) {
+    throw new Error('Not authenticated');
+  }
+
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v3/enrichment/quick-enrich/${contactId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+
+  if (!response.ok) {
+    throw new Error(`Enrichment failed: ${response.statusText}`);
+  }
+
+
+  return response.json();
+}
+
+
+/**
+ * Trigger deep enrichment for a contact
+ * Returns status: pending, processing, or completed
+ */
+export async function deepEnrichContact(
+  contactId: string,
+  token?: string
+): Promise<{ status: string; error?: string }> {
+  let authToken = token;
+
+
+  if (!authToken) {
+    const { data: { session } } = await supabase.auth.getSession();
+    authToken = session?.access_token;
+  }
+
+
+  if (!authToken) {
+    throw new Error('Not authenticated');
+  }
+
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v3/enrichment/deep-enrich/${contactId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || `Deep enrichment failed: ${response.statusText}`
+    );
+  }
+
+
+  return response.json();
+}
+
+
+/**
+ * Get enrichment result for a contact
+ * Returns the full UnifiedEnrichmentResult schema
+ */
+export async function getEnrichmentResult(
+  contactId: string,
+  token?: string
+): Promise<any> {
+  let authToken = token;
+
+
+  if (!authToken) {
+    const { data: { session } } = await supabase.auth.getSession();
+    authToken = session?.access_token;
+  }
+
+
+  if (!authToken) {
+    throw new Error('Not authenticated');
+  }
+
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v3/enrichment/deep-enrich/${contactId}/result`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || `Failed to fetch enrichment result: ${response.statusText}`
+    );
+  }
+
+
+  return response.json();
+}
+
+
+/**
+ * Get enrichment status for a contact
+ */
+export async function getEnrichmentStatus(
+  contactId: string,
+  token?: string
+): Promise<{ status: string; progress?: number }> {
+  let authToken = token;
+
+
+  if (!authToken) {
+    const { data: { session } } = await supabase.auth.getSession();
+    authToken = session?.access_token;
+  }
+
+
+  if (!authToken) {
+    throw new Error('Not authenticated');
+  }
+
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/v3/enrichment/deep-enrich/${contactId}/status`,
+    {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+    }
+  );
+
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch status: ${response.statusText}`);
+  }
+
+
+  return response.json();
+}
+
+
+/**
+ * Poll for enrichment completion
+ * Checks status every 2 seconds up to maxAttempts (default 30 = 60 seconds)
+ */
+export async function pollEnrichmentComplete(
+  contactId: string,
+  token?: string,
+  maxAttempts: number = 30
+): Promise<boolean> {
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      const status = await getEnrichmentStatus(contactId, token);
+      if (status.status === 'completed') {
+        return true;
+      }
+      if (status.status === 'failed') {
+        return false;
+      }
+    } catch (err) {
+      console.error('Error checking status:', err);
+    }
+
+
+    // Wait 2 seconds before next check
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+
+  return false;
+}
+
+
+/**
+ * Helper: Wait for enrichment result with improved polling
+ * Used by ContactDetailModal to track deep enrichment progress
+ * Polls every 2 seconds for up to 60 seconds
+ */
+export async function waitForEnrichmentResult(
+  contactId: string,
+  token?: string,
+  timeoutSeconds: number = 60
+): Promise<any> {
+  const startTime = Date.now();
+  const timeoutMs = timeoutSeconds * 1000;
+  let lastError: Error | null = null;
+
+
+  while (Date.now() - startTime < timeoutMs) {
+    try {
+      const result = await getEnrichmentResult(contactId, token);
+      if (result && result.contact_profile) {
+        return result; // Successfully got complete enrichment data
+      }
+    } catch (err) {
+      lastError = err as Error;
+      console.log('Waiting for enrichment result...');
+    }
+
+
+    // Wait 2 seconds before retry
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+
+
+  if (lastError) {
+    throw new Error(`Enrichment timeout after ${timeoutSeconds}s: ${lastError.message}`);
+  }
+  throw new Error(`Enrichment timeout after ${timeoutSeconds}s`);
+}
+
+// frontend/src/api/deepEnrichment.ts
+import { ScoreResponse } from '../types';
+
+
+const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+
+
+interface DeepEnrichRequest {
+  contact_name: string;
+  company_name: string;
+  title: string;
+  email?: string;
+  linkedin_url?: string;
+}
+
+
+interface DeepEnrichResponse {
+  success: boolean;
+  job_id: string | null;
+  status: string;
+  contact_id: string;
+  profile?: {
+    raw: string;
+    polished: string;
+    generated_at: string;
+  };
+  scores?: ScoreResponse;
+  error?: string;
+}
+
+
+interface DeepProfileResponse {
+  success: boolean;
+  contact_id: string;
+  name: string;
+  company: string;
+  title: string;
+  profile: string | null;
+  last_enriched: string | null;
+}
+
+
+export async function deepEnrichContact(
+  contactId: string,
+  data: DeepEnrichRequest,
+  workspaceId: string
+): Promise<DeepEnrichResponse> {
+  const response = await fetch(
+    `${API_URL}/api/v3/enrichment/deep-enrich/${contactId}`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-workspace-id': workspaceId,
+      },
+      body: JSON.stringify(data),
+    }
+  );
+  
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Deep enrichment failed');
+  }
+  
+  return response.json();
+}
+
+
+export async function getDeepProfile(
+  contactId: string,
+  workspaceId: string
+): Promise<DeepProfileResponse> {
+  const response = await fetch(
+    `${API_URL}/api/v3/enrichment/deep-profile/${contactId}`,
+    {
+      headers: {
+        'x-workspace-id': workspaceId,
+      },
+    }
+  );
+  
+  if (!response.ok) {
+    throw new Error('Failed to fetch profile');
+  }
+  
+  return response.json();
+}
+
+
+export async function getEnrichmentStatus(
+  contactId: string,
+  workspaceId: string
+) {
+  const response = await fetch(
+    `${API_URL}/api/v3/enrichment/deep-enrich/${contactId}/status`,
+    {
+      headers: {
+        'x-workspace-id': workspaceId,
+      },
+    }
+  );
+  
+  return response.json();
+}
+// frontend/src/components/ContactDetailModal.tsx
+
+import React, { useState, useEffect } from 'react';
+import { 
+  X, Building2, Target, Loader2, RefreshCw, 
+  AlertCircle, CheckCircle2, Clock, User, 
+  AlertTriangle, MessageSquare, Zap, Mail, Phone,
+  Send, Copy, ExternalLink
+} from 'lucide-react';
+import { supabase } from '../lib/supabaseClient';
+import { Contact } from '../types';
+
+interface ContactDetailModalProps {
+  contact: Contact;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate?: (contact: Contact) => void;
+}
+
+export default function ContactDetailModal({ 
+  contact, 
+  isOpen, 
+  onClose,
+  onUpdate 
+}: ContactDetailModalProps) {
+  const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview');
+  const [enrichmentData, setEnrichmentData] = useState<any>(null);
+  const [isEnriching, setIsEnriching] = useState(false);
+  const [isQuickEnriching, setIsQuickEnriching] = useState(false);
+  const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle');
+  const [enrichmentError, setEnrichmentError] = useState<string | null>(null);
+  const [scores, setScores] = useState({
+    mdcp: contact.mdcp_score ?? 0,
+    bant: contact.bant_score ?? 0,
+    spice: contact.spice_score ?? 0
+  });
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  // Load enrichment data on mount
+  useEffect(() => {
+    if (contact.enrichment_data) {
+      // Handle nested data structure
+      const data = (contact.enrichment_data as any)?.data || contact.enrichment_data;
+      setEnrichmentData(data);
+      setEnrichmentStatus('completed');
+    } else {
+      setEnrichmentData(null);
+      setEnrichmentStatus('idle');
+    }
+    setScores({
+      mdcp: contact.mdcp_score ?? 0,
+      bant: contact.bant_score ?? 0,
+      spice: contact.spice_score ?? 0
+    });
+    setEnrichmentError(null);
+  }, [contact.id, contact.enrichment_data, contact.mdcp_score, contact.bant_score, contact.spice_score]);
+
+  if (!isOpen) return null;
+
+  // ============================================================
+  // QUICK ENRICHMENT HANDLER
+  // ============================================================
+
+  const handleQuickEnrich = async () => {
+    setIsQuickEnriching(true);
+    setEnrichmentError(null);
+
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      const response = await fetch(`${API_URL}/api/v3/enrichment/quick/${contact.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Quick enrichment failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      if (result.enrichment_data) {
+        const data = result.enrichment_data.data || result.enrichment_data;
+        setEnrichmentData(data);
+        setEnrichmentStatus('completed');
+        
+        if (onUpdate) {
+          onUpdate({ ...contact, enrichment_data: result.enrichment_data });
+        }
+      }
+    } catch (error) {
+      console.error('Quick enrichment error:', error);
+      setEnrichmentError(error instanceof Error ? error.message : 'Quick enrichment failed');
+    } finally {
+      setIsQuickEnriching(false);
+    }
+  };
+
+  // ============================================================
+  // DEEP ENRICHMENT HANDLER
+  // ============================================================
+
+  const handleDeepEnrich = async () => {
+    setIsEnriching(true);
+    setEnrichmentStatus('processing');
+    setEnrichmentError(null);
+
+    try {
+      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+
+      // Trigger deep enrichment
+      const response = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token && { 'Authorization': `Bearer ${token}` })
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`Enrichment failed: ${response.status}`);
+      }
+
+      // Poll for results
+      let attempts = 0;
+      const maxAttempts = 30;
+      
+      while (attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        const resultResponse = await fetch(`${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`, {
+          headers: { ...(token && { 'Authorization': `Bearer ${token}` }) }
+        });
+
+        if (resultResponse.ok) {
+          const result = await resultResponse.json();
+          console.log('Poll attempt', attempts, ':', result);
+          
+          // Check for enrichment data in various locations
+          const hasData = result.contact_profile || 
+                         result.data?.contact_profile || 
+                         result.enrichment_data?.contact_profile;
+          
+          if (hasData) {
+            // Extract the actual data
+            const enrichData = result.contact_profile 
+              ? result 
+              : (result.data?.contact_profile ? result.data : result.enrichment_data);
+            
+            setEnrichmentData(enrichData);
+            setEnrichmentStatus('completed');
+            
+            const scoresData = result.scores || result.data?.scores || enrichData?.scores;
+            if (scoresData) {
+              setScores({
+                mdcp: scoresData.mdcp ?? 0,
+                bant: scoresData.bant ?? 0,
+                spice: scoresData.spice ?? 0
+              });
+            }
+            
+            if (onUpdate) {
+              onUpdate({
+                ...contact,
+                enrichment_data: enrichData as any,
+                mdcp_score: scoresData?.mdcp,
+                bant_score: scoresData?.bant,
+                spice_score: scoresData?.spice
+              });
+            }
+            
+            setIsEnriching(false);
+            return;
+          }
+          
+          if (result.status === 'failed') {
+            throw new Error(result.error || 'Enrichment failed');
+          }
+        }
+        
+        attempts++;
+      }
+      
+      throw new Error('Enrichment timed out. Please try again.');
+      
+    } catch (error) {
+      console.error('Deep enrichment error:', error);
+      setEnrichmentError(error instanceof Error ? error.message : 'Unknown error');
+      setEnrichmentStatus('failed');
+    } finally {
+      setIsEnriching(false);
+    }
+  };
+
+  // ============================================================
+  // UTILITY FUNCTIONS
+  // ============================================================
+
+  const copyToClipboard = async (text: string, field: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const getStatusBadge = (status: string | undefined) => {
+    const styles: Record<string, string> = {
+      hot: 'bg-red-500/20 text-red-400 border-red-500/30',
+      warm: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+      cold: 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+    };
+    return styles[status || 'cold'] || styles.cold;
+  };
+
+  const getTierBadge = (tier: string | undefined) => {
+    const styles: Record<string, string> = {
+      A: 'bg-emerald-500/20 text-emerald-400',
+      B: 'bg-blue-500/20 text-blue-400',
+      C: 'bg-amber-500/20 text-amber-400',
+      D: 'bg-red-500/20 text-red-400'
+    };
+    return styles[tier || 'D'] || styles.D;
+  };
+
+  const formatDate = (dateString: string | undefined) => {
+    if (!dateString) return 'N/A';
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric', month: 'short', day: 'numeric'
+    });
+  };
+
+  // Extract bullet text (handles both string and {text: string} formats)
+  const getBulletText = (bullet: any): string => {
+    if (typeof bullet === 'string') return bullet;
+    if (bullet?.text) return bullet.text;
+    return String(bullet);
+  };
+
+  const DetailItem = ({ label, value }: { label: string; value: React.ReactNode }) => (
+    <div className="detail-item">
+      <span className="detail-label">{label}</span>
+      <span className="detail-value">{value || 'N/A'}</span>
+    </div>
+  );
+
+  // ============================================================
+  // ENRICHMENT SECTION RENDERERS
+  // ============================================================
+
+  const renderContactProfile = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <User className="w-5 h-5 text-indigo-400" />
+          <h4>Contact Profile</h4>
+        </div>
+        <div className="section-content">
+          {data.headline && <p className="description">{data.headline}</p>}
+          {data.rolesummary && <p className="description">{data.rolesummary}</p>}
+          <div className="detail-grid">
+            {data.seniority && <DetailItem label="Seniority" value={data.seniority} />}
+            {data.decisionmakingstyle && <DetailItem label="Decision Style" value={data.decisionmakingstyle} />}
+            {data.influencelevel && <DetailItem label="Influence" value={data.influencelevel} />}
+          </div>
+          {data.backgroundbullets && data.backgroundbullets.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Background:</span>
+              <ul className="bullet-list">
+                {data.backgroundbullets.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCompanyProfile = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Building2 className="w-5 h-5 text-emerald-400" />
+          <h4>Company Profile</h4>
+        </div>
+        <div className="section-content">
+          {data.oneliner && <p className="description">{data.oneliner}</p>}
+          <div className="detail-grid">
+            {data.industry && <DetailItem label="Industry" value={data.industry} />}
+            {data.sizesegment && <DetailItem label="Size" value={data.sizesegment} />}
+            {data.region && <DetailItem label="Region" value={data.region} />}
+            {data.fundingstatus && <DetailItem label="Funding" value={data.fundingstatus} />}
+          </div>
+          {data.keyproductsservices && data.keyproductsservices.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Products/Services:</span>
+              <div className="tag-list">
+                {data.keyproductsservices.map((item: any, i: number) => (
+                  <span key={i} className="tag">{getBulletText(item)}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderCurrentFocus = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Target className="w-5 h-5 text-amber-400" />
+          <h4>Current Focus</h4>
+        </div>
+        <div className="section-content">
+          {data.strategicinitiatives && data.strategicinitiatives.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">🎯 Strategic Initiatives:</span>
+              <ul className="bullet-list">
+                {data.strategicinitiatives.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.recentprojects && data.recentprojects.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Recent Projects:</span>
+              <ul className="bullet-list">
+                {data.recentprojects.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.primarykpis && data.primarykpis.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Primary KPIs:</span>
+              <ul className="bullet-list">
+                {data.primarykpis.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderBuyingSignals = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <Zap className="w-5 h-5 text-green-400" />
+          <h4>Buying Signals</h4>
+        </div>
+        <div className="section-content">
+          {data.recentnews && data.recentnews.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">📰 Recent News:</span>
+              <ul className="bullet-list">
+                {data.recentnews.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.timingtriggers && data.timingtriggers.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">⏰ Timing Triggers:</span>
+              <ul className="bullet-list">
+                {data.timingtriggers.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.hiringsignals && data.hiringsignals.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Hiring Signals:</span>
+              <ul className="bullet-list">
+                {data.hiringsignals.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderRisksAndObjections = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <AlertTriangle className="w-5 h-5 text-red-400" />
+          <h4>Risks & Objections</h4>
+        </div>
+        <div className="section-content">
+          {data.riskbullets && data.riskbullets.length > 0 && (
+            <div className="list-section">
+              <span className="list-label warning">⚠️ Risk Factors:</span>
+              <ul className="bullet-list">
+                {data.riskbullets.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.likelyobjections && data.likelyobjections.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Likely Objections:</span>
+              <ul className="bullet-list">
+                {data.likelyobjections.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.landmines && data.landmines.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Landmines to Avoid:</span>
+              <ul className="bullet-list">
+                {data.landmines.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMessaging = (data: any) => {
+    if (!data) return null;
+    return (
+      <div className="enrichment-section">
+        <div className="section-header">
+          <MessageSquare className="w-5 h-5 text-purple-400" />
+          <h4>Recommended Messaging</h4>
+        </div>
+        <div className="section-content">
+          {data.coldopeners && data.coldopeners.length > 0 && (
+            <div className="list-section">
+              <span className="list-label success">💬 Cold Openers:</span>
+              <ul className="bullet-list">
+                {data.coldopeners.map((item: any, i: number) => (
+                  <li key={i} className="copyable" onClick={() => copyToClipboard(getBulletText(item), `opener-${i}`)}>
+                    {getBulletText(item)}
+                    {copiedField === `opener-${i}` && <span className="copied-badge">Copied!</span>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.valueprops && data.valueprops.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Value Props:</span>
+              <ul className="bullet-list">
+                {data.valueprops.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.calltoactionideas && data.calltoactionideas.length > 0 && (
+            <div className="list-section">
+              <span className="list-label">Call to Action Ideas:</span>
+              <ul className="bullet-list">
+                {data.calltoactionideas.map((item: any, i: number) => (
+                  <li key={i}>{getBulletText(item)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // ============================================================
+  // MAIN RENDER
+  // ============================================================
+
+  const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown';
+  const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || '??';
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-container" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="modal-header">
+          <div className="header-content">
+            <div className="avatar">{initials}</div>
+            <div className="header-info">
+              <h2>{contactName}</h2>
+              <p className="subtitle">
+                {contact.title && <span>{contact.title}</span>}
+                {contact.title && contact.company && <span> at </span>}
+                {contact.company && <span className="company">{contact.company}</span>}
+              </p>
+              <div className="badges">
+                <span className={`status-badge ${getStatusBadge(contact.engagement_status)}`}>
+                  {contact.engagement_status?.toUpperCase() || 'NEW'}
+                </span>
+                {contact.engagement_score !== undefined && (
+                  <span className="score-badge">Score: {contact.engagement_score}</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button className="close-btn" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Tabs */}
+        <div className="tab-bar">
+          <button className={`tab ${activeTab === 'overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+            Overview
+          </button>
+          <button className={`tab ${activeTab === 'enrichment' ? 'active' : ''}`} onClick={() => setActiveTab('enrichment')}>
+            Deep Enrichment
+            {enrichmentData && <CheckCircle2 className="w-4 h-4 ml-1 text-emerald-400" />}
+          </button>
+          <button className={`tab ${activeTab === 'outreach' ? 'active' : ''}`} onClick={() => setActiveTab('outreach')}>
+            Outreach
+          </button>
+          <button className={`tab ${activeTab === 'scores' ? 'active' : ''}`} onClick={() => setActiveTab('scores')}>
+            Scores
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="modal-content">
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div className="overview-tab">
+              <div className="info-grid">
+                <DetailItem label="Email" value={contact.email} />
+                {contact.phone && <DetailItem label="Phone" value={contact.phone} />}
+                {contact.company && <DetailItem label="Company" value={contact.company} />}
+                {contact.title && <DetailItem label="Title" value={contact.title} />}
+                <DetailItem label="Created" value={formatDate(contact.created_at as unknown as string)} />
+              </div>
+              
+              {/* Quick Actions */}
+              <div className="quick-actions">
+                <h3>Quick Actions</h3>
+                <div className="action-buttons">
+                  <button 
+                    className="action-btn quick-enrich"
+                    onClick={handleQuickEnrich}
+                    disabled={isQuickEnriching}
+                  >
+                    {isQuickEnriching ? (
+                      <><Loader2 className="w-4 h-4 animate-spin" /> Quick Enriching...</>
+                    ) : (
+                      <><Zap className="w-4 h-4" /> Quick Enrich</>
+                    )}
+                  </button>
+                  {contact.email && (
+                    <a href={`mailto:${contact.email}`} className="action-btn email">
+                      <Mail className="w-4 h-4" /> Send Email
+                    </a>
+                  )}
+                  {contact.phone && (
+                    <a href={`tel:${contact.phone}`} className="action-btn phone">
+                      <Phone className="w-4 h-4" /> Call
+                    </a>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Enrichment Tab */}
+          {activeTab === 'enrichment' && (
+            <div className="enrichment-tab">
+              <div className="enrich-action">
+                <button className="enrich-btn" onClick={handleDeepEnrich} disabled={isEnriching}>
+                  {isEnriching ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing... (10-18s)</>
+                  ) : enrichmentData ? (
+                    <><RefreshCw className="w-4 h-4" /> Re-Enrich Contact</>
+                  ) : (
+                    <><Target className="w-4 h-4" /> Deep Enrich Contact</>
+                  )}
+                </button>
+                {enrichmentData?.meta?.generatedat && (
+                  <span className="enriched-at">
+                    <Clock className="w-3 h-3" /> Last enriched: {formatDate(enrichmentData.meta.generatedat)}
+                  </span>
+                )}
+              </div>
+
+              {enrichmentError && (
+                <div className="error-banner">
+                  <AlertCircle className="w-4 h-4" /> {enrichmentError}
+                </div>
+              )}
+
+              {isEnriching && (
+                <div className="processing-state">
+                  <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
+                  <p>Analyzing contact from multiple sources...</p>
+                  <div className="processing-steps">
+                    <span className="step active">Gathering data</span>
+                    <span className="step">Analyzing market</span>
+                    <span className="step">Building profile</span>
+                  </div>
+                </div>
+              )}
+
+              {enrichmentData && !isEnriching && (
+                <div className="enrichment-sections">
+                  {renderContactProfile(enrichmentData.contact_profile)}
+                  {renderCompanyProfile(enrichmentData.company_profile)}
+                  {renderCurrentFocus(enrichmentData.current_focus)}
+                  {renderBuyingSignals(enrichmentData.buying_signals)}
+                  {renderRisksAndObjections(enrichmentData.risks_and_objections)}
+                  {renderMessaging(enrichmentData.messaging)}
+                </div>
+              )}
+
+              {!enrichmentData && !isEnriching && (
+                <div className="empty-state">
+                  <Building2 className="w-12 h-12 text-slate-600" />
+                  <h3>No Enrichment Data</h3>
+                  <p>Click "Deep Enrich Contact" to gather comprehensive intelligence including contact profile, company details, buying signals, and personalized messaging recommendations.</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Outreach Tab */}
+          {activeTab === 'outreach' && (
+            <div className="outreach-tab">
+              <div className="outreach-section">
+                <h3>📧 Email Outreach</h3>
+                {enrichmentData?.messaging?.coldopeners ? (
+                  <div className="outreach-templates">
+                    {enrichmentData.messaging.coldopeners.map((opener: any, i: number) => (
+                      <div key={i} className="template-card">
+                        <p>{getBulletText(opener)}</p>
+                        <div className="template-actions">
+                          <button onClick={() => copyToClipboard(getBulletText(opener), `email-${i}`)}>
+                            <Copy className="w-4 h-4" />
+                            {copiedField === `email-${i}` ? 'Copied!' : 'Copy'}
+                          </button>
+                          {contact.email && (
+                            <a href={`mailto:${contact.email}?subject=${encodeURIComponent(`Quick question, ${contact.first_name}`)}&body=${encodeURIComponent(getBulletText(opener))}`}>
+                              <Send className="w-4 h-4" /> Send
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-data">Run Deep Enrichment to generate personalized outreach templates.</p>
+                )}
+              </div>
+
+              <div className="outreach-section">
+                <h3>📞 Call Scripts</h3>
+                {enrichmentData?.messaging?.valueprops ? (
+                  <div className="outreach-templates">
+                    {enrichmentData.messaging.valueprops.map((prop: any, i: number) => (
+                      <div key={i} className="template-card">
+                        <p>{getBulletText(prop)}</p>
+                        <button onClick={() => copyToClipboard(getBulletText(prop), `call-${i}`)}>
+                          <Copy className="w-4 h-4" />
+                          {copiedField === `call-${i}` ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="no-data">Run Deep Enrichment to generate call talking points.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Scores Tab */}
+          {activeTab === 'scores' && (
+            <div className="scores-tab">
+              <div className="score-cards">
+                <div className="score-card mdcp">
+                  <div className="score-header">
+                    <span className="score-title">MDCP</span>
+                    <span className={`tier-badge ${getTierBadge(contact.mdcp_tier || undefined)}`}>
+                      {contact.mdcp_tier || '-'}
+                    </span>
+                  </div>
+                  <div className="score-value">{scores.mdcp}</div>
+                  <div className="score-bar">
+                    <div className="score-fill" style={{ width: `${scores.mdcp}%` }} />
+                  </div>
+                  <p className="score-desc">Money • Decision • Champion • Process</p>
+                </div>
+
+                <div className="score-card bant">
+                  <div className="score-header">
+                    <span className="score-title">BANT</span>
+                    <span className={`tier-badge ${getTierBadge(contact.bant_tier || undefined)}`}>
+                      {contact.bant_tier || '-'}
+                    </span>
+                  </div>
+                  <div className="score-value">{scores.bant}</div>
+                  <div className="score-bar">
+                    <div className="score-fill" style={{ width: `${scores.bant}%` }} />
+                  </div>
+                  <p className="score-desc">Budget • Authority • Need • Timeline</p>
+                </div>
+
+                <div className="score-card spice">
+                  <div className="score-header">
+                    <span className="score-title">SPICE</span>
+                    <span className={`tier-badge ${getTierBadge(contact.spice_tier || undefined)}`}>
+                      {contact.spice_tier || '-'}
+                    </span>
+                  </div>
+                  <div className="score-value">{scores.spice}</div>
+                  <div className="score-bar">
+                    <div className="score-fill" style={{ width: `${scores.spice}%` }} />
+                  </div>
+                  <p className="score-desc">Situation • Problem • Implication • Consequence • Economic</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.7);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 50;
+          padding: 1rem;
+        }
+        .modal-container {
+          background: #1e293b;
+          border-radius: 16px;
+          width: 100%;
+          max-width: 800px;
+          max-height: 90vh;
+          overflow: hidden;
+          display: flex;
+          flex-direction: column;
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+        .modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          padding: 1.5rem;
+          background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .header-content { display: flex; gap: 1rem; align-items: flex-start; }
+        .avatar {
+          width: 56px;
+          height: 56px;
+          border-radius: 12px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 1.5rem;
+          font-weight: 700;
+          color: white;
+          flex-shrink: 0;
+        }
+        .header-info h2 { font-size: 1.25rem; font-weight: 700; color: #f8fafc; margin: 0; }
+        .header-info .subtitle { color: #94a3b8; font-size: 0.875rem; margin: 0.25rem 0; }
+        .header-info .company { color: #6366f1; font-weight: 500; }
+        .badges { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+        .status-badge {
+          padding: 0.25rem 0.75rem;
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          border: 1px solid;
+        }
+        .score-badge {
+          padding: 0.25rem 0.75rem;
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          font-weight: 600;
+          background: rgba(99, 102, 241, 0.2);
+          color: #a5b4fc;
+        }
+        .close-btn {
+          background: rgba(148, 163, 184, 0.1);
+          border: none;
+          border-radius: 8px;
+          padding: 0.5rem;
+          cursor: pointer;
+          color: #94a3b8;
+          transition: all 0.2s;
+        }
+        .close-btn:hover { background: rgba(148, 163, 184, 0.2); color: #f8fafc; }
+        .tab-bar {
+          display: flex;
+          background: #0f172a;
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .tab {
+          flex: 1;
+          padding: 1rem;
+          background: none;
+          border: none;
+          color: #94a3b8;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 0.5rem;
+          border-bottom: 2px solid transparent;
+        }
+        .tab:hover { color: #f8fafc; background: rgba(99, 102, 241, 0.05); }
+        .tab.active { color: #6366f1; border-bottom-color: #6366f1; background: rgba(99, 102, 241, 0.1); }
+        .modal-content { flex: 1; overflow-y: auto; padding: 1.5rem; }
+        .info-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        .detail-item { display: flex; flex-direction: column; gap: 0.25rem; }
+        .detail-label { font-size: 0.75rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.05em; }
+        .detail-value { color: #f8fafc; font-size: 0.875rem; }
+        .quick-actions { margin-top: 1.5rem; }
+        .quick-actions h3 { color: #f8fafc; font-size: 0.875rem; margin-bottom: 0.75rem; }
+        .action-buttons { display: flex; gap: 0.75rem; flex-wrap: wrap; }
+        .action-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 1rem;
+          border-radius: 8px;
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+          text-decoration: none;
+          border: none;
+        }
+        .action-btn.quick-enrich { background: linear-gradient(135deg, #f59e0b, #d97706); color: white; }
+        .action-btn.quick-enrich:hover:not(:disabled) { transform: translateY(-2px); }
+        .action-btn.quick-enrich:disabled { opacity: 0.7; cursor: not-allowed; }
+        .action-btn.email { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+        .action-btn.phone { background: rgba(34, 197, 94, 0.2); color: #86efac; }
+        .enrich-action { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .enrich-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          color: white;
+          border: none;
+          border-radius: 8px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        .enrich-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.3); }
+        .enrich-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+        .enriched-at { display: flex; align-items: center; gap: 0.25rem; color: #64748b; font-size: 0.75rem; }
+        .error-banner {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1rem;
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          border-radius: 8px;
+          color: #f87171;
+          margin-bottom: 1rem;
+        }
+        .processing-state { text-align: center; padding: 3rem; color: #94a3b8; }
+        .processing-steps { display: flex; justify-content: center; gap: 1rem; margin-top: 1rem; }
+        .processing-steps .step {
+          padding: 0.25rem 0.75rem;
+          background: rgba(148, 163, 184, 0.1);
+          border-radius: 9999px;
+          font-size: 0.75rem;
+        }
+        .processing-steps .step.active { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+        .enrichment-sections { display: flex; flex-direction: column; gap: 1.5rem; }
+        .enrichment-section {
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 12px;
+          overflow: hidden;
+        }
+        .section-header {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          padding: 1rem 1.25rem;
+          background: rgba(148, 163, 184, 0.05);
+          border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+        }
+        .section-header h4 { margin: 0; font-size: 0.875rem; font-weight: 600; color: #f8fafc; }
+        .section-content { padding: 1.25rem; }
+        .section-content .description { color: #cbd5e1; font-size: 0.875rem; line-height: 1.6; margin: 0 0 1rem 0; }
+        .section-content .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem; }
+        .list-section { margin-top: 1rem; }
+        .list-label { font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: block; margin-bottom: 0.5rem; }
+        .list-label.success { color: #4ade80; }
+        .list-label.warning { color: #fbbf24; }
+        .tag-list { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .tag {
+          padding: 0.25rem 0.75rem;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          border-radius: 9999px;
+          font-size: 0.75rem;
+          color: #a5b4fc;
+        }
+        .bullet-list { margin: 0; padding-left: 1.25rem; color: #cbd5e1; font-size: 0.875rem; }
+        .bullet-list li { margin-bottom: 0.5rem; line-height: 1.5; }
+        .bullet-list li.copyable { cursor: pointer; }
+        .bullet-list li.copyable:hover { color: #a5b4fc; }
+        .copied-badge { margin-left: 0.5rem; font-size: 0.7rem; color: #4ade80; }
+        .empty-state { text-align: center; padding: 4rem 2rem; color: #64748b; }
+        .empty-state h3 { margin: 1rem 0 0.5rem; color: #94a3b8; }
+        .empty-state p { max-width: 400px; margin: 0 auto; font-size: 0.875rem; line-height: 1.6; }
+        .outreach-tab { display: flex; flex-direction: column; gap: 2rem; }
+        .outreach-section h3 { color: #f8fafc; font-size: 1rem; margin-bottom: 1rem; }
+        .outreach-templates { display: flex; flex-direction: column; gap: 1rem; }
+        .template-card {
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 8px;
+          padding: 1rem;
+        }
+        .template-card p { color: #cbd5e1; font-size: 0.875rem; line-height: 1.6; margin: 0 0 0.75rem 0; }
+        .template-actions { display: flex; gap: 0.5rem; }
+        .template-actions button, .template-actions a {
+          display: flex;
+          align-items: center;
+          gap: 0.25rem;
+          padding: 0.375rem 0.75rem;
+          background: rgba(99, 102, 241, 0.1);
+          border: 1px solid rgba(99, 102, 241, 0.2);
+          border-radius: 6px;
+          color: #a5b4fc;
+          font-size: 0.75rem;
+          cursor: pointer;
+          text-decoration: none;
+        }
+        .template-actions button:hover, .template-actions a:hover { background: rgba(99, 102, 241, 0.2); }
+        .no-data { color: #64748b; font-size: 0.875rem; }
+        .score-cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+        @media (max-width: 640px) { .score-cards { grid-template-columns: 1fr; } }
+        .score-card {
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid rgba(148, 163, 184, 0.1);
+          border-radius: 12px;
+          padding: 1.5rem;
+          text-align: center;
+        }
+        .score-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .score-title { font-weight: 700; font-size: 0.875rem; color: #f8fafc; }
+        .tier-badge { padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; }
+        .score-value { font-size: 3rem; font-weight: 300; color: #f8fafc; line-height: 1; margin-bottom: 1rem; }
+        .score-bar { height: 6px; background: rgba(148, 163, 184, 0.1); border-radius: 3px; overflow: hidden; margin-bottom: 0.75rem; }
+        .score-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+        .score-card.mdcp .score-fill { background: linear-gradient(90deg, #6366f1, #8b5cf6); }
+        .score-card.bant .score-fill { background: linear-gradient(90deg, #22c55e, #10b981); }
+        .score-card.spice .score-fill { background: linear-gradient(90deg, #f59e0b, #f97316); }
+        .score-desc { font-size: 0.7rem; color: #64748b; margin: 0; }
+      `}</style>
+    </div>
+  );
+}
+ /**
+ * src/pages/ContactDetailsExpanded.tsx
+ * Expanded contact detail modal with all enrichment information
+ */
+
+import React from 'react'
+import { Contact } from '../types'
+import '../styles/ContactDetailsExpanded.css'
+
+interface ContactDetailsExpandedProps {
+  contact: Contact
+  isOpen: boolean
+  onClose: () => void
+}
+
+export const ContactDetailsExpanded: React.FC<ContactDetailsExpandedProps> = ({
+  contact,
+  isOpen,
+  onClose,
+}) => {
+  const [activeTab, setActiveTab] = React.useState<'overview' | 'company' | 'enrichment' | 'engagement'>('overview')
+
+  if (!isOpen) return null
+
+  // Type-safe access to enrichment data
+  const enrichmentData = contact.enrichment_data as Record<string, any> | undefined
+  const companyName = contact.company || (enrichmentData?.company_name as string | undefined) || 'Unknown Company'
+
+  return (
+    <div className="expanded-modal-overlay" onClick={onClose}>
+      <div className="expanded-modal-content" onClick={(e) => e.stopPropagation()}>
+        {/* Header */}
+        <div className="expanded-header">
+          <div className="header-main">
+            <h2>{contact.first_name} {contact.last_name}</h2>
+            <p className="header-title">{contact.title} at {companyName}</p>
+          </div>
+          <button className="close-btn" onClick={onClose}>×</button>
+        </div>
+
+        {/* Scores Banner */}
+        <div className="scores-banner">
+          <div className="score-item">
+            <span className="score-label">MDCP Score</span>
+            <span className="score-value">{contact.mdcp_score || 0}</span>
+            <span className={`score-tier tier-${contact.mdcp_score && contact.mdcp_score >= 71 ? 'hot' : contact.mdcp_score && contact.mdcp_score >= 40 ? 'warm' : 'cold'}`}>
+              {contact.mdcp_score && contact.mdcp_score >= 71 ? 'Hot' : contact.mdcp_score && contact.mdcp_score >= 40 ? 'Warm' : 'Cold'}
+            </span>
+          </div>
+          <div className="score-item">
+            <span className="score-label">BANT Score</span>
+            <span className="score-value">{contact.bant_score || 0}</span>
+          </div>
+          <div className="score-item">
+            <span className="score-label">SPICE Score</span>
+            <span className="score-value">{contact.spice_score || 0}</span>
+          </div>
+          <div className="score-item overall">
+            <span className="score-label">Status</span>
+            <span className="score-value">{contact.enrichment_status || 'Pending'}</span>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="expanded-tabs">
+          <button
+            className={`tab-btn ${activeTab === 'overview' ? 'active' : ''}`}
+            onClick={() => setActiveTab('overview')}
+          >
+            Overview
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'company' ? 'active' : ''}`}
+            onClick={() => setActiveTab('company')}
+          >
+            Company
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'enrichment' ? 'active' : ''}`}
+            onClick={() => setActiveTab('enrichment')}
+          >
+            Enrichment
+          </button>
+          <button
+            className={`tab-btn ${activeTab === 'engagement' ? 'active' : ''}`}
+            onClick={() => setActiveTab('engagement')}
+          >
+            Engagement
+          </button>
+        </div>
+
+        {/* Tab Content */}
+        <div className="expanded-tabs-content">
+          {activeTab === 'overview' && (
+            <div className="tab-pane">
+              <div className="info-grid">
+                <div className="info-field">
+                  <label>First Name</label>
+                  <span className="info-value">{contact.first_name || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Last Name</label>
+                  <span className="info-value">{contact.last_name || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Email</label>
+                  <span className="info-value">{contact.email || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Phone</label>
+                  <span className="info-value">{contact.phone || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Title</label>
+                  <span className="info-value">{contact.title || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Company</label>
+                  <span className="info-value">{contact.company || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Enrichment Status</label>
+                  <span className={`status-badge status-${contact.enrichment_status?.toLowerCase() || 'pending'}`}>
+                    {contact.enrichment_status || 'Pending'}
+                  </span>
+                </div>
+                <div className="info-field">
+                  <label>Created</label>
+                  <span className="info-value">{contact.created_at ? new Date(contact.created_at).toLocaleDateString() : 'N/A'}</span>
+                </div>
+              </div>
+
+              {enrichmentData?.key_talking_points && Array.isArray(enrichmentData.key_talking_points) && enrichmentData.key_talking_points.length > 0 && (
+                <div className="talking-points-section">
+                  <h4>Key Talking Points</h4>
+                  <ul className="talking-points-list">
+                    {(enrichmentData.key_talking_points as string[]).map((point: string, idx: number) => (
+                      <li key={idx}>{point}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'company' && (
+            <div className="tab-pane">
+              <div className="info-grid">
+                <div className="info-field">
+                  <label>Company Name</label>
+                  <span className="info-value">{(enrichmentData?.company_name as string | undefined) || contact.company || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Website</label>
+                  <span className="info-value">
+                    {(enrichmentData?.company_website as string | undefined) ? (
+                      <a href={enrichmentData?.company_website as string} target="_blank" rel="noopener noreferrer" className="link-button">
+                        Visit Site
+                      </a>
+                    ) : (
+                      'N/A'
+                    )}
+                  </span>
+                </div>
+                <div className="info-field">
+                  <label>Industry</label>
+                  <span className="info-value">{(enrichmentData?.industry as string | undefined) || 'N/A'}</span>
+                </div>
+                <div className="info-field">
+                  <label>Company Size</label>
+                  <span className="info-value">{(enrichmentData?.company_size as string | undefined) || 'N/A'}</span>
+                </div>
+              </div>
+
+              {(enrichmentData?.company_description as string | undefined) && (
+                <div className="enrichment-section">
+                  <h4>About Company</h4>
+                  <p>{enrichmentData?.company_description as string}</p>
+                </div>
+              )}
+
+              {(enrichmentData?.linkedin_company_url as string | undefined) && (
+                <div className="enrichment-section">
+                  <h4>LinkedIn Profile</h4>
+                  <a href={enrichmentData?.linkedin_company_url as string} target="_blank" rel="noopener noreferrer" className="link-button">
+                    View Company on LinkedIn
+                  </a>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'enrichment' && (
+            <div className="tab-pane">
+              {Array.isArray(enrichmentData?.tech_stack) && enrichmentData.tech_stack.length > 0 && (
+                <div className="enrichment-section">
+                  <h4>Tech Stack</h4>
+                  <div className="tech-stack">
+                    {(enrichmentData.tech_stack as string[]).map((tech: string, idx: number) => (
+                      <span key={idx} className="tech-badge">{tech}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {Array.isArray(enrichmentData?.decision_makers) && enrichmentData.decision_makers.length > 0 && (
+                <div className="enrichment-section">
+                  <h4>Decision Makers</h4>
+                  <div className="decision-makers-list">
+                    {(enrichmentData.decision_makers as Array<{name: string; title: string; email: string}>).map((dm, idx: number) => (
+                      <div key={idx} className="decision-maker">
+                        <div className="dm-name">{dm.name}</div>
+                        <div className="dm-title">{dm.title}</div>
+                        <div className="dm-email">{dm.email}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {Array.isArray(enrichmentData?.buying_signals) && enrichmentData.buying_signals.length > 0 && (
+                <div className="enrichment-section">
+                  <h4>Buying Signals</h4>
+                  <ul className="buying-signals-list">
+                    {(enrichmentData.buying_signals as string[]).map((signal: string, idx: number) => (
+                      <li key={idx}>{signal}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {(enrichmentData?.recent_news as string | undefined) && (
+                <div className="enrichment-section">
+                  <h4>Recent News</h4>
+                  <p className="news-content">{enrichmentData?.recent_news as string}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'engagement' && (
+            <div className="tab-pane">
+              <div className="engagement-empty">
+                <p>No engagement data yet</p>
+                <p style={{ fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                  Engagement metrics will appear here once campaigns are tracked
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="expanded-footer">
+          <button className="btn-secondary" onClick={onClose}>
+            Close
+          </button>
+          <button className="btn-primary">
+            Start Campaign
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default ContactDetailsExpanded
+
+// pages/RelationshipIntelligence.tsx
+// Main dashboard component for LatticeIQ - WITH CONTACT DETAIL MODAL
+
+import { useEffect, useState } from 'react'
+import { Chart, registerables } from 'chart.js'
+import { supabase } from '../lib/supabaseClient'
+import ContactDetailModal from '../components/ContactDetailModal'
+import { Contact } from '../types'  // <-- Shared Contact type
+
+// Register Chart.js components
+Chart.register(...registerables)
+
+interface EngagementMetric {
+  id: string
+  week_starting: string
+  engagement_percentage: number
+  response_rate?: number
+  response_time_days?: number
+  healthy_relationships_pct?: number
+  total_contacts_touched?: number
+}
+
+interface OutreachTip {
+  id: string
+  title: string
+  content: string
+  category?: string
+}
+
+interface HealthMetrics {
+  healthy_relationships_pct: number
+  total_contacts_touched: number
+  response_rate: number
+  avg_response_time_days: number
+}
+
+// Fetch functions
+async function fetchEngagementVelocity(): Promise<EngagementMetric[]> {
+  try {
+    const { data, error } = await supabase
+      .from('engagement_metrics')
+      .select('*')
+      .order('week_starting', { ascending: false })
+      .limit(7)
+    if (error) throw error
+    return data || []
+  } catch (e) {
+    console.warn('engagement_metrics table not found, using fallback data')
+    return generateFallbackTrend()
+  }
+}
+
+async function fetchCallTodayContacts(limit = 3): Promise<Contact[]> {
+  try {
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) throw error
+    return data || []
+  } catch (e) {
+    console.warn('Error fetching contacts:', e)
+    return []
+  }
+}
+
+async function fetchCurrentEngagementPercentage(): Promise<number> {
+  try {
+    const { data, error } = await supabase
+      .from('engagement_metrics')
+      .select('engagement_percentage')
+      .order('week_starting', { ascending: false })
+      .limit(1)
+      .single()
+    if (error) throw error
+    return data?.engagement_percentage || 34
+  } catch (e) {
+    return 34
+  }
+}
+
+async function fetchRelationshipHealthMetrics(): Promise<EngagementMetric | null> {
+  try {
+    const { data, error } = await supabase
+      .from('engagement_metrics')
+      .select('*')
+      .order('week_starting', { ascending: false })
+      .limit(1)
+      .single()
+    if (error) throw error
+    return data
+  } catch (e) {
+    return null
+  }
+}
+
+async function fetchOutreachTips(limit = 6): Promise<OutreachTip[]> {
+  try {
+    const { data, error } = await supabase
+      .from('outreach_tips')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(limit)
+    if (error) throw error
+    return data || []
+  } catch (e) {
+    console.warn('outreach_tips table not found, using fallback')
+    return getFallbackTips()
+  }
+}
+
+// Fallback data generators
+function generateFallbackTrend(): EngagementMetric[] {
+  const data: EngagementMetric[] = []
+  for (let i = 6; i >= 0; i--) {
+    const date = new Date()
+    date.setDate(date.getDate() - i * 7)
+    data.push({
+      id: `fallback-${i}`,
+      week_starting: date.toISOString(),
+      engagement_percentage: 28 + Math.floor(Math.random() * 10),
+    })
+  }
+  return data
+}
+
+function getFallbackTips(): OutreachTip[] {
+  return [
+    { id: '1', title: 'Try a Different Outreach Method', content: 'Instead of a standard email, try sending a personalized LinkedIn voice message.', category: 'channel' },
+    { id: '2', title: 'Use Social Proof', content: 'Reference mutual connections or recent company news in your initial outreach.', category: 'personalization' },
+    { id: '3', title: 'Follow Up Within 48 Hours', content: 'Timing matters - reach out again within 2 days if no response.', category: 'timing' },
+    { id: '4', title: 'Segment Your Message', content: 'Tailor your pitch to the specific industry and company size.', category: 'segmentation' },
+    { id: '5', title: 'Ask for Referrals', content: 'If a contact declines, ask if they know anyone who might benefit.', category: 'expansion' },
+    { id: '6', title: 'Use Case Studies', content: 'Share relevant success stories from similar companies in their industry.', category: 'content' },
+  ]
+}
+
+// Styles
+const styles = `
+  .ri-container {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #0a1628 0%, #1a237e 50%, #0d47a1 100%);
+    color: #e3f2fd;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 2rem;
+  }
+  .ri-header {
+    margin-bottom: 2rem;
+  }
+  .ri-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    background: linear-gradient(90deg, #64b5f6, #81c784);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .ri-header p {
+    color: rgba(227, 242, 253, 0.7);
+    margin: 0;
+  }
+  .ri-dashboard {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 2rem;
+  }
+  @media (max-width: 1024px) {
+    .ri-dashboard {
+      grid-template-columns: 1fr;
+    }
+  }
+  .ri-hero {
+    background: linear-gradient(145deg, rgba(33, 150, 243, 0.15), rgba(76, 175, 80, 0.1));
+    border: 1px solid rgba(100, 181, 246, 0.3);
+    border-radius: 16px;
+    padding: 2rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+  }
+  @media (max-width: 768px) {
+    .ri-hero {
+      grid-template-columns: 1fr;
+    }
+  }
+  .ri-hero-metric {
+    font-size: 4rem;
+    font-weight: 300;
+    color: #66bb6a;
+    line-height: 1;
+  }
+  .ri-hero-label {
+    font-size: 1.1rem;
+    color: rgba(227, 242, 253, 0.8);
+    margin-top: 0.5rem;
+  }
+  .ri-hero-trend {
+    display: flex;
+    gap: 1.5rem;
+    margin-top: 1rem;
+    font-size: 0.9rem;
+  }
+  .ri-trend-up {
+    color: #66bb6a;
+  }
+  .ri-chart-container {
+    height: 150px;
+  }
+  .ri-section-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 0 0 1rem 0;
+    color: #e3f2fd;
+  }
+  .ri-contacts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+  .ri-contact-card {
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid rgba(100, 181, 246, 0.2);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+  .ri-contact-card:hover {
+    border-color: rgba(100, 181, 246, 0.5);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(100, 181, 246, 0.2);
+  }
+  .ri-contact-card.hot {
+    border-left: 3px solid #ef5350;
+  }
+  .ri-contact-card.warm {
+    border-left: 3px solid #ffa726;
+  }
+  .ri-contact-card.cold {
+    border-left: 3px solid #42a5f5;
+  }
+  .ri-contact-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+  .ri-contact-info {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+  .ri-contact-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #42a5f5, #66bb6a);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    color: white;
+  }
+  .ri-contact-name {
+    font-weight: 600;
+    color: #e3f2fd;
+  }
+  .ri-contact-company {
+    font-size: 0.85rem;
+    color: rgba(227, 242, 253, 0.6);
+  }
+  .ri-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+  }
+  .ri-badge-hot {
+    background: rgba(239, 83, 80, 0.2);
+  }
+  .ri-badge-warm {
+    background: rgba(255, 167, 38, 0.2);
+  }
+  .ri-badge-cold {
+    background: rgba(66, 165, 245, 0.2);
+  }
+  .ri-contact-meta {
+    font-size: 0.85rem;
+    color: rgba(227, 242, 253, 0.7);
+    margin-bottom: 0.75rem;
+  }
+  .ri-next-step {
+    font-size: 0.85rem;
+    color: #64b5f6;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(100, 181, 246, 0.2);
+  }
+  .ri-metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+  @media (max-width: 900px) {
+    .ri-metrics-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  .ri-metric-card {
+    background: rgba(30, 41, 59, 0.6);
+    border: 1px solid rgba(100, 181, 246, 0.2);
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+  }
+  .ri-metric-value {
+    font-size: 2rem;
+    font-weight: 300;
+    color: #64b5f6;
+  }
+  .ri-metric-label {
+    font-size: 0.85rem;
+    color: rgba(227, 242, 253, 0.7);
+    margin-top: 0.25rem;
+  }
+  .ri-metric-change {
+    font-size: 0.8rem;
+    color: #66bb6a;
+    margin-top: 0.5rem;
+  }
+  .ri-daily-tip {
+    background: linear-gradient(145deg, rgba(255, 193, 7, 0.15), rgba(255, 152, 0, 0.1));
+    border: 1px solid rgba(255, 193, 7, 0.3);
+    border-radius: 16px;
+    padding: 1.5rem;
+    position: sticky;
+    top: 2rem;
+  }
+  .ri-tip-label {
+    font-size: 0.85rem;
+    color: #ffc107;
+    margin-bottom: 0.75rem;
+  }
+  .ri-tip-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #e3f2fd;
+    margin-bottom: 0.75rem;
+  }
+  .ri-tip-content {
+    font-size: 0.95rem;
+    color: rgba(227, 242, 253, 0.8);
+    line-height: 1.5;
+    margin-bottom: 1rem;
+  }
+  .ri-tip-action {
+    width: 100%;
+    padding: 0.75rem;
+    background: linear-gradient(90deg, #ffc107, #ff9800);
+    border: none;
+    border-radius: 8px;
+    color: #1a237e;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .ri-tip-action:hover {
+    opacity: 0.9;
+  }
+  .ri-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: #0a1628;
+    color: #e3f2fd;
+    font-size: 1.2rem;
+  }
+`
+
+export default function RelationshipIntelligence() {
+  const [engagementPercentage, setEngagementPercentage] = useState(34)
+  const [engagementTrend, setEngagementTrend] = useState<EngagementMetric[]>([])
+  const [callTodayContacts, setCallTodayContacts] = useState<Contact[]>([])
+  const [outreachTips, setOutreachTips] = useState<OutreachTip[]>([])
+  const [healthMetrics, setHealthMetrics] = useState<HealthMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [currentTipIndex, setCurrentTipIndex] = useState(0)
+  const [chartInstance, setChartInstance] = useState<Chart | null>(null)
+
+  // Modal state
+  const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
+  const [isModalOpen, setIsModalOpen] = useState(false)
+
+  // Initialize data on mount
+  useEffect(() => {
+    const initializeDashboard = async () => {
+      setLoading(true)
+      try {
+        const [percentage, trend, contacts, tips, metrics] = await Promise.all([
+          fetchCurrentEngagementPercentage(),
+          fetchEngagementVelocity(),
+          fetchCallTodayContacts(3),
+          fetchOutreachTips(6),
+          fetchRelationshipHealthMetrics(),
+        ])
+
+        setEngagementPercentage(percentage)
+        setEngagementTrend(trend.length > 0 ? trend : generateFallbackTrend())
+        setCallTodayContacts(contacts)
+        setOutreachTips(tips.length > 0 ? tips : getFallbackTips())
+
+        if (metrics) {
+          setHealthMetrics({
+            healthy_relationships_pct: metrics.healthy_relationships_pct || 85,
+            total_contacts_touched: metrics.total_contacts_touched || 1250,
+            response_rate: metrics.response_rate || 22,
+            avg_response_time_days: metrics.response_time_days || 2.3,
+          })
+        } else {
+          setHealthMetrics({
+            healthy_relationships_pct: 85,
+            total_contacts_touched: 1250,
+            response_rate: 22,
+            avg_response_time_days: 2.3,
+          })
+        }
+      } catch (error) {
+        console.error('Error initializing dashboard:', error)
+        setEngagementTrend(generateFallbackTrend())
+        setOutreachTips(getFallbackTips())
+        setHealthMetrics({
+          healthy_relationships_pct: 85,
+          total_contacts_touched: 1250,
+          response_rate: 22,
+          avg_response_time_days: 2.3,
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    initializeDashboard()
+  }, [])
+
+  // Initialize Chart.js
+  useEffect(() => {
+    if (engagementTrend.length === 0 || loading) return
+
+    const ctx = document.getElementById('engagementChart') as HTMLCanvasElement
+    if (!ctx) return
+
+    if (chartInstance) {
+      chartInstance.destroy()
+    }
+
+    const chartData = {
+      labels: engagementTrend
+        .slice(-7)
+        .map((m) => new Date(m.week_starting).toLocaleDateString('en-US', { weekday: 'short' })),
+      datasets: [
+        {
+          label: 'Engagement %',
+          data: engagementTrend.slice(-7).map((m) => m.engagement_percentage),
+          borderColor: '#66BB6A',
+          backgroundColor: 'rgba(102, 187, 106, 0.1)',
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#66BB6A',
+          pointBorderColor: 'white',
+          pointBorderWidth: 2,
+          tension: 0.4,
+          fill: true,
+        },
+      ],
+    }
+
+    const newChart = new Chart(ctx, {
+      type: 'line',
+      data: chartData,
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            max: 50,
+            ticks: { color: 'rgba(227, 242, 253, 0.6)', font: { size: 11 } },
+            grid: { display: false },
+          },
+          x: {
+            ticks: { color: 'rgba(227, 242, 253, 0.6)', font: { size: 11 } },
+            grid: { display: false },
+          },
+        },
+      },
+    })
+
+    setChartInstance(newChart)
+
+    return () => {
+      newChart.destroy()
+    }
+  }, [engagementTrend, loading])
+
+  // Auto-rotate tips
+  useEffect(() => {
+    if (outreachTips.length === 0) return
+    const interval = setInterval(() => {
+      setCurrentTipIndex((prev) => (prev + 1) % outreachTips.length)
+    }, 10000)
+    return () => clearInterval(interval)
+  }, [outreachTips])
+
+  const currentTip = outreachTips[currentTipIndex] || getFallbackTips()[0]
+
+  const getContactName = (contact: Contact) => {
+    if (contact.first_name || contact.last_name) {
+      return `${contact.first_name || ''} ${contact.last_name || ''}`.trim()
+    }
+    return contact.email?.split('@')[0] || 'Unknown'
+  }
+
+  const getEngagementStatus = (contact: Contact): 'hot' | 'warm' | 'cold' => {
+    if (contact.engagement_status) return contact.engagement_status
+    const score = contact.engagement_score || 0
+    if (score >= 70) return 'hot'
+    if (score >= 40) return 'warm'
+    return 'cold'
+  }
+
+  const getEngagementEmoji = (status: string) => {
+    switch (status) {
+      case 'hot': return '🔥'
+      case 'warm': return '🟨'
+      case 'cold': return '❄️'
+      default: return '⭐'
+    }
+  }
+
+  // Handler to open modal
+  const handleContactClick = (contact: Contact) => {
+    setSelectedContact(contact)
+    setIsModalOpen(true)
+  }
+
+  // Handler to close modal
+  const handleCloseModal = () => {
+    setIsModalOpen(false)
+    setSelectedContact(null)
+  }
+
+  // Handler for contact updates from modal
+  const handleContactUpdate = (updatedContact: Contact) => {
+    setCallTodayContacts(prev =>
+      prev.map(c => c.id === updatedContact.id ? updatedContact : c)
+    )
+  }
+
+  if (loading) {
+    return (
+      <>
+        <style>{styles}</style>
+        <div className="ri-loading">Loading dashboard...</div>
+      </>
+    )
+  }
+
+  return (
+    <>
+      <style>{styles}</style>
+      <div className="ri-container">
+        <div className="ri-header">
+          <h1>Relationship Intelligence Dashboard</h1>
+          <p>Real-time insights into your contact engagement and outreach effectiveness</p>
+        </div>
+
+        <div className="ri-dashboard">
+          <div className="ri-main">
+            {/* Hero Metric */}
+            <div className="ri-hero">
+              <div>
+                <div className="ri-hero-metric">{engagementPercentage}%</div>
+                <div className="ri-hero-label">Contacts Engaged This Week</div>
+                <div className="ri-hero-trend">
+                  <span className="ri-trend-up">↑ 12% vs last week</span>
+                  <span>{Math.round(engagementPercentage * 3.7)} active relationships</span>
+                </div>
+              </div>
+              <div className="ri-chart-container">
+                <canvas id="engagementChart"></canvas>
+              </div>
+            </div>
+
+            {/* Call Today Section */}
+            <h2 className="ri-section-title">🎯 Call Today</h2>
+            <div className="ri-contacts-grid">
+              {callTodayContacts.length > 0 ? (
+                callTodayContacts.map((contact) => {
+                  const status = getEngagementStatus(contact)
+                  return (
+                    <div 
+                      key={contact.id} 
+                      className={`ri-contact-card ${status}`}
+                      onClick={() => handleContactClick(contact)}
+                    >
+                      <div className="ri-contact-header">
+                        <div className="ri-contact-info">
+                          <div className="ri-contact-avatar">
+                            {getContactName(contact).charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="ri-contact-name">{getContactName(contact)}</div>
+                            <div className="ri-contact-company">{contact.company || 'No company'}</div>
+                          </div>
+                        </div>
+                        <div className={`ri-badge ri-badge-${status}`}>
+                          {getEngagementEmoji(status)}
+                        </div>
+                      </div>
+                      <div className="ri-contact-meta">
+                        <div><strong>Email:</strong> {contact.email}</div>
+                      </div>
+                      <div className="ri-next-step">Click to View • Deep Enrich • Call Now</div>
+                    </div>
+                  )
+                })
+              ) : (
+                <div className="ri-contact-card">
+                  <div className="ri-contact-meta">No contacts found. Import some contacts to get started!</div>
+                </div>
+              )}
+            </div>
+
+            {/* Health Metrics */}
+            <h2 className="ri-section-title">📊 Relationship Health Metrics</h2>
+            <div className="ri-metrics-grid">
+              <div className="ri-metric-card">
+                <div className="ri-metric-value">{healthMetrics?.healthy_relationships_pct}%</div>
+                <div className="ri-metric-label">Healthy Relationships</div>
+                <div className="ri-metric-change">↑ 5% increase</div>
+              </div>
+              <div className="ri-metric-card">
+                <div className="ri-metric-value">{healthMetrics?.total_contacts_touched}</div>
+                <div className="ri-metric-label">Contacts Touched</div>
+                <div className="ri-metric-change">This month</div>
+              </div>
+              <div className="ri-metric-card">
+                <div className="ri-metric-value">{healthMetrics?.response_rate}%</div>
+                <div className="ri-metric-label">Avg Response Rate</div>
+                <div className="ri-metric-change">↑ 3% improvement</div>
+              </div>
+              <div className="ri-metric-card">
+                <div className="ri-metric-value">{healthMetrics?.avg_response_time_days} days</div>
+                <div className="ri-metric-label">Avg Response Time</div>
+                <div className="ri-metric-change">↓ Faster</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sidebar */}
+          <div>
+            <div className="ri-daily-tip">
+              <div className="ri-tip-label">💡 Smart Suggestion</div>
+              <div className="ri-tip-title">{currentTip.title}</div>
+              <div className="ri-tip-content">{currentTip.content}</div>
+              <button className="ri-tip-action" onClick={() => alert('Suggestion applied!')}>
+                Implement Suggestion
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Contact Detail Modal */}
+      {selectedContact && (
+        <ContactDetailModal
+          contact={selectedContact}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          onUpdate={handleContactUpdate}
+        />
+      )}
+    </>
+  )
+}
