@@ -37,14 +37,133 @@ PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 
 
 # ---------------------------------------------------------------------------
+# IMPROVED SYSTEM PROMPT - Explicit JSON schema for high-quality data
+# ---------------------------------------------------------------------------
+
+DEEP_ENRICH_SYSTEM_PROMPT = """You are a B2B sales intelligence researcher. Your job is to research a business contact and return STRUCTURED JSON data.
+
+CRITICAL REQUIREMENTS:
+1. Return VALID JSON only - no markdown, no extra text, no code blocks
+2. All fields must match the EXACT structure below
+3. Use empty arrays [] if no data found for a section
+4. NEVER include citation markers like [1], [2], [23] in any text
+5. No explanations before or after - ONLY the JSON object
+6. Each bullet must have 3-5 items minimum when data is available
+
+REQUIRED JSON STRUCTURE:
+{
+  "contact_profile": {
+    "headline": "<job title at company - one line>",
+    "role_summary": "<2-3 sentence description of what they do, their responsibilities>",
+    "seniority": "<Executive/VP/Director/Manager/Individual Contributor>",
+    "background_bullets": [
+      {"text": "<career achievement or background fact>"},
+      {"text": "<years of experience or expertise area>"},
+      {"text": "<education or certification if notable>"}
+    ]
+  },
+  "company_profile": {
+    "one_liner": "<1 sentence company description - what they do>",
+    "industry": "<specific industry vertical>",
+    "size_segment": "<employee count range: 1-10, 11-50, 51-200, 201-500, 500+>",
+    "region": "<headquarters city, state/country>",
+    "key_products_or_services": [
+      {"text": "<main product or service offering>"},
+      {"text": "<another key offering>"},
+      {"text": "<third offering if applicable>"}
+    ]
+  },
+  "current_focus": {
+    "strategic_initiatives": [
+      {"text": "<current strategic priority or initiative>"},
+      {"text": "<another focus area>"}
+    ],
+    "recent_projects": [
+      {"text": "<recent project, launch, or announcement>"},
+      {"text": "<another recent activity>"}
+    ],
+    "primary_kpis": [
+      {"text": "<metric they likely care about>"},
+      {"text": "<another KPI relevant to their role>"}
+    ]
+  },
+  "buying_signals": {
+    "recent_news": [
+      {"text": "<recent company news, funding, or announcement>"},
+      {"text": "<another news item or press mention>"}
+    ],
+    "hiring_signals": [
+      {"text": "<job postings or team growth indicators>"},
+      {"text": "<expansion or hiring activity>"}
+    ],
+    "tech_changes": [
+      {"text": "<technology adoption, migration, or stack change>"}
+    ],
+    "timing_triggers": [
+      {"text": "<urgency indicator: fiscal year end, budget cycle, etc.>"},
+      {"text": "<time-sensitive opportunity>"}
+    ]
+  },
+  "risks_and_objections": {
+    "risk_bullets": [
+      {"text": "<potential blocker or risk factor>"},
+      {"text": "<competitive situation or internal challenge>"}
+    ],
+    "likely_objections": [
+      {"text": "<common objection they might raise>"},
+      {"text": "<another potential pushback>"}
+    ],
+    "landmines": [
+      {"text": "<sensitive topic to avoid>"},
+      {"text": "<competitor or past issue to not mention>"}
+    ]
+  },
+  "messaging": {
+    "cold_openers": [
+      {"text": "<personalized opening line referencing something specific about them>"},
+      {"text": "<alternative opener with different angle>"},
+      {"text": "<third opener option>"}
+    ],
+    "value_props": [
+      {"text": "<specific value proposition relevant to their role/industry>"},
+      {"text": "<another benefit they would care about>"}
+    ],
+    "call_to_action_ideas": [
+      {"text": "<specific CTA: 15-min call, demo, etc.>"},
+      {"text": "<alternative softer CTA>"}
+    ]
+  }
+}
+
+RESEARCH INSTRUCTIONS:
+- Search for recent LinkedIn activity, company news, press releases
+- Look for funding announcements, product launches, leadership changes
+- Find specific facts - names, numbers, dates when available
+- For cold_openers: Reference something SPECIFIC (recent news, achievement, shared connection angle)
+- For risks: Think about why they might NOT buy or respond
+- Keep each bullet text under 100 characters
+- Minimum 2-3 bullets per array, more if data available
+
+RESPONSE FORMAT:
+Start your response with { and end with }
+No text before or after the JSON object
+No markdown code blocks (```)
+No citation numbers like  or """[1][2]
+
+
+# ---------------------------------------------------------------------------
 # JSON Repair Utilities
 # ---------------------------------------------------------------------------
 
 def strip_citations(text: str) -> str:
-    """Remove citation markers like [1], [2][3], etc. from text."""
+    """Remove citation markers like,, etc. from text."""[2][3][1]
     if not text:
         return text
-    return re.sub(r'\[\d+\]', '', text).strip()
+    # Remove,,,, etc.[12][1][2]
+    cleaned = re.sub(r'\[\d+\]', '', text)
+    # Also remove standalone numbers that look like citations at end of sentences
+    cleaned = re.sub(r'\s+\d+\s*$', '', cleaned)
+    return cleaned.strip()
 
 
 def repair_truncated_json(content: str) -> str:
@@ -99,15 +218,17 @@ def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
             if isinstance(item, dict):
                 if 'text' in item:
                     text = strip_citations(str(item.get('text', '')))
-                    result.append(EnrichmentBullet(
-                        text=text,
-                        evidence=item.get('evidence'),
-                        strength=item.get('strength')
-                    ))
+                    if text:  # Only add non-empty bullets
+                        result.append(EnrichmentBullet(
+                            text=text,
+                            evidence=item.get('evidence'),
+                            strength=item.get('strength')
+                        ))
                 else:
                     # Dict without 'text' key - stringify it
                     text = strip_citations(str(item))
-                    result.append(EnrichmentBullet(text=text))
+                    if text:
+                        result.append(EnrichmentBullet(text=text))
             elif isinstance(item, str):
                 text = item.lstrip('- ').strip()
                 text = strip_citations(text)
@@ -123,7 +244,9 @@ def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
     if isinstance(value, dict):
         # Single dict, wrap in list
         text = strip_citations(str(value.get('text', str(value))))
-        return [EnrichmentBullet(text=text)]
+        if text:
+            return [EnrichmentBullet(text=text)]
+        return []
     
     return []
 
@@ -133,21 +256,23 @@ def ensure_string(value: Any) -> Optional[str]:
     if value is None:
         return None
     if isinstance(value, str):
-        return strip_citations(value)
+        cleaned = strip_citations(value)
+        return cleaned if cleaned else None
     if isinstance(value, list):
-        return strip_citations('; '.join(str(v) for v in value))
+        joined = '; '.join(str(v) for v in value if v)
+        return strip_citations(joined) if joined else None
     return strip_citations(str(value))
 
 
 def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str) -> UnifiedEnrichmentResult:
     """Transform AI response to match expected UnifiedEnrichmentResult schema."""
     
-    # Extract raw sections with fallbacks
-    contact_raw = parsed.get("contact_profile") or {}
-    company_raw = parsed.get("company_profile") or {}
-    focus_raw = parsed.get("current_focus") or {}
-    signals_raw = parsed.get("buying_signals") or {}
-    risks_raw = parsed.get("risks_and_objections") or {}
+    # Extract raw sections with fallbacks (handle both snake_case and camelCase)
+    contact_raw = parsed.get("contact_profile") or parsed.get("contactprofile") or {}
+    company_raw = parsed.get("company_profile") or parsed.get("companyprofile") or {}
+    focus_raw = parsed.get("current_focus") or parsed.get("currentfocus") or {}
+    signals_raw = parsed.get("buying_signals") or parsed.get("buyingsignals") or {}
+    risks_raw = parsed.get("risks_and_objections") or parsed.get("risksandobjections") or {}
     messaging_raw = parsed.get("messaging") or {}
     
     # Handle case where sections are arrays instead of objects
@@ -189,6 +314,7 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
         ),
         role_summary=ensure_string(
             contact_raw.get("role_summary") or 
+            contact_raw.get("rolesummary") or
             contact_raw.get("experience") or
             contact_raw.get("summary")
         ),
@@ -199,6 +325,7 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
         ),
         background_bullets=ensure_bullet_list(
             contact_raw.get("background_bullets") or
+            contact_raw.get("backgroundbullets") or
             contact_raw.get("specialties") or
             contact_raw.get("affiliations") or
             contact_raw.get("background")
@@ -208,12 +335,14 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
     company_profile = CompanyProfileBox(
         one_liner=ensure_string(
             company_raw.get("one_liner") or 
+            company_raw.get("oneliner") or
             company_raw.get("type") or
             company_raw.get("description")
         ),
         industry=ensure_string(company_raw.get("industry")),
         size_segment=ensure_string(
             company_raw.get("size_segment") or
+            company_raw.get("sizesegment") or
             company_raw.get("size")
         ),
         region=ensure_string(
@@ -223,34 +352,71 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
         ),
         key_products_or_services=ensure_bullet_list(
             company_raw.get("key_products_or_services") or
+            company_raw.get("keyproductsorservices") or
             company_raw.get("focus_areas") or
             company_raw.get("products")
         )
     )
     
     current_focus = CurrentFocusBox(
-        strategic_initiatives=ensure_bullet_list(focus_raw.get("strategic_initiatives")),
-        recent_projects=ensure_bullet_list(focus_raw.get("recent_projects")),
-        primary_kpis=ensure_bullet_list(focus_raw.get("primary_kpis"))
+        strategic_initiatives=ensure_bullet_list(
+            focus_raw.get("strategic_initiatives") or 
+            focus_raw.get("strategicinitiatives")
+        ),
+        recent_projects=ensure_bullet_list(
+            focus_raw.get("recent_projects") or 
+            focus_raw.get("recentprojects")
+        ),
+        primary_kpis=ensure_bullet_list(
+            focus_raw.get("primary_kpis") or 
+            focus_raw.get("primarykpis")
+        )
     )
     
     buying_signals = BuyingSignalsBox(
-        recent_news=ensure_bullet_list(signals_raw.get("recent_news")),
-        hiring_signals=ensure_bullet_list(signals_raw.get("hiring_signals")),
-        tech_changes=ensure_bullet_list(signals_raw.get("tech_changes")),
-        timing_triggers=ensure_bullet_list(signals_raw.get("timing_triggers"))
+        recent_news=ensure_bullet_list(
+            signals_raw.get("recent_news") or 
+            signals_raw.get("recentnews")
+        ),
+        hiring_signals=ensure_bullet_list(
+            signals_raw.get("hiring_signals") or 
+            signals_raw.get("hiringsignals")
+        ),
+        tech_changes=ensure_bullet_list(
+            signals_raw.get("tech_changes") or 
+            signals_raw.get("techchanges")
+        ),
+        timing_triggers=ensure_bullet_list(
+            signals_raw.get("timing_triggers") or 
+            signals_raw.get("timingtriggers")
+        )
     )
     
     risks_and_objections = RisksAndObjectionsBox(
-        risk_bullets=ensure_bullet_list(risks_raw.get("risk_bullets")),
-        likely_objections=ensure_bullet_list(risks_raw.get("likely_objections")),
+        risk_bullets=ensure_bullet_list(
+            risks_raw.get("risk_bullets") or 
+            risks_raw.get("riskbullets")
+        ),
+        likely_objections=ensure_bullet_list(
+            risks_raw.get("likely_objections") or 
+            risks_raw.get("likelyobjections")
+        ),
         landmines=ensure_bullet_list(risks_raw.get("landmines"))
     )
     
     messaging = MessagingBox(
-        cold_openers=ensure_bullet_list(messaging_raw.get("cold_openers")),
-        value_props=ensure_bullet_list(messaging_raw.get("value_props")),
-        call_to_action_ideas=ensure_bullet_list(messaging_raw.get("call_to_action_ideas"))
+        cold_openers=ensure_bullet_list(
+            messaging_raw.get("cold_openers") or 
+            messaging_raw.get("coldopeners")
+        ),
+        value_props=ensure_bullet_list(
+            messaging_raw.get("value_props") or 
+            messaging_raw.get("valueprops")
+        ),
+        call_to_action_ideas=ensure_bullet_list(
+            messaging_raw.get("call_to_action_ideas") or 
+            messaging_raw.get("calltoactionideas")
+        )
     )
     
     meta = EnrichmentMeta(
@@ -275,7 +441,7 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
 
 
 # ---------------------------------------------------------------------------
-# Perplexity API Call
+# Perplexity API Call - IMPROVED with better prompt
 # ---------------------------------------------------------------------------
 
 async def call_perplexity_deep_research(
@@ -283,86 +449,58 @@ async def call_perplexity_deep_research(
     contact: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Run a heavier multi-step research prompt.
-    The model is instructed to return a full UnifiedEnrichmentResult JSON.
+    Run deep research using Perplexity API with improved prompt for high-quality structured data.
     """
-
+    
+    # Extract contact details
     name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
     company = contact.get("company") or ""
     title = contact.get("title") or contact.get("job_title") or ""
     linkedin_url = contact.get("linkedin_url") or ""
     website = contact.get("website") or ""
+    email = contact.get("email") or ""
+    
+    # Extract domain from email if no website
+    if not website and email and "@" in email:
+        domain = email.split("@")[1]
+        if domain and not domain.endswith(("gmail.com", "yahoo.com", "hotmail.com", "outlook.com")):
+            website = f"https://{domain}"
+    
+    # Build the user prompt with all available context
+    user_prompt = f"""Research this B2B sales prospect and return the complete JSON structure:
 
-    system_prompt = """You are a senior B2B sales researcher. Return ONLY valid JSON - no markdown, no explanations, no citations like [1] or [2].
+CONTACT INFORMATION:
+- Name: {name}
+- Title: {title}
+- Company: {company}
+- LinkedIn: {linkedin_url if linkedin_url else "Not provided"}
+- Website: {website if website else "Not provided"}
 
-You MUST return this EXACT structure with objects containing arrays (NOT bare arrays):
+RESEARCH TASKS:
+1. Find their professional background, achievements, career history
+2. Research the company - what they do, size, industry, recent news
+3. Identify current strategic initiatives and focus areas
+4. Look for buying signals - funding, hiring, tech changes, expansions
+5. Consider potential objections and risks for sales outreach
+6. Create personalized messaging - openers that reference specific facts about them
 
-{
-  "contact_profile": {
-    "headline": "string or null",
-    "role_summary": "string or null",
-    "seniority": "string or null",
-    "background_bullets": [{"text": "string"}]
-  },
-  "company_profile": {
-    "one_liner": "string or null",
-    "industry": "string or null",
-    "size_segment": "string or null",
-    "region": "string or null",
-    "key_products_or_services": [{"text": "string"}]
-  },
-  "current_focus": {
-    "strategic_initiatives": [{"text": "string"}],
-    "recent_projects": [{"text": "string"}],
-    "primary_kpis": [{"text": "string"}]
-  },
-  "buying_signals": {
-    "recent_news": [{"text": "string"}],
-    "hiring_signals": [{"text": "string"}],
-    "tech_changes": [{"text": "string"}],
-    "timing_triggers": [{"text": "string"}]
-  },
-  "risks_and_objections": {
-    "risk_bullets": [{"text": "string"}],
-    "likely_objections": [{"text": "string"}],
-    "landmines": [{"text": "string"}]
-  },
-  "messaging": {
-    "cold_openers": [{"text": "string"}],
-    "value_props": [{"text": "string"}],
-    "call_to_action_ideas": [{"text": "string"}]
-  }
-}
+Return the complete JSON structure with all sections populated. Use empty arrays [] only if you truly cannot find any information for that section.
 
-CRITICAL RULES:
-1. Return ONLY the JSON object - no text before or after
-2. Do NOT include citation markers like [1], [2], etc.
-3. Each section must be an OBJECT with named arrays inside, NOT a bare array
-4. Keep bullet text concise (under 100 chars each)
-5. Ensure all brackets and braces are properly closed"""
-
-    user_prompt = f"""Research this prospect for B2B sales outreach:
-
-Name: {name}
-Title: {title}
-Company: {company}
-LinkedIn: {linkedin_url}
-Website: {website}
-
-Provide comprehensive sales intelligence. Remember: return ONLY valid JSON matching the schema exactly."""
+START YOUR RESPONSE WITH {{ AND END WITH }}"""
 
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    
     payload = {
         "model": "sonar-pro",
         "messages": [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": DEEP_ENRICH_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.3,
-        "max_tokens": 4000,  # Increased from 1500/3000 to prevent truncation
+        "temperature": 0.2,  # Lower temperature for more factual, consistent output
+        "max_tokens": 4000,  # High token limit to prevent truncation
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -376,13 +514,19 @@ Provide comprehensive sales intelligence. Remember: return ONLY valid JSON match
         )
 
     data = resp.json()
-    content = data["choices"][0]["message"]["content"]
+    content = data["choices"]["message"]["content"]
 
     # Strip markdown code blocks if present
     clean_content = content.strip()
     if clean_content.startswith("```"):
         clean_content = re.sub(r'^```(?:json)?\s*', '', clean_content)
         clean_content = re.sub(r'\s*```$', '', clean_content)
+    
+    # Remove any text before the first { or after the last }
+    first_brace = clean_content.find('{')
+    last_brace = clean_content.rfind('}')
+    if first_brace != -1 and last_brace != -1:
+        clean_content = clean_content[first_brace:last_brace + 1]
     
     # Attempt to repair truncated JSON
     clean_content = repair_truncated_json(clean_content)
@@ -545,7 +689,6 @@ async def deep_enrich_contact(
             status="failed",
             error=str(e),
         )
-
 
 
 @router.get(
