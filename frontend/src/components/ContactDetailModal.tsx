@@ -1,6 +1,3 @@
-# ContactDetailModal - FIXED VERSION (Jan 6, 2026)
-
-
 import React, { useState, useEffect } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
