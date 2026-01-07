@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
-import type { Contact } from '../types'
 
 interface EnrichmentBullet {
   text: string
@@ -67,6 +66,26 @@ interface UnifiedEnrichmentResult {
   meta?: EnrichmentMeta
 }
 
+// Match the Contact type from your existing types file (snake_case)
+interface Contact {
+  id: string
+  first_name?: string
+  last_name?: string
+  email?: string
+  phone?: string
+  company?: string
+  title?: string
+  enrichment_data?: any
+  enrichment_status?: string
+  mdcp_score?: number
+  bant_score?: number
+  spice_score?: number
+  created_at?: string
+  updated_at?: string
+  workspace_id?: string
+  [key: string]: any  // Allow additional properties
+}
+
 interface ContactDetailModalProps {
   contact: Contact
   isOpen: boolean
@@ -89,9 +108,8 @@ export default function ContactDetailModal({
 
   // Load enrichment data from contact record
   useEffect(() => {
-    const ed = (contact as any)?.enrichment_data
-    if (ed) {
-      const data = ed?.data || ed
+    if (contact?.enrichment_data) {
+      const data = contact.enrichment_data?.data || contact.enrichment_data
       if (data && typeof data === 'object') {
         setEnrichmentData(data as UnifiedEnrichmentResult)
         setEnrichmentStatus('completed')
@@ -100,7 +118,7 @@ export default function ContactDetailModal({
       setEnrichmentData(null)
       setEnrichmentStatus('idle')
     }
-  }, [contact.id, (contact as any)?.enrichment_data])
+  }, [contact.id, contact.enrichment_data])
 
   if (!isOpen) return null
 
@@ -157,7 +175,7 @@ export default function ContactDetailModal({
             setEnrichmentData(enrichData as UnifiedEnrichmentResult)
             setEnrichmentStatus('completed')
             if (onUpdate) {
-              onUpdate({ ...contact, enrichment_data: { data: enrichData } } as Contact)
+              onUpdate({ ...contact, enrichment_data: { data: enrichData } })
             }
             setIsEnriching(false)
             return
@@ -505,9 +523,9 @@ export default function ContactDetailModal({
     )
   }
 
-  // Main render - use the Contact type's field names
-  const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || (contact as any).email?.split('@')[0] || 'Unknown'
-  const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
+  // Main render - use snake_case fields
+  const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
+  const initials = contactName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -522,9 +540,9 @@ export default function ContactDetailModal({
               <div>
                 <h2 className="text-white font-semibold text-lg">{contactName}</h2>
                 <p className="text-slate-400 text-sm">
-                  {(contact as any).title && <span>{(contact as any).title}</span>}
-                  {(contact as any).title && (contact as any).company && <span> at </span>}
-                  {(contact as any).company && <span className="text-indigo-400">{(contact as any).company}</span>}
+                  {contact.title && <span>{contact.title}</span>}
+                  {contact.title && contact.company && <span> at </span>}
+                  {contact.company && <span className="text-indigo-400">{contact.company}</span>}
                 </p>
               </div>
             </div>
@@ -642,19 +660,19 @@ export default function ContactDetailModal({
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
                 <span className="text-slate-500 text-xs uppercase block mb-1">Email</span>
-                <span className="text-slate-300">{(contact as any).email || 'N/A'}</span>
+                <span className="text-slate-300">{contact.email || 'N/A'}</span>
               </div>
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
                 <span className="text-slate-500 text-xs uppercase block mb-1">Phone</span>
-                <span className="text-slate-300">{(contact as any).phone || 'N/A'}</span>
+                <span className="text-slate-300">{contact.phone || 'N/A'}</span>
               </div>
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
                 <span className="text-slate-500 text-xs uppercase block mb-1">Company</span>
-                <span className="text-slate-300">{(contact as any).company || 'N/A'}</span>
+                <span className="text-slate-300">{contact.company || 'N/A'}</span>
               </div>
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
                 <span className="text-slate-500 text-xs uppercase block mb-1">Title</span>
-                <span className="text-slate-300">{(contact as any).title || 'N/A'}</span>
+                <span className="text-slate-300">{contact.title || 'N/A'}</span>
               </div>
             </div>
           )}
@@ -673,15 +691,15 @@ export default function ContactDetailModal({
             <div className="grid grid-cols-3 gap-4">
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 text-center">
                 <span className="text-slate-500 text-xs uppercase block mb-2">MDCP Score</span>
-                <span className="text-3xl font-bold text-indigo-400">{(contact as any).mdcp_score ?? 0}</span>
+                <span className="text-3xl font-bold text-indigo-400">{contact.mdcp_score ?? 0}</span>
               </div>
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 text-center">
                 <span className="text-slate-500 text-xs uppercase block mb-2">BANT Score</span>
-                <span className="text-3xl font-bold text-emerald-400">{(contact as any).bant_score ?? 0}</span>
+                <span className="text-3xl font-bold text-emerald-400">{contact.bant_score ?? 0}</span>
               </div>
               <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 text-center">
                 <span className="text-slate-500 text-xs uppercase block mb-2">SPICE Score</span>
-                <span className="text-3xl font-bold text-amber-400">{(contact as any).spice_score ?? 0}</span>
+                <span className="text-3xl font-bold text-amber-400">{contact.spice_score ?? 0}</span>
               </div>
             </div>
           )}
