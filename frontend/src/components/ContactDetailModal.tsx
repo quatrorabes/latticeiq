@@ -1,8 +1,85 @@
 import React, { useState, useEffect } from 'react'
-import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User } from 'lucide-react'
+import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
-import { Contact } from '../types'
-import type { UnifiedEnrichmentResult } from '../types/enrichment'
+
+interface EnrichmentBullet {
+  text: string
+  evidence?: string | null
+  strength?: number | null
+}
+
+interface ContactProfileBox {
+  headline?: string | null
+  role_summary?: string | null
+  seniority?: string | null
+  background_bullets?: EnrichmentBullet[]
+}
+
+interface CompanyProfileBox {
+  one_liner?: string | null
+  industry?: string | null
+  size_segment?: string | null
+  region?: string | null
+  key_products_or_services?: EnrichmentBullet[]
+}
+
+interface CurrentFocusBox {
+  strategic_initiatives?: EnrichmentBullet[]
+  recent_projects?: EnrichmentBullet[]
+  primary_kpis?: EnrichmentBullet[]
+}
+
+interface BuyingSignalsBox {
+  recent_news?: EnrichmentBullet[]
+  hiring_signals?: EnrichmentBullet[]
+  tech_changes?: EnrichmentBullet[]
+  timing_triggers?: EnrichmentBullet[]
+}
+
+interface RisksAndObjectionsBox {
+  risk_bullets?: EnrichmentBullet[]
+  likely_objections?: EnrichmentBullet[]
+  landmines?: EnrichmentBullet[]
+}
+
+interface MessagingBox {
+  cold_openers?: EnrichmentBullet[]
+  value_props?: EnrichmentBullet[]
+  call_to_action_ideas?: EnrichmentBullet[]
+}
+
+interface EnrichmentMeta {
+  generated_at?: string
+  source?: string
+  model?: string
+  provider?: string
+}
+
+interface UnifiedEnrichmentResult {
+  contact_id?: string
+  contact_profile?: ContactProfileBox
+  company_profile?: CompanyProfileBox
+  current_focus?: CurrentFocusBox
+  buying_signals?: BuyingSignalsBox
+  risks_and_objections?: RisksAndObjectionsBox
+  messaging?: MessagingBox
+  meta?: EnrichmentMeta
+}
+
+interface Contact {
+  id: string
+  firstname?: string
+  lastname?: string
+  email?: string
+  phone?: string
+  company?: string
+  title?: string
+  enrichment_data?: any
+  enrichment_status?: string
+  mdcp_score?: number
+  bant_score?: number
+  spice_score?: number
+}
 
 interface ContactDetailModalProps {
   contact: Contact
@@ -22,14 +99,12 @@ export default function ContactDetailModal({
   const [isEnriching, setIsEnriching] = useState(false)
   const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle')
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
-  const [scores, setScores] = useState({ mdcp: contact.mdcpscore ?? 0, bant: contact.bantscore ?? 0, spice: contact.spicescore ?? 0 })
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
-  // FIXED: Load enrichment data from contact record
+  // Load enrichment data from contact record
   useEffect(() => {
-    if (contact?.enrichmentdata) {
-      // Handle nested data structure from database
-      const data = contact.enrichmentdata?.data || contact.enrichmentdata
+    if (contact?.enrichment_data) {
+      const data = contact.enrichment_data?.data || contact.enrichment_data
       if (data && typeof data === 'object') {
         setEnrichmentData(data as UnifiedEnrichmentResult)
         setEnrichmentStatus('completed')
@@ -38,29 +113,23 @@ export default function ContactDetailModal({
       setEnrichmentData(null)
       setEnrichmentStatus('idle')
     }
-    setScores({
-      mdcp: contact.mdcpscore ?? 0,
-      bant: contact.bantscore ?? 0,
-      spice: contact.spicescore ?? 0
-    })
-  }, [contact.id, contact.enrichmentdata])
+  }, [contact.id, contact.enrichment_data])
 
   if (!isOpen) return null
 
-  // FIXED: Deep Enrichment with proper state handling
+  // Deep Enrichment handler
   const handleDeepEnrich = async () => {
     setIsEnriching(true)
     setEnrichmentStatus('processing')
     setEnrichmentError(null)
 
     try {
-      const APIURL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
-      const { data: session } = await supabase.auth.getSession()
-      const token = session?.access_token
+      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
+      const { data: sessionData } = await supabase.auth.getSession()
+      const token = sessionData?.session?.access_token
 
-      // Trigger deep enrichment
       const response = await fetch(
-        `${APIURL}/api/v3/enrichment/deep-enrich/${contact.id}`,
+        `${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`,
         {
           method: 'POST',
           headers: {
@@ -71,10 +140,10 @@ export default function ContactDetailModal({
       )
 
       if (!response.ok) {
-        throw new Error(`Enrichment failed ${response.status}`)
+        throw new Error(`Enrichment failed: ${response.status}`)
       }
 
-      // Poll for results with proper timing
+      // Poll for results
       let attempts = 0
       const maxAttempts = 30
 
@@ -82,7 +151,7 @@ export default function ContactDetailModal({
         await new Promise(resolve => setTimeout(resolve, 1000))
 
         const resultResponse = await fetch(
-          `${APIURL}/api/v3/enrichment/deep-enrich/${contact.id}/result`,
+          `${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`,
           {
             headers: {
               ...(token && { Authorization: `Bearer ${token}` })
@@ -92,47 +161,20 @@ export default function ContactDetailModal({
 
         if (resultResponse.ok) {
           const result = await resultResponse.json()
-
-          // FIXED: Properly extract data from various response structures
           const enrichData =
-            result?.contactprofile ? result :
-            result?.data?.contactprofile ? result.data :
-            result?.enrichmentdata ? result.enrichmentdata :
+            result?.contact_profile ? result :
+            result?.data?.contact_profile ? result.data :
             null
 
-          if (enrichData && enrichData.contactprofile) {
-            // SUCCESS: Data is complete
+          if (enrichData && enrichData.contact_profile) {
             setEnrichmentData(enrichData as UnifiedEnrichmentResult)
             setEnrichmentStatus('completed')
-
-            // Update scores if present
-            const scoresData = result?.scores || result?.data?.scores || enrichData?.scores
-            if (scoresData) {
-              setScores({
-                mdcp: scoresData.mdcp ?? 0,
-                bant: scoresData.bant ?? 0,
-                spice: scoresData.spice ?? 0
-              })
-            }
-
-            // FIXED: Update parent component
             if (onUpdate) {
-              onUpdate({
-                ...contact,
-                enrichmentdata: enrichData,
-                mdcpscore: scoresData?.mdcp,
-                bantscore: scoresData?.bant,
-                spicescore: scoresData?.spice
-              })
+              onUpdate({ ...contact, enrichment_data: { data: enrichData } })
             }
-
             setIsEnriching(false)
             return
           }
-        }
-
-        if (result?.status === 'failed') {
-          throw new Error(result?.error || 'Enrichment failed')
         }
 
         attempts++
@@ -148,54 +190,52 @@ export default function ContactDetailModal({
     }
   }
 
-  // UTILITY: Copy to clipboard
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
     setCopiedField(field)
     setTimeout(() => setCopiedField(null), 2000)
   }
 
-  // UTILITY: Format date
   const formatDate = (dateString?: string) => {
-    if (!dateString) return 'NA'
+    if (!dateString) return 'N/A'
     return new Date(dateString).toLocaleDateString('en-US', { 
-      year: 'numeric', 
-      month: 'short', 
-      day: 'numeric' 
+      year: 'numeric', month: 'short', day: 'numeric' 
     })
   }
 
-  // UTILITY: Extract bullet text
   const getBulletText = (bullet: any): string => {
     if (typeof bullet === 'string') return bullet
     if (bullet?.text) return bullet.text
     return String(bullet)
   }
 
-  // SECTION RENDERERS - All 6 sections
-  const renderContactProfile = (data: any) => {
+  // Section Renderers
+  const renderContactProfile = (data: ContactProfileBox | undefined) => {
     if (!data) return null
-    
     return (
-      <div className="enrichment-section">
-        <div className="section-header">
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex items-center gap-2 mb-3">
           <User className="w-5 h-5 text-indigo-400" />
-          <h4>Contact Profile</h4>
+          <h4 className="text-white font-medium">Contact Profile</h4>
         </div>
-        <div className="section-content">
-          {data.headline && <p className="description">{data.headline}</p>}
-          {data.rolesummary && <p className="description">{data.rolesummary}</p>}
-          
-          <div className="detail-grid">
-            {data.seniority && <div><span className="detail-label">Seniority</span><span className="detail-value">{data.seniority}</span></div>}
-          </div>
-
-          {Array.isArray(data.backgroundbullets) && data.backgroundbullets.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Background</span>
-              <ul className="bullet-list">
-                {data.backgroundbullets.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
+        <div className="space-y-3">
+          {data.headline && <p className="text-slate-300 font-medium">{data.headline}</p>}
+          {data.role_summary && <p className="text-slate-400 text-sm">{data.role_summary}</p>}
+          {data.seniority && (
+            <div className="flex items-center gap-2">
+              <span className="text-slate-500 text-xs uppercase">Seniority</span>
+              <span className="text-slate-300 text-sm">{data.seniority}</span>
+            </div>
+          )}
+          {data.background_bullets && data.background_bullets.length > 0 && (
+            <div className="mt-3">
+              <span className="text-slate-500 text-xs uppercase block mb-2">Background</span>
+              <ul className="space-y-1">
+                {data.background_bullets.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-indigo-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -205,30 +245,44 @@ export default function ContactDetailModal({
     )
   }
 
-  const renderCompanyProfile = (data: any) => {
+  const renderCompanyProfile = (data: CompanyProfileBox | undefined) => {
     if (!data) return null
-    
     return (
-      <div className="enrichment-section">
-        <div className="section-header">
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex items-center gap-2 mb-3">
           <Building2 className="w-5 h-5 text-emerald-400" />
-          <h4>Company Profile</h4>
+          <h4 className="text-white font-medium">Company Profile</h4>
         </div>
-        <div className="section-content">
-          {data.oneliner && <p className="description">{data.oneliner}</p>}
-          
-          <div className="detail-grid">
-            {data.industry && <div><span className="detail-label">Industry</span><span className="detail-value">{data.industry}</span></div>}
-            {data.sizesegment && <div><span className="detail-label">Size</span><span className="detail-value">{data.sizesegment}</span></div>}
-            {data.region && <div><span className="detail-label">Region</span><span className="detail-value">{data.region}</span></div>}
+        <div className="space-y-3">
+          {data.one_liner && <p className="text-slate-300">{data.one_liner}</p>}
+          <div className="grid grid-cols-2 gap-3">
+            {data.industry && (
+              <div>
+                <span className="text-slate-500 text-xs uppercase block">Industry</span>
+                <span className="text-slate-300 text-sm">{data.industry}</span>
+              </div>
+            )}
+            {data.size_segment && (
+              <div>
+                <span className="text-slate-500 text-xs uppercase block">Size</span>
+                <span className="text-slate-300 text-sm">{data.size_segment}</span>
+              </div>
+            )}
+            {data.region && (
+              <div>
+                <span className="text-slate-500 text-xs uppercase block">Region</span>
+                <span className="text-slate-300 text-sm">{data.region}</span>
+              </div>
+            )}
           </div>
-
-          {Array.isArray(data.keyproductsorservices) && data.keyproductsorservices.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Products / Services</span>
-              <div className="tag-list">
-                {data.keyproductsorservices.map((item: any, i: number) => (
-                  <span key={i} className="tag">{getBulletText(item)}</span>
+          {data.key_products_or_services && data.key_products_or_services.length > 0 && (
+            <div className="mt-3">
+              <span className="text-slate-500 text-xs uppercase block mb-2">Products & Services</span>
+              <div className="flex flex-wrap gap-2">
+                {data.key_products_or_services.map((item, i) => (
+                  <span key={i} className="bg-emerald-500/20 text-emerald-300 px-2 py-1 rounded text-xs">
+                    {getBulletText(item)}
+                  </span>
                 ))}
               </div>
             </div>
@@ -238,184 +292,52 @@ export default function ContactDetailModal({
     )
   }
 
-  const renderCurrentFocus = (data: any) => {
+  const renderCurrentFocus = (data: CurrentFocusBox | undefined) => {
     if (!data) return null
-    
+    const hasContent = data.strategic_initiatives?.length || data.recent_projects?.length || data.primary_kpis?.length
+    if (!hasContent) return null
     return (
-      <div className="enrichment-section">
-        <div className="section-header">
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex items-center gap-2 mb-3">
           <Target className="w-5 h-5 text-amber-400" />
-          <h4>Current Focus</h4>
+          <h4 className="text-white font-medium">Current Focus</h4>
         </div>
-        <div className="section-content">
-          {Array.isArray(data.strategicinitiatives) && data.strategicinitiatives.length > 0 && (
-            <div className="list-section">
-              <span className="list-label success">Strategic Initiatives</span>
-              <ul className="bullet-list">
-                {data.strategicinitiatives.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(data.recentprojects) && data.recentprojects.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Recent Projects</span>
-              <ul className="bullet-list">
-                {data.recentprojects.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(data.primarykpis) && data.primarykpis.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Primary KPIs</span>
-              <ul className="bullet-list">
-                {data.primarykpis.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  const renderBuyingSignals = (data: any) => {
-    if (!data) return null
-    
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <Loader2 className="w-5 h-5 text-green-400" />
-          <h4>Buying Signals</h4>
-        </div>
-        <div className="section-content">
-          {Array.isArray(data.recentnews) && data.recentnews.length > 0 && (
-            <div className="list-section">
-              <span className="list-label success">Recent News</span>
-              <ul className="bullet-list">
-                {data.recentnews.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(data.timingtriggers) && data.timingtriggers.length > 0 && (
-            <div className="list-section">
-              <span className="list-label warning">Timing Triggers</span>
-              <ul className="bullet-list">
-                {data.timingtriggers.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(data.hiringsignals) && data.hiringsignals.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Hiring Signals</span>
-              <ul className="bullet-list">
-                {data.hiringsignals.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  const renderRisksAndObjections = (data: any) => {
-    if (!data) return null
-    
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <AlertCircle className="w-5 h-5 text-red-400" />
-          <h4>Risks & Objections</h4>
-        </div>
-        <div className="section-content">
-          {Array.isArray(data.riskbullets) && data.riskbullets.length > 0 && (
-            <div className="list-section">
-              <span className="list-label warning">Risk Factors</span>
-              <ul className="bullet-list">
-                {data.riskbullets.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(data.likelyobjections) && data.likelyobjections.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Likely Objections</span>
-              <ul className="bullet-list">
-                {data.likelyobjections.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-          {Array.isArray(data.landmines) && data.landmines.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Landmines to Avoid</span>
-              <ul className="bullet-list">
-                {data.landmines.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </div>
-    )
-  }
-
-  const renderMessaging = (data: any) => {
-    if (!data) return null
-    
-    return (
-      <div className="enrichment-section">
-        <div className="section-header">
-          <CheckCircle2 className="w-5 h-5 text-purple-400" />
-          <h4>Recommended Messaging</h4>
-        </div>
-        <div className="section-content">
-          {Array.isArray(data.coldopeners) && data.coldopeners.length > 0 && (
-            <div className="list-section">
-              <span className="list-label success">Cold Openers</span>
-              <ul className="bullet-list">
-                {data.coldopeners.map((item: any, i: number) => (
-                  <li 
-                    key={i} 
-                    className="copyable" 
-                    onClick={() => copyToClipboard(getBulletText(item), `opener-${i}`)}
-                  >
-                    {getBulletText(item)}
-                    {copiedField === `opener-${i}` && <span className="copied-badge">Copied!</span>}
+        <div className="space-y-4">
+          {data.strategic_initiatives && data.strategic_initiatives.length > 0 && (
+            <div>
+              <span className="text-green-400 text-xs uppercase block mb-2">Strategic Initiatives</span>
+              <ul className="space-y-1">
+                {data.strategic_initiatives.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-green-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
                   </li>
                 ))}
               </ul>
             </div>
           )}
-          {Array.isArray(data.valueprops) && data.valueprops.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Value Props</span>
-              <ul className="bullet-list">
-                {data.valueprops.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
+          {data.recent_projects && data.recent_projects.length > 0 && (
+            <div>
+              <span className="text-slate-500 text-xs uppercase block mb-2">Recent Projects</span>
+              <ul className="space-y-1">
+                {data.recent_projects.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-amber-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
                 ))}
               </ul>
             </div>
           )}
-          {Array.isArray(data.calltoactionideas) && data.calltoactionideas.length > 0 && (
-            <div className="list-section">
-              <span className="list-label">Call to Action Ideas</span>
-              <ul className="bullet-list">
-                {data.calltoactionideas.map((item: any, i: number) => (
-                  <li key={i}>{getBulletText(item)}</li>
+          {data.primary_kpis && data.primary_kpis.length > 0 && (
+            <div>
+              <span className="text-slate-500 text-xs uppercase block mb-2">Primary KPIs</span>
+              <ul className="space-y-1">
+                {data.primary_kpis.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-blue-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
                 ))}
               </ul>
             </div>
@@ -425,68 +347,238 @@ export default function ContactDetailModal({
     )
   }
 
-  // MAIN RENDER
-  const contactName = `${contact.firstname} ${contact.lastname}`.trim() || contact.email?.split('@')[0] || 'Unknown'
+  const renderBuyingSignals = (data: BuyingSignalsBox | undefined) => {
+    if (!data) return null
+    const hasContent = data.recent_news?.length || data.hiring_signals?.length || data.tech_changes?.length || data.timing_triggers?.length
+    if (!hasContent) return null
+    return (
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex items-center gap-2 mb-3">
+          <Zap className="w-5 h-5 text-green-400" />
+          <h4 className="text-white font-medium">Buying Signals</h4>
+        </div>
+        <div className="space-y-4">
+          {data.recent_news && data.recent_news.length > 0 && (
+            <div>
+              <span className="text-green-400 text-xs uppercase block mb-2">Recent News</span>
+              <ul className="space-y-1">
+                {data.recent_news.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-green-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.timing_triggers && data.timing_triggers.length > 0 && (
+            <div>
+              <span className="text-amber-400 text-xs uppercase block mb-2">Timing Triggers</span>
+              <ul className="space-y-1">
+                {data.timing_triggers.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-amber-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.hiring_signals && data.hiring_signals.length > 0 && (
+            <div>
+              <span className="text-slate-500 text-xs uppercase block mb-2">Hiring Signals</span>
+              <ul className="space-y-1">
+                {data.hiring_signals.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-blue-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const renderRisksAndObjections = (data: RisksAndObjectionsBox | undefined) => {
+    if (!data) return null
+    const hasContent = data.risk_bullets?.length || data.likely_objections?.length || data.landmines?.length
+    if (!hasContent) return null
+    return (
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex items-center gap-2 mb-3">
+          <ShieldAlert className="w-5 h-5 text-red-400" />
+          <h4 className="text-white font-medium">Risks & Objections</h4>
+        </div>
+        <div className="space-y-4">
+          {data.risk_bullets && data.risk_bullets.length > 0 && (
+            <div>
+              <span className="text-amber-400 text-xs uppercase block mb-2">Risk Factors</span>
+              <ul className="space-y-1">
+                {data.risk_bullets.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-amber-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.likely_objections && data.likely_objections.length > 0 && (
+            <div>
+              <span className="text-slate-500 text-xs uppercase block mb-2">Likely Objections</span>
+              <ul className="space-y-1">
+                {data.likely_objections.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-red-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.landmines && data.landmines.length > 0 && (
+            <div>
+              <span className="text-red-400 text-xs uppercase block mb-2">Landmines to Avoid</span>
+              <ul className="space-y-1">
+                {data.landmines.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-red-400 mt-1">⚠</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  const renderMessaging = (data: MessagingBox | undefined) => {
+    if (!data) return null
+    const hasContent = data.cold_openers?.length || data.value_props?.length || data.call_to_action_ideas?.length
+    if (!hasContent) return null
+    return (
+      <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+        <div className="flex items-center gap-2 mb-3">
+          <MessageSquare className="w-5 h-5 text-purple-400" />
+          <h4 className="text-white font-medium">Recommended Messaging</h4>
+        </div>
+        <div className="space-y-4">
+          {data.cold_openers && data.cold_openers.length > 0 && (
+            <div>
+              <span className="text-green-400 text-xs uppercase block mb-2">Cold Openers (click to copy)</span>
+              <ul className="space-y-2">
+                {data.cold_openers.map((item, i) => (
+                  <li 
+                    key={i} 
+                    className="text-slate-300 text-sm bg-slate-700/50 p-2 rounded cursor-pointer hover:bg-slate-700 transition-colors flex items-start gap-2"
+                    onClick={() => copyToClipboard(getBulletText(item), `opener-${i}`)}
+                  >
+                    <span className="flex-1">{getBulletText(item)}</span>
+                    {copiedField === `opener-${i}` && (
+                      <span className="text-green-400 text-xs">Copied!</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.value_props && data.value_props.length > 0 && (
+            <div>
+              <span className="text-slate-500 text-xs uppercase block mb-2">Value Props</span>
+              <ul className="space-y-1">
+                {data.value_props.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-purple-400 mt-1">•</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {data.call_to_action_ideas && data.call_to_action_ideas.length > 0 && (
+            <div>
+              <span className="text-slate-500 text-xs uppercase block mb-2">Call to Action Ideas</span>
+              <ul className="space-y-1">
+                {data.call_to_action_ideas.map((item, i) => (
+                  <li key={i} className="text-slate-300 text-sm flex items-start gap-2">
+                    <span className="text-blue-400 mt-1">→</span>
+                    <span>{getBulletText(item)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // Main render
+  const contactName = `${contact.firstname || ''} ${contact.lastname || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
   const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-container" onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-slate-900 rounded-xl w-full max-w-3xl max-h-[90vh] overflow-hidden border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
         {/* Header */}
-        <div className="modal-header">
-          <div className="header-content">
-            <div className="avatar">{initials}</div>
-            <div className="header-info">
-              <h2>{contactName}</h2>
-              <p className="subtitle">
-                <span>{contact.title}</span>
-                {contact.title && contact.company && <span> at </span>}
-                {contact.company && <span className="company">{contact.company}</span>}
-              </p>
+        <div className="bg-slate-800 p-4 border-b border-slate-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-lg bg-indigo-600 flex items-center justify-center text-white font-bold">
+                {initials}
+              </div>
+              <div>
+                <h2 className="text-white font-semibold text-lg">{contactName}</h2>
+                <p className="text-slate-400 text-sm">
+                  {contact.title && <span>{contact.title}</span>}
+                  {contact.title && contact.company && <span> at </span>}
+                  {contact.company && <span className="text-indigo-400">{contact.company}</span>}
+                </p>
+              </div>
             </div>
+            <button className="text-slate-400 hover:text-white p-2" onClick={onClose}>
+              <X className="w-5 h-5" />
+            </button>
           </div>
-          <button className="close-btn" onClick={onClose}>
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         {/* Tabs */}
-        <div className="tab-bar">
-          <button 
-            className={`tab ${activeTab === 'overview' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('overview')}
-          >
-            Overview
-          </button>
-          <button 
-            className={`tab ${activeTab === 'enrichment' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('enrichment')}
-          >
-            Deep Enrichment 
-            {enrichmentData && <CheckCircle2 className="w-4 h-4 ml-1 text-emerald-400" />}
-          </button>
-          <button 
-            className={`tab ${activeTab === 'outreach' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('outreach')}
-          >
-            Outreach
-          </button>
-          <button 
-            className={`tab ${activeTab === 'scores' ? 'active' : ''}`} 
-            onClick={() => setActiveTab('scores')}
-          >
-            Scores
-          </button>
+        <div className="flex border-b border-slate-700 bg-slate-800/50">
+          {(['overview', 'enrichment', 'outreach', 'scores'] as const).map(tab => (
+            <button
+              key={tab}
+              className={`px-4 py-3 text-sm font-medium capitalize transition-colors ${
+                activeTab === tab 
+                  ? 'text-indigo-400 border-b-2 border-indigo-400' 
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'enrichment' ? 'Deep Enrichment' : tab}
+              {tab === 'enrichment' && enrichmentData && (
+                <CheckCircle2 className="w-4 h-4 ml-1 inline text-emerald-400" />
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Content */}
-        <div className="modal-content">
+        <div className="p-4 overflow-y-auto max-h-[calc(90vh-180px)]">
           {/* Enrichment Tab */}
           {activeTab === 'enrichment' && (
-            <div className="enrichment-tab">
-              <div className="enrich-action">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
                 <button 
-                  className="enrich-btn" 
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    isEnriching 
+                      ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                      : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                  }`}
                   onClick={handleDeepEnrich} 
                   disabled={isEnriching}
                 >
@@ -507,68 +599,105 @@ export default function ContactDetailModal({
                     </>
                   )}
                 </button>
-                {enrichmentData?.meta?.generatedat && (
-                  <span className="enriched-at">
+                {enrichmentData?.meta?.generated_at && (
+                  <span className="text-slate-500 text-xs flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    Last enriched {formatDate(enrichmentData.meta.generatedat)}
+                    Last enriched {formatDate(enrichmentData.meta.generated_at)}
                   </span>
                 )}
               </div>
 
               {enrichmentError && (
-                <div className="error-banner">
+                <div className="bg-red-500/20 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
                   {enrichmentError}
                 </div>
               )}
 
               {isEnriching && (
-                <div className="processing-state">
-                  <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
-                  <p>Analyzing contact from multiple sources...</p>
-                  <div className="processing-steps">
-                    <span className="step active">Gathering data</span>
-                    <span className="step">Analyzing market</span>
-                    <span className="step">Building profile</span>
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Loader2 className="w-10 h-10 animate-spin text-indigo-400 mb-4" />
+                  <p className="text-slate-300 mb-2">Analyzing contact from multiple sources...</p>
+                  <div className="flex gap-4 text-xs text-slate-500">
+                    <span className="text-indigo-400">● Gathering data</span>
+                    <span>○ Analyzing market</span>
+                    <span>○ Building profile</span>
                   </div>
                 </div>
               )}
 
               {enrichmentData && !isEnriching && (
-                <div className="enrichment-sections">
-                  {renderContactProfile(enrichmentData.contactprofile)}
-                  {renderCompanyProfile(enrichmentData.companyprofile)}
-                  {renderCurrentFocus(enrichmentData.currentfocus)}
-                  {renderBuyingSignals(enrichmentData.buyingsignals)}
-                  {renderRisksAndObjections(enrichmentData.risksandobjections)}
+                <div className="space-y-4">
+                  {renderContactProfile(enrichmentData.contact_profile)}
+                  {renderCompanyProfile(enrichmentData.company_profile)}
+                  {renderCurrentFocus(enrichmentData.current_focus)}
+                  {renderBuyingSignals(enrichmentData.buying_signals)}
+                  {renderRisksAndObjections(enrichmentData.risks_and_objections)}
                   {renderMessaging(enrichmentData.messaging)}
                 </div>
               )}
 
               {!enrichmentData && !isEnriching && (
-                <div className="empty-state">
-                  <Building2 className="w-12 h-12 text-slate-600" />
-                  <h3>No Enrichment Data</h3>
-                  <p>Click Deep Enrich Contact to gather comprehensive intelligence including contact profile, company details, buying signals, and personalized messaging recommendations.</p>
+                <div className="flex flex-col items-center justify-center py-12 text-center">
+                  <Building2 className="w-12 h-12 text-slate-600 mb-4" />
+                  <h3 className="text-slate-300 font-medium mb-2">No Enrichment Data</h3>
+                  <p className="text-slate-500 text-sm max-w-md">
+                    Click "Deep Enrich Contact" to gather comprehensive intelligence including 
+                    contact profile, company details, buying signals, and personalized messaging.
+                  </p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Other tabs */}
+          {/* Overview Tab */}
           {activeTab === 'overview' && (
-            <div className="overview-tab">
-              <div className="info-grid">
-                <div><span className="detail-label">Email</span><span className="detail-value">{contact.email}</span></div>
-                <div><span className="detail-label">Phone</span><span className="detail-value">{contact.phone || 'NA'}</span></div>
-                <div><span className="detail-label">Company</span><span className="detail-value">{contact.company || 'NA'}</span></div>
-                <div><span className="detail-label">Title</span><span className="detail-value">{contact.title || 'NA'}</span></div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+                <span className="text-slate-500 text-xs uppercase block mb-1">Email</span>
+                <span className="text-slate-300">{contact.email || 'N/A'}</span>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+                <span className="text-slate-500 text-xs uppercase block mb-1">Phone</span>
+                <span className="text-slate-300">{contact.phone || 'N/A'}</span>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+                <span className="text-slate-500 text-xs uppercase block mb-1">Company</span>
+                <span className="text-slate-300">{contact.company || 'N/A'}</span>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700">
+                <span className="text-slate-500 text-xs uppercase block mb-1">Title</span>
+                <span className="text-slate-300">{contact.title || 'N/A'}</span>
               </div>
             </div>
           )}
 
-          {activeTab === 'outreach' && <div className="outreach-tab">Outreach templates coming soon...</div>}
-          {activeTab === 'scores' && <div className="scores-tab">Score details: MDCP {scores.mdcp} | BANT {scores.bant} | SPICE {scores.spice}</div>}
+          {/* Outreach Tab */}
+          {activeTab === 'outreach' && (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <MessageSquare className="w-12 h-12 text-slate-600 mb-4" />
+              <h3 className="text-slate-300 font-medium mb-2">Outreach Templates</h3>
+              <p className="text-slate-500 text-sm">Coming soon...</p>
+            </div>
+          )}
+
+          {/* Scores Tab */}
+          {activeTab === 'scores' && (
+            <div className="grid grid-cols-3 gap-4">
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 text-center">
+                <span className="text-slate-500 text-xs uppercase block mb-2">MDCP Score</span>
+                <span className="text-3xl font-bold text-indigo-400">{contact.mdcp_score ?? 0}</span>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 text-center">
+                <span className="text-slate-500 text-xs uppercase block mb-2">BANT Score</span>
+                <span className="text-3xl font-bold text-emerald-400">{contact.bant_score ?? 0}</span>
+              </div>
+              <div className="bg-slate-800/50 rounded-lg p-4 border border-slate-700 text-center">
+                <span className="text-slate-500 text-xs uppercase block mb-2">SPICE Score</span>
+                <span className="text-3xl font-bold text-amber-400">{contact.spice_score ?? 0}</span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
