@@ -66,10 +66,11 @@ interface UnifiedEnrichmentResult {
   meta?: EnrichmentMeta
 }
 
+// Match the Contact type from your existing types file (snake_case)
 interface Contact {
   id: string
-  firstname?: string
-  lastname?: string
+  first_name?: string
+  last_name?: string
   email?: string
   phone?: string
   company?: string
@@ -79,6 +80,10 @@ interface Contact {
   mdcp_score?: number
   bant_score?: number
   spice_score?: number
+  created_at?: string
+  updated_at?: string
+  workspace_id?: string
+  [key: string]: any  // Allow additional properties
 }
 
 interface ContactDetailModalProps {
@@ -518,8 +523,8 @@ export default function ContactDetailModal({
     )
   }
 
-  // Main render
-  const contactName = `${contact.firstname || ''} ${contact.lastname || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
+  // Main render - use snake_case fields
+  const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
   const initials = contactName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
 
   return (
