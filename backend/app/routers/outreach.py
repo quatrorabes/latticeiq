@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Any, Tuple
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
+from fastapi.responses import JSONResponse
+
 
 
 logger = logging.getLogger(__name__)
@@ -1221,8 +1223,7 @@ async def generate_emails(request: GenerateEmailsRequest):
 # API ENDPOINTS - CALL SCRIPTS
 # ============================================================================
 
-
-@router.post("/generate-call-scripts", response_model=GenerateCallScriptsResponse)
+@router.post("/generate-call-scripts")
 async def generate_call_scripts(request: GenerateCallScriptsRequest):
     """Generate DISC-optimized call script variants for a contact"""
     try:
@@ -1236,7 +1237,7 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
         if not contact_res.data:
             raise HTTPException(status_code=404, detail="Contact not found")
 
-        contact = contact_res.data[0]
+        contact = contact_res.data
 
         # Get business profile for context
         profile_res = supabase.table("business_profiles")\
@@ -1246,7 +1247,7 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
 
         business_context = ""
         if profile_res.data:
-            bp = profile_res.data[0]
+            bp = profile_res.data
             business_context = f"{bp.get('company_name', '')} - {bp.get('what_you_do', '')}. Value: {bp.get('primary_value_prop', '')}"
 
         if request.business_context:
@@ -1254,6 +1255,10 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
 
         generator = CallScriptGenerator()
         result = generator.generate_all_scripts(contact, business_context)
+
+        # Verify result has scripts
+        if not result or "scripts" not in result:
+            raise HTTPException(status_code=500, detail="Failed to generate scripts")
 
         # Save scripts to database
         for script in result["scripts"]:
@@ -1267,22 +1272,35 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
                 "model_used": "perplexity/gpt-4o"
             }).execute()
 
-        return GenerateCallScriptsResponse(
-            success=True,
-            contact_id=request.contact_id,
-            contact_name=result["contact_name"],
-            company=contact.get("company", "Unknown"),
-            title=contact.get("title", "Unknown"),
-            personality=result["personality"],
-            scripts=result["scripts"],
-            generated_at=result["generated_at"]
-        )
+        # ✅ EXPLICIT RETURN with JSONResponse for reliability
+        return JSONResponse({
+            "success": True,
+            "contact_id": request.contact_id,
+            "contact_name": result.get("contact_name", ""),
+            "company": contact.get("company", "Unknown"),
+            "title": contact.get("title", "Unknown"),
+            "personality": result.get("personality", {}),
+            "scripts": [
+                {
+                    "variant_number": script.variant_number,
+                    "style": script.style,
+                    "style_description": script.style_description,
+                    "opener": script.opener,
+                    "body": script.body,
+                    "closer": script.closer,
+                    "quality_score": getattr(script, "quality_score", 0.0),
+                    "quality_notes": getattr(script, "quality_notes", "AI-generated DISC-optimized")
+                }
+                for script in result.get("scripts", [])
+            ],
+            "generated_at": result.get("generated_at", "")
+        })
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error generating call scripts: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Error generating call scripts: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate call scripts: {str(e)}")
 
 
 @router.get("/call-scripts/{contact_id}")
