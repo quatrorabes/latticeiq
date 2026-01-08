@@ -586,99 +586,6 @@ def merge_quick_and_deep(
 # Endpoints
 # ---------------------------------------------------------------------------
 
-@router.post(
-    "/deep-enrich/{contact_id}",
-    response_model=DeepEnrichmentStatus,
-    summary="Run deep enrichment inline for now (sync)",
-)
-async def deep_enrich_contact(
-    contact_id: str = Path(...),
-    user=Depends(get_current_user),
-    supabase: Client = Depends(get_supabase),
-):
-    contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
-    
-    # Defensive handling - contact_res.data is always a list
-    if not contact_res.data or len(contact_res.data) == 0:
-        raise HTTPException(status_code=404, detail="Contact not found")
-    
-    # Extract first item from the list
-    contact = contact_res.data
-    
-    # Double-check we have a dict
-    if not isinstance(contact, dict):
-        logger.error("Contact is not a dict, got: %s", type(contact))
-        raise HTTPException(status_code=500, detail="Invalid contact data")
-
-    api_key = os.getenv("PERPLEXITY_API_KEY")
-    if not api_key:
-        raise HTTPException(
-            status_code=500,
-            detail="Perplexity API key not configured",
-        )
-
-    # Mark as processing
-    supabase.table("contacts").update(
-        {"enrichment_status": "processing"}
-    ).eq("id", contact_id).execute()
-
-    try:
-        provider_result = await call_perplexity_deep_research(api_key, contact)
-        deep_unified = build_unified_from_deep(
-            contact_id=contact_id,
-            parsed=provider_result["parsed_payload"],
-            model_name=provider_result["model"],
-        )
-
-        # Try to load any quick data for merging
-        existing = contact.get("enrichment_data") or {}
-        quick_unified: Optional[UnifiedEnrichmentResult] = None
-        if existing.get("mode") == "quick" and existing.get("data"):
-            try:
-                quick_unified = UnifiedEnrichmentResult.parse_obj(existing["data"])
-            except Exception:
-                quick_unified = None
-
-        merged = merge_quick_and_deep(quick_unified, deep_unified)
-
-        enrichment_data = {
-            "mode": "deep",
-            "version": merged.meta.version,
-            "data": merged.dict(),
-            "raw_provider_response_deep": provider_result["raw_provider_response"],
-            "raw_parsed_payload_deep": provider_result["parsed_payload"],
-            "previous_quick": existing if existing else None,
-        }
-
-        supabase.table("contacts").update(
-            {
-                "enrichment_status": "completed",
-                "enrichment_data": enrichment_data,
-                "enriched_at": datetime.utcnow().isoformat(),
-            }
-        ).eq("id", contact_id).execute()
-
-        return DeepEnrichmentStatus(
-            contact_id=contact_id,
-            job_id=None,
-            status="completed",
-            error=None,
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.exception("Deep enrichment failed: %s", e)
-        supabase.table("contacts").update(
-            {"enrichment_status": "failed"}
-        ).eq("id", contact_id).execute()
-        return DeepEnrichmentStatus(
-            contact_id=contact_id,
-            job_id=None,
-            status="failed",
-            error=str(e),
-        )
-
 @router.get(
     "/deep-enrich/{contact_id}/result",
     response_model=UnifiedEnrichmentResult,
@@ -689,37 +596,55 @@ async def deep_enrich_result(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
-    contact_res = supabase.table("contacts").select(
-        "id, enrichment_data"
-    ).eq("id", contact_id).execute()
+    """Get the enrichment result for a contact - supports 3 storage formats"""
     
-    if not contact_res.data or len(contact_res.data) == 0:
-        raise HTTPException(status_code=404, detail="Contact not found")
+    try:
+        contact_res = supabase.table("contacts").select(
+            "id, enrichment_data"
+        ).eq("id", contact_id).execute()
+        
+        # ✅ DEFENSIVE HANDLING
+        if not contact_res.data or len(contact_res.data) == 0:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        # ✅ CRITICAL FIX: Extract first item from list
+        contact = contact_res.data[0]
+        
+        # ✅ VALIDATE TYPE
+        if not isinstance(contact, dict):
+            logger.error(f"Contact is not a dict, got: {type(contact)}")
+            raise HTTPException(status_code=500, detail="Invalid contact data")
+        
+        enrichment_data = contact.get("enrichment_data") or {}
+        
+        if not enrichment_data:
+            raise HTTPException(status_code=404, detail="No enrichment data found")
+        
+        # Format 1: {"mode": "deep", "data": {...}}
+        if enrichment_data.get("mode") in ("deep", "quick") and enrichment_data.get("data"):
+            return UnifiedEnrichmentResult.parse_obj(enrichment_data["data"])
+        
+        # Format 2: {"data": {"meta": {"source": "quick"}, ...}} (direct structure)
+        if enrichment_data.get("data") and isinstance(enrichment_data["data"], dict):
+            inner = enrichment_data["data"]
+            if inner.get("meta"):  # Has UnifiedEnrichmentResult structure
+                return UnifiedEnrichmentResult.parse_obj(inner)
+        
+        # Format 3: Direct UnifiedEnrichmentResult at top level
+        if enrichment_data.get("meta"):
+            return UnifiedEnrichmentResult.parse_obj(enrichment_data)
+        
+        raise HTTPException(
+            status_code=404, 
+            detail=f"Enrichment data not in expected format. Keys: {list(enrichment_data.keys())}"
+        )
     
-    contact = contact_res.data
-    enrichment_data = contact.get("enrichment_data") or {}
-    
-    if not enrichment_data:
-        raise HTTPException(status_code=404, detail="No enrichment data found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get enrichment result: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    # Format 1: {"mode": "deep", "data": {...}}
-    if enrichment_data.get("mode") in ("deep", "quick") and enrichment_data.get("data"):
-        return UnifiedEnrichmentResult.parse_obj(enrichment_data["data"])
-
-    # Format 2: {"data": {"meta": {"source": "quick"}, ...}} (direct structure)
-    if enrichment_data.get("data") and isinstance(enrichment_data["data"], dict):
-        inner = enrichment_data["data"]
-        if inner.get("meta"):  # Has UnifiedEnrichmentResult structure
-            return UnifiedEnrichmentResult.parse_obj(inner)
-
-    # Format 3: Direct UnifiedEnrichmentResult at top level
-    if enrichment_data.get("meta"):
-        return UnifiedEnrichmentResult.parse_obj(enrichment_data)
-
-    raise HTTPException(
-        status_code=404, 
-        detail=f"Enrichment data not in expected format. Keys: {list(enrichment_data.keys())}"
-    )
 
 @router.get(
     "/deep-enrich/{contact_id}/status",
@@ -730,32 +655,51 @@ async def deep_enrich_status(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
-    contact_res = supabase.table("contacts").select(
-        "id, enrichment_status"
-    ).eq("id", contact_id).execute()
+    """Get the enrichment status for a contact"""
     
-    if not contact_res.data or len(contact_res.data) == 0:
-        raise HTTPException(status_code=404, detail="Contact not found")
-
-    contact = contact_res.data
-    status_value = contact.get("enrichment_status") or "pending"
-
-    mapped = "queued"
-    if status_value in ("pending", None):
+    try:
+        contact_res = supabase.table("contacts").select(
+            "id, enrichment_status"
+        ).eq("id", contact_id).execute()
+        
+        # ✅ DEFENSIVE HANDLING
+        if not contact_res.data or len(contact_res.data) == 0:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        # ✅ CRITICAL FIX: Extract first item from list
+        contact = contact_res.data[0]
+        
+        # ✅ VALIDATE TYPE
+        if not isinstance(contact, dict):
+            logger.error(f"Contact is not a dict, got: {type(contact)}")
+            raise HTTPException(status_code=500, detail="Invalid contact data")
+        
+        status_value = contact.get("enrichment_status") or "pending"
+        
+        # Map database status to API status
         mapped = "queued"
-    elif status_value == "processing":
-        mapped = "running"
-    elif status_value == "completed":
-        mapped = "completed"
-    elif status_value == "failed":
-        mapped = "failed"
+        if status_value in ("pending", None):
+            mapped = "queued"
+        elif status_value == "processing":
+            mapped = "running"
+        elif status_value == "completed":
+            mapped = "completed"
+        elif status_value == "failed":
+            mapped = "failed"
+        
+        return DeepEnrichmentStatus(
+            contact_id=contact_id,
+            job_id=None,
+            status=mapped,
+            error=None,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get enrichment status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return DeepEnrichmentStatus(
-        contact_id=contact_id,
-        job_id=None,
-        status=mapped,
-        error=None,
-    )
 
 @router.get(
     "/deep-enrich/{contact_id}/debug",
@@ -767,38 +711,55 @@ async def deep_enrich_debug(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
-    contact_res = supabase.table("contacts").select(
-        "id, enrichment_data"
-    ).eq("id", contact_id).execute()
+    """Debug endpoint - return all enrichment data and raw payloads"""
     
-    if not contact_res.data or len(contact_res.data) == 0:
-        raise HTTPException(status_code=404, detail="Contact not found")
-
-    contact = contact_res.data
-    data = contact.get("enrichment_data") or {}
-    if not data or data.get("mode") != "deep":
-        raise HTTPException(
-            status_code=404,
-            detail="No deep enrichment data found",
+    try:
+        contact_res = supabase.table("contacts").select(
+            "id, enrichment_data"
+        ).eq("id", contact_id).execute()
+        
+        # ✅ DEFENSIVE HANDLING
+        if not contact_res.data or len(contact_res.data) == 0:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        # ✅ CRITICAL FIX: Extract first item from list
+        contact = contact_res.data[0]
+        
+        # ✅ VALIDATE TYPE
+        if not isinstance(contact, dict):
+            logger.error(f"Contact is not a dict, got: {type(contact)}")
+            raise HTTPException(status_code=500, detail="Invalid contact data")
+        
+        data = contact.get("enrichment_data") or {}
+        if not data or data.get("mode") != "deep":
+            raise HTTPException(
+                status_code=404,
+                detail="No deep enrichment data found",
+            )
+        
+        parsed_unified = UnifiedEnrichmentResult.parse_obj(data["data"])
+        status_obj = DeepEnrichmentStatus(
+            contact_id=contact_id,
+            job_id=None,
+            status="completed",
+            error=None,
         )
-
-    parsed_unified = UnifiedEnrichmentResult.parse_obj(data["data"])
-    status_obj = DeepEnrichmentStatus(
-        contact_id=contact_id,
-        job_id=None,
-        status="completed",
-        error=None,
-    )
-
-    return DebugDeepEnrichResponse(
-        contact_id=contact_id,
-        job_id=None,
-        request_payload={},
-        raw_prompt_chain=None,
-        raw_responses={
-            "provider_response": data.get("raw_provider_response_deep"),
-            "parsed_payload": data.get("raw_parsed_payload_deep"),
-        },
-        parsed=parsed_unified,
-        status=status_obj,
-    )
+        
+        return DebugDeepEnrichResponse(
+            contact_id=contact_id,
+            job_id=None,
+            request_payload={},
+            raw_prompt_chain=None,
+            raw_responses={
+                "provider_response": data.get("raw_provider_response_deep"),
+                "parsed_payload": data.get("raw_parsed_payload_deep"),
+            },
+            parsed=parsed_unified,
+            status=status_obj,
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get debug info: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
