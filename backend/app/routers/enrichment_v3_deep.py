@@ -514,7 +514,7 @@ START YOUR RESPONSE WITH {{ AND END WITH }}"""
         )
 
     data = resp.json()
-    content = data["choices"]["message"]["content"]
+    content = data["choices"][0]["message"]["content"]
 
     # Strip markdown code blocks if present
     clean_content = content.strip()
