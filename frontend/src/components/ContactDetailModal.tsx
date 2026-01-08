@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send } from 'lucide-react'
+import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { Contact } from '../types'
 import { generateEmails, generateCallScripts, EmailVariant, CallScriptVariant } from '../api/outreach'
@@ -75,6 +75,17 @@ interface UnifiedEnrichmentResult {
   risks_and_objections?: RisksAndObjectionsBox
   messaging?: MessagingBox
   meta?: EnrichmentMeta
+}
+
+
+interface QuickEnrichResult {
+  contact_id?: string
+  summary?: string
+  opening_line?: string
+  talking_points?: string[]
+  vertical?: string
+  provider?: string
+  generated_at?: string
 }
 
 
@@ -375,12 +386,46 @@ const styles = {
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: '1rem',
+    flexWrap: 'wrap' as const,
+    gap: '0.5rem',
+  },
+  buttonGroup: {
+    display: 'flex',
+    gap: '0.5rem',
   },
   sectionLabel: {
     fontSize: '0.75rem',
     textTransform: 'uppercase' as const,
     display: 'block',
     marginBottom: '0.5rem',
+  },
+  // Quick Enrich styles
+  quickEnrichCard: {
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    border: '1px solid rgba(16, 185, 129, 0.3)',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginBottom: '1rem',
+  },
+  quickEnrichHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginBottom: '0.75rem',
+  },
+  quickEnrichTitle: {
+    color: '#6ee7b7',
+    fontWeight: 600,
+    fontSize: '0.875rem',
+    margin: 0,
+  },
+  quickEnrichBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    color: '#6ee7b7',
+    padding: '0.125rem 0.375rem',
+    borderRadius: '4px',
+    fontSize: '0.65rem',
+    fontWeight: 600,
   },
   // Outreach-specific styles
   outreachSection: {
@@ -537,6 +582,9 @@ const styles = {
 }
 
 
+const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
+
+
 export default function ContactDetailModal({ 
   contact, 
   isOpen, 
@@ -544,10 +592,17 @@ export default function ContactDetailModal({
   onUpdate 
 }: ContactDetailModalProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview')
+  
+  // Deep Enrichment state
   const [enrichmentData, setEnrichmentData] = useState<UnifiedEnrichmentResult | null>(null)
   const [isEnriching, setIsEnriching] = useState(false)
-  const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle')
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
+  
+  // Quick Enrichment state
+  const [quickEnrichData, setQuickEnrichData] = useState<QuickEnrichResult | null>(null)
+  const [isQuickEnriching, setIsQuickEnriching] = useState(false)
+  const [quickEnrichError, setQuickEnrichError] = useState<string | null>(null)
+  
   const [copiedField, setCopiedField] = useState<string | null>(null)
   
   // Outreach state - Emails
@@ -565,13 +620,20 @@ export default function ContactDetailModal({
     if (contact?.enrichment_data) {
       const data = (contact.enrichment_data as any)?.data || contact.enrichment_data
       if (data && typeof data === 'object') {
-        setEnrichmentData(data as UnifiedEnrichmentResult)
-        setEnrichmentStatus('completed')
+        // Check if it's deep enrichment (has contact_profile) or quick enrichment (has summary)
+        if (data.contact_profile) {
+          setEnrichmentData(data as UnifiedEnrichmentResult)
+        } else if (data.summary || data.talking_points) {
+          setQuickEnrichData(data as QuickEnrichResult)
+        }
       }
     } else {
       setEnrichmentData(null)
-      setEnrichmentStatus('idle')
+      setQuickEnrichData(null)
     }
+    // Reset errors
+    setEnrichmentError(null)
+    setQuickEnrichError(null)
     // Reset outreach state when contact changes
     setGeneratedEmails([])
     setEmailError(null)
@@ -583,16 +645,65 @@ export default function ContactDetailModal({
   if (!isOpen) return null
 
 
+  const getAuthToken = async (): Promise<string | null> => {
+    const { data: sessionData } = await supabase.auth.getSession()
+    return sessionData?.session?.access_token || null
+  }
+
+
+  // Quick Enrich - Fast, 3-5 seconds
+  const handleQuickEnrich = async () => {
+    setIsQuickEnriching(true)
+    setQuickEnrichError(null)
+
+    try {
+      const token = await getAuthToken()
+      
+      const response = await fetch(
+        `${API_URL}/api/v3/enrichment/quick-enrich/${contact.id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Quick enrich failed: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log('✅ Quick enrich result:', result)
+      
+      // The result might be directly the data or wrapped
+      const enrichData = result.data || result
+      setQuickEnrichData(enrichData as QuickEnrichResult)
+      
+      // Update parent if callback provided
+      if (onUpdate) {
+        onUpdate({ ...contact, enrichment_data: enrichData } as Contact)
+      }
+    } catch (error) {
+      console.error('❌ Quick enrichment error:', error)
+      setQuickEnrichError(error instanceof Error ? error.message : 'Quick enrichment failed')
+    } finally {
+      setIsQuickEnriching(false)
+    }
+  }
+
+
+  // Deep Enrich - Comprehensive, 10-18 seconds
   const handleDeepEnrich = async () => {
     setIsEnriching(true)
-    setEnrichmentStatus('processing')
     setEnrichmentError(null)
 
     try {
-      const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
-      const { data: sessionData } = await supabase.auth.getSession()
-      const token = sessionData?.session?.access_token
-
+      const token = await getAuthToken()
+      
+      // Try the deep enrich endpoint
       const response = await fetch(
         `${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`,
         {
@@ -605,9 +716,15 @@ export default function ContactDetailModal({
       )
 
       if (!response.ok) {
-        throw new Error(`Enrichment failed: ${response.status}`)
+        // If 404, the endpoint might not be registered - provide helpful message
+        if (response.status === 404) {
+          throw new Error('Deep enrichment endpoint not available. Try Quick Enrich instead.')
+        }
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Enrichment failed: ${response.status}`)
       }
 
+      // Poll for results
       let attempts = 0
       const maxAttempts = 30
 
@@ -625,6 +742,8 @@ export default function ContactDetailModal({
 
         if (resultResponse.ok) {
           const result = await resultResponse.json()
+          console.log('📊 Deep enrich poll result:', result)
+          
           const enrichData =
             result?.contact_profile ? result :
             result?.data?.contact_profile ? result.data :
@@ -632,7 +751,6 @@ export default function ContactDetailModal({
 
           if (enrichData && enrichData.contact_profile) {
             setEnrichmentData(enrichData as UnifiedEnrichmentResult)
-            setEnrichmentStatus('completed')
             if (onUpdate) {
               onUpdate({ ...contact, enrichment_data: { data: enrichData } } as Contact)
             }
@@ -646,9 +764,8 @@ export default function ContactDetailModal({
 
       throw new Error('Enrichment timed out. Please try again.')
     } catch (error) {
-      console.error('Deep enrichment error:', error)
+      console.error('❌ Deep enrichment error:', error)
       setEnrichmentError(error instanceof Error ? error.message : 'Unknown error')
-      setEnrichmentStatus('failed')
     } finally {
       setIsEnriching(false)
     }
@@ -715,6 +832,63 @@ export default function ContactDetailModal({
 
   const formatCallScript = (script: CallScriptVariant): string => {
     return `OPENER:\n${script.opener}\n\nBODY:\n${script.body}\n\nCLOSER:\n${script.closer}`
+  }
+
+
+  // Render Quick Enrich Results
+  const renderQuickEnrichResults = () => {
+    if (!quickEnrichData) return null
+    
+    return (
+      <div style={styles.quickEnrichCard}>
+        <div style={styles.quickEnrichHeader}>
+          <Sparkles style={{ width: 16, height: 16, color: '#6ee7b7' }} />
+          <h4 style={styles.quickEnrichTitle}>Quick Intel</h4>
+          <span style={styles.quickEnrichBadge}>FAST</span>
+        </div>
+        
+        {quickEnrichData.summary && (
+          <div style={{ marginBottom: '0.75rem' }}>
+            <span style={{ ...styles.label, color: '#6ee7b7' }}>Summary</span>
+            <p style={{ color: '#cbd5e1', fontSize: '0.875rem', margin: 0 }}>{quickEnrichData.summary}</p>
+          </div>
+        )}
+        
+        {quickEnrichData.opening_line && (
+          <div 
+            style={{ ...styles.copyableItem, backgroundColor: 'rgba(16, 185, 129, 0.1)' }}
+            onClick={() => copyToClipboard(quickEnrichData.opening_line!, 'opening-line')}
+          >
+            <span style={{ flex: 1 }}>
+              <strong style={{ color: '#6ee7b7' }}>Opening Line:</strong> {quickEnrichData.opening_line}
+            </span>
+            {copiedField === 'opening-line' && (
+              <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
+            )}
+          </div>
+        )}
+        
+        {quickEnrichData.talking_points && quickEnrichData.talking_points.length > 0 && (
+          <div>
+            <span style={{ ...styles.label, color: '#6ee7b7' }}>Talking Points</span>
+            <ul style={styles.bulletList}>
+              {quickEnrichData.talking_points.map((point, i) => (
+                <li key={i} style={styles.bulletItem}>
+                  <span style={{ color: '#6ee7b7' }}>•</span>
+                  <span>{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        
+        {quickEnrichData.vertical && (
+          <div style={{ marginTop: '0.5rem' }}>
+            <span style={styles.tag}>{quickEnrichData.vertical}</span>
+          </div>
+        )}
+      </div>
+    )
   }
 
 
@@ -1032,6 +1206,7 @@ export default function ContactDetailModal({
 
   const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
   const initials = contactName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
+  const hasAnyEnrichment = enrichmentData || quickEnrichData
 
 
   return (
@@ -1065,8 +1240,8 @@ export default function ContactDetailModal({
               style={activeTab === tab ? styles.tabActive : styles.tab}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'enrichment' ? 'Deep Enrichment' : tab}
-              {tab === 'enrichment' && enrichmentData && (
+              {tab === 'enrichment' ? 'Enrichment' : tab}
+              {tab === 'enrichment' && hasAnyEnrichment && (
                 <CheckCircle2 style={{ width: 16, height: 16, color: '#34d399', marginLeft: '0.25rem' }} />
               )}
               {tab === 'outreach' && (generatedEmails.length > 0 || generatedCallScripts.length > 0) && (
@@ -1103,29 +1278,53 @@ export default function ContactDetailModal({
           {/* Enrichment Tab */}
           {activeTab === 'enrichment' && (
             <div>
+              {/* Action Buttons */}
               <div style={styles.actionBar}>
-                <button
-                  style={isEnriching ? styles.btnDisabled : styles.btnPrimary}
-                  onClick={handleDeepEnrich}
-                  disabled={isEnriching}
-                >
-                  {isEnriching ? (
-                    <>
-                      <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
-                      Analyzing... (10-18s)
-                    </>
-                  ) : enrichmentData ? (
-                    <>
-                      <RefreshCw style={{ width: 16, height: 16 }} />
-                      Re-Enrich Contact
-                    </>
-                  ) : (
-                    <>
-                      <Target style={{ width: 16, height: 16 }} />
-                      Deep Enrich Contact
-                    </>
-                  )}
-                </button>
+                <div style={styles.buttonGroup}>
+                  {/* Quick Enrich Button */}
+                  <button
+                    style={isQuickEnriching ? styles.btnDisabled : styles.btnGreen}
+                    onClick={handleQuickEnrich}
+                    disabled={isQuickEnriching || isEnriching}
+                  >
+                    {isQuickEnriching ? (
+                      <>
+                        <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                        Quick... (3-5s)
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles style={{ width: 16, height: 16 }} />
+                        Quick Enrich
+                      </>
+                    )}
+                  </button>
+                  
+                  {/* Deep Enrich Button */}
+                  <button
+                    style={isEnriching ? styles.btnDisabled : styles.btnPrimary}
+                    onClick={handleDeepEnrich}
+                    disabled={isEnriching || isQuickEnriching}
+                  >
+                    {isEnriching ? (
+                      <>
+                        <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                        Deep... (10-18s)
+                      </>
+                    ) : enrichmentData ? (
+                      <>
+                        <RefreshCw style={{ width: 16, height: 16 }} />
+                        Re-Enrich Deep
+                      </>
+                    ) : (
+                      <>
+                        <Target style={{ width: 16, height: 16 }} />
+                        Deep Enrich
+                      </>
+                    )}
+                  </button>
+                </div>
+                
                 {enrichmentData?.meta?.generated_at && (
                   <span style={styles.metaText}>
                     <Clock style={{ width: 12, height: 12 }} />
@@ -1134,6 +1333,13 @@ export default function ContactDetailModal({
                 )}
               </div>
 
+              {/* Errors */}
+              {quickEnrichError && (
+                <div style={styles.errorBox}>
+                  <AlertCircle style={{ width: 16, height: 16 }} />
+                  {quickEnrichError}
+                </div>
+              )}
               {enrichmentError && (
                 <div style={styles.errorBox}>
                   <AlertCircle style={{ width: 16, height: 16 }} />
@@ -1141,10 +1347,19 @@ export default function ContactDetailModal({
                 </div>
               )}
 
+              {/* Loading States */}
+              {isQuickEnriching && (
+                <div style={styles.loadingContainer}>
+                  <Loader2 style={{ width: 40, height: 40, color: '#34d399', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Quick enriching {contact.first_name || 'contact'}...</p>
+                  <p style={{ color: '#64748b', fontSize: '0.75rem' }}>Getting summary, opening line, and talking points</p>
+                </div>
+              )}
+
               {isEnriching && (
                 <div style={styles.loadingContainer}>
                   <Loader2 style={{ width: 40, height: 40, color: '#818cf8', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
-                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Analyzing contact from multiple sources...</p>
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Deep analyzing contact...</p>
                   <div style={{ display: 'flex', gap: '1rem', fontSize: '0.75rem', color: '#64748b' }}>
                     <span style={{ color: '#818cf8' }}>● Gathering data</span>
                     <span>○ Analyzing market</span>
@@ -1153,6 +1368,10 @@ export default function ContactDetailModal({
                 </div>
               )}
 
+              {/* Quick Enrich Results */}
+              {quickEnrichData && !isQuickEnriching && !isEnriching && renderQuickEnrichResults()}
+
+              {/* Deep Enrich Results */}
               {enrichmentData && !isEnriching && (
                 <div>
                   {renderContactProfile(enrichmentData.contact_profile)}
@@ -1164,13 +1383,14 @@ export default function ContactDetailModal({
                 </div>
               )}
 
-              {!enrichmentData && !isEnriching && (
+              {/* Empty State */}
+              {!hasAnyEnrichment && !isEnriching && !isQuickEnriching && (
                 <div style={styles.emptyState}>
                   <Building2 style={{ width: 48, height: 48, color: '#475569', marginBottom: '1rem' }} />
                   <h3 style={styles.emptyTitle}>No Enrichment Data</h3>
                   <p style={styles.emptyText}>
-                    Click "Deep Enrich Contact" to gather comprehensive intelligence including
-                    contact profile, company details, buying signals, and personalized messaging.
+                    <strong>Quick Enrich</strong> (3-5s): Summary, opening line, talking points<br />
+                    <strong>Deep Enrich</strong> (10-18s): Full profile, buying signals, messaging
                   </p>
                 </div>
               )}
@@ -1194,7 +1414,6 @@ export default function ContactDetailModal({
                   </div>
                 )}
 
-                {/* Generation Button */}
                 <div style={{ marginBottom: '1rem' }}>
                   <button
                     style={isGeneratingEmails ? styles.btnDisabled : styles.btnPrimary}
@@ -1209,27 +1428,24 @@ export default function ContactDetailModal({
                     ) : generatedEmails.length > 0 ? (
                       <>
                         <RefreshCw style={{ width: 16, height: 16 }} />
-                        Regenerate Email Variants
+                        Regenerate Emails
                       </>
                     ) : (
                       <>
                         <Zap style={{ width: 16, height: 16 }} />
-                        Generate Email Variants
+                        Generate Emails
                       </>
                     )}
                   </button>
                 </div>
 
-                {/* Loading State */}
                 {isGeneratingEmails && (
                   <div style={styles.loadingContainer}>
                     <Loader2 style={{ width: 40, height: 40, color: '#60a5fa', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
-                    <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Generating personalized email variants...</p>
-                    <p style={{ color: '#64748b', fontSize: '0.75rem' }}>Creating DISC-matched outreach for {contact.first_name || 'contact'}</p>
+                    <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Generating personalized emails...</p>
                   </div>
                 )}
 
-                {/* Generated Emails */}
                 {generatedEmails.length > 0 && !isGeneratingEmails && (
                   <div>
                     <p style={{ color: '#a5b4fc', fontSize: '0.875rem', marginBottom: '1rem' }}>
@@ -1242,16 +1458,10 @@ export default function ContactDetailModal({
                           <span style={styles.styleBadge}>{variant.style}</span>
                           <span style={styles.qualityBadge}>Quality: {variant.quality_score}/10</span>
                         </div>
-
                         <div style={styles.emailContent}>
-                          <div style={styles.emailSubject}>
-                            <strong>Subject:</strong> {variant.subject}
-                          </div>
-                          <div style={styles.emailBody}>
-                            {variant.body}
-                          </div>
+                          <div style={styles.emailSubject}><strong>Subject:</strong> {variant.subject}</div>
+                          <div style={styles.emailBody}>{variant.body}</div>
                         </div>
-
                         <div style={styles.variantActions}>
                           <button
                             style={styles.actionBtn}
@@ -1266,7 +1476,7 @@ export default function ContactDetailModal({
                               style={styles.sendBtn}
                             >
                               <Send style={{ width: 14, height: 14 }} />
-                              Send Email
+                              Send
                             </a>
                           )}
                         </div>
@@ -1275,11 +1485,8 @@ export default function ContactDetailModal({
                   </div>
                 )}
 
-                {/* Empty State for Emails */}
                 {generatedEmails.length === 0 && !isGeneratingEmails && (
-                  <p style={styles.noDataText}>
-                    Click "Generate Email Variants" to create personalized, DISC-matched outreach emails.
-                  </p>
+                  <p style={styles.noDataText}>Click "Generate Emails" to create personalized outreach emails.</p>
                 )}
               </div>
 
@@ -1297,7 +1504,6 @@ export default function ContactDetailModal({
                   </div>
                 )}
 
-                {/* Generation Button */}
                 <div style={{ marginBottom: '1rem' }}>
                   <button
                     style={isGeneratingCallScripts ? styles.btnDisabled : styles.btnGreen}
@@ -1312,31 +1518,28 @@ export default function ContactDetailModal({
                     ) : generatedCallScripts.length > 0 ? (
                       <>
                         <RefreshCw style={{ width: 16, height: 16 }} />
-                        Regenerate Call Scripts
+                        Regenerate Scripts
                       </>
                     ) : (
                       <>
                         <Zap style={{ width: 16, height: 16 }} />
-                        Generate Call Scripts
+                        Generate Scripts
                       </>
                     )}
                   </button>
                 </div>
 
-                {/* Loading State */}
                 {isGeneratingCallScripts && (
                   <div style={styles.loadingContainer}>
                     <Loader2 style={{ width: 40, height: 40, color: '#34d399', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
-                    <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Generating personalized call scripts...</p>
-                    <p style={{ color: '#64748b', fontSize: '0.75rem' }}>Creating DISC-matched scripts for {contact.first_name || 'contact'}</p>
+                    <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Generating call scripts...</p>
                   </div>
                 )}
 
-                {/* Generated Call Scripts */}
                 {generatedCallScripts.length > 0 && !isGeneratingCallScripts && (
                   <div>
                     <p style={{ color: '#6ee7b7', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                      📞 {generatedCallScripts.length} call script variants generated
+                      📞 {generatedCallScripts.length} call scripts generated
                     </p>
                     {generatedCallScripts.map((script, idx) => (
                       <div key={idx} style={styles.variantCard}>
@@ -1345,7 +1548,6 @@ export default function ContactDetailModal({
                           <span style={styles.styleBadge}>{script.style}</span>
                           <span style={styles.qualityBadge}>Quality: {script.quality_score}/10</span>
                         </div>
-
                         <div style={styles.callScriptContent}>
                           <div style={styles.scriptSection}>
                             <div style={styles.scriptSectionLabel}>Opener</div>
@@ -1360,22 +1562,18 @@ export default function ContactDetailModal({
                             <div style={styles.scriptText}>{script.closer}</div>
                           </div>
                         </div>
-
                         <div style={styles.variantActions}>
                           <button
                             style={styles.actionBtn}
                             onClick={() => copyToClipboard(formatCallScript(script), `script-${idx}`)}
                           >
                             <Copy style={{ width: 14, height: 14 }} />
-                            {copiedField === `script-${idx}` ? 'Copied!' : 'Copy Script'}
+                            {copiedField === `script-${idx}` ? 'Copied!' : 'Copy'}
                           </button>
                           {contact.phone && (
-                            <a
-                              href={`tel:${contact.phone}`}
-                              style={styles.callBtn}
-                            >
+                            <a href={`tel:${contact.phone}`} style={styles.callBtn}>
                               <Phone style={{ width: 14, height: 14 }} />
-                              Call Now
+                              Call
                             </a>
                           )}
                         </div>
@@ -1384,32 +1582,8 @@ export default function ContactDetailModal({
                   </div>
                 )}
 
-                {/* Empty State for Call Scripts */}
                 {generatedCallScripts.length === 0 && !isGeneratingCallScripts && (
-                  <div>
-                    <p style={styles.noDataText}>
-                      Click "Generate Call Scripts" to create personalized, DISC-matched call scripts.
-                    </p>
-
-                    {/* Fallback: Show enrichment value props if available */}
-                    {enrichmentData?.messaging?.value_props && enrichmentData.messaging.value_props.length > 0 && (
-                      <div style={styles.fallbackSection}>
-                        <p style={styles.fallbackLabel}>📞 Quick Talking Points (from enrichment)</p>
-                        {enrichmentData.messaging.value_props.map((prop, i) => (
-                          <div
-                            key={i}
-                            style={styles.copyableItem}
-                            onClick={() => copyToClipboard(getBulletText(prop), `enrichment-prop-${i}`)}
-                          >
-                            <span style={{ flex: 1 }}>{getBulletText(prop)}</span>
-                            {copiedField === `enrichment-prop-${i}` && (
-                              <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <p style={styles.noDataText}>Click "Generate Scripts" to create personalized call scripts.</p>
                 )}
               </div>
             </div>
