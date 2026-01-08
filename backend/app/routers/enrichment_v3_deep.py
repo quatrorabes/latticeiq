@@ -570,10 +570,7 @@ async def trigger_deep_enrichment(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
-    """
-    Trigger deep enrichment for a contact using Perplexity API.
-    Returns immediately with status, enrichment runs synchronously.
-    """
+    """Trigger deep enrichment for a contact using Perplexity API."""
     
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
@@ -586,28 +583,42 @@ async def trigger_deep_enrichment(
     try:
         contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
         
+        # Debug logging
+        logger.info(f"Supabase response type: {type(contact_res.data)}, content: {contact_res.data[:1] if contact_res.data else 'empty'}")
+        
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
         
+        # Extract contact - handle nested list edge case
         contact = contact_res.data
+        if isinstance(contact, list):
+            contact = contact[0]
+        if isinstance(contact, list):  # Double-nested edge case
+            contact = contact[0]
         
         if not isinstance(contact, dict):
-            logger.error(f"Contact is not a dict, got: {type(contact)}")
-            raise HTTPException(status_code=500, detail="Invalid contact data")
+            logger.error(f"Contact extraction failed. Final type: {type(contact)}, raw data type: {type(contact_res.data)}")
+            raise HTTPException(status_code=500, detail=f"Invalid contact data: expected dict, got {type(contact).__name__}")
         
+        logger.info(f"Contact extracted successfully: {contact.get('id')}, {contact.get('firstname')} {contact.get('lastname')}")
+        
+        # Update status to processing
         supabase.table("contacts").update({
             "enrichment_status": "processing"
         }).eq("id", contact_id).execute()
         
+        # Call Perplexity API
         logger.info(f"Starting deep enrichment for contact {contact_id}")
         result = await call_perplexity_deep_research(api_key, contact)
         
+        # Transform to schema
         unified = build_unified_from_deep(
             contact_id=contact_id,
             parsed=result["parsed_payload"],
             model_name=result["model"],
         )
         
+        # Check for existing quick enrichment to merge
         existing_data = contact.get("enrichment_data") or {}
         quick_result = None
         if existing_data.get("mode") == "quick" and existing_data.get("data"):
@@ -616,9 +627,11 @@ async def trigger_deep_enrichment(
             except Exception as e:
                 logger.warning(f"Failed to parse existing quick enrichment: {e}")
         
+        # Merge if we have quick data
         if quick_result:
             unified = merge_quick_and_deep(quick_result, unified)
         
+        # Save to database
         enrichment_payload = {
             "mode": "deep",
             "data": unified.dict(),
@@ -644,7 +657,7 @@ async def trigger_deep_enrichment(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Deep enrichment failed for {contact_id}: {e}")
+        logger.error(f"Deep enrichment failed for {contact_id}: {e}", exc_info=True)
         
         try:
             supabase.table("contacts").update({
