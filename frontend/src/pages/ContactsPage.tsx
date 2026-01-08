@@ -477,11 +477,13 @@ export default function ContactsPage() {
       </div>
 
 
-      <ContactDetailModal
-        contact={selectedContact!}
-        isOpen={isModalOpen}
-        onClose={handleCloseModal}
-      />
+      {isModalOpen && selectedContact && (
+        <ContactDetailModal
+        contact={selectedContact}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+        />
+      )}  
     </div>
   );
 }
