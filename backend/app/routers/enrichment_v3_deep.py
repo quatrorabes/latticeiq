@@ -705,23 +705,33 @@ async def deep_enrich_result(
         "id, enrichment_data"
     ).eq("id", contact_id).execute()
     
-    # contact_res.data is always a list
     if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
     
     contact = contact_res.data[0]
-    data = contact.get("enrichment_data") or {}
-    if not data:
+    enrichment_data = contact.get("enrichment_data") or {}
+    
+    if not enrichment_data:
         raise HTTPException(status_code=404, detail="No enrichment data found")
 
-    if data.get("mode") == "deep" and data.get("data"):
-        return UnifiedEnrichmentResult.parse_obj(data["data"])
+    # Format 1: {"mode": "deep", "data": {...}}
+    if enrichment_data.get("mode") in ("deep", "quick") and enrichment_data.get("data"):
+        return UnifiedEnrichmentResult.parse_obj(enrichment_data["data"])
 
-    if data.get("mode") == "quick" and data.get("data"):
-        return UnifiedEnrichmentResult.parse_obj(data["data"])
+    # Format 2: {"data": {"meta": {"source": "quick"}, ...}} (direct structure)
+    if enrichment_data.get("data") and isinstance(enrichment_data["data"], dict):
+        inner = enrichment_data["data"]
+        if inner.get("meta"):  # Has UnifiedEnrichmentResult structure
+            return UnifiedEnrichmentResult.parse_obj(inner)
 
-    raise HTTPException(status_code=404, detail="Enrichment data not in expected format")
+    # Format 3: Direct UnifiedEnrichmentResult at top level
+    if enrichment_data.get("meta"):
+        return UnifiedEnrichmentResult.parse_obj(enrichment_data)
 
+    raise HTTPException(
+        status_code=404, 
+        detail=f"Enrichment data not in expected format. Keys: {list(enrichment_data.keys())}"
+    )
 
 @router.get(
     "/deep-enrich/{contact_id}/status",
