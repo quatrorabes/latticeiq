@@ -1,5 +1,6 @@
 // frontend/src/types/index.ts
 
+
 export interface EnrichmentData {
   summary?: string;
   opening_line?: string;
@@ -12,15 +13,17 @@ export interface EnrichmentData {
   recent_news?: string;
   provider?: string;
   generated_at?: string;
+  data?: any;  // ADD THIS for nested deep enrichment data
 }
+
 
 export interface Contact {
   id: string;
   workspace_id?: string;
   user_id?: string;
-  first_name: string;
-  last_name: string;
-  email: string;
+  first_name?: string;  // CHANGED: Made optional
+  last_name?: string;   // CHANGED: Made optional
+  email?: string;       // CHANGED: Made optional
   company?: string;
   phone?: string;
   title?: string;
@@ -44,7 +47,7 @@ export interface Contact {
   
   // Enrichment
   enrichment_status?: 'pending' | 'processing' | 'completed' | 'failed';
-  enrichment_data?: EnrichmentData;
+  enrichment_data?: EnrichmentData | any;  // CHANGED: Allow any for flexibility
   enrichment_full_profile?: string;
   enrichment_last_deep_enriched_at?: string;
   enrichment_deep_quality_score?: number;
@@ -59,14 +62,15 @@ export interface Contact {
   hubspot_metadata?: Record<string, any>;
   source?: string;
 
-  // Engagement (ADD THESE TWO LINES)
+  // Engagement
   engagement_status?: 'hot' | 'warm' | 'cold';
   engagement_score?: number;
   
   // Timestamps
-  created_at: string;
+  created_at?: string;  // CHANGED: Made optional
   updated_at?: string;
 }
+
 
 export interface ContactFilters {
   search?: string;
@@ -74,6 +78,7 @@ export interface ContactFilters {
   enrichmentStatus?: 'pending' | 'processing' | 'completed' | 'failed';
   minScore?: number;
 }
+
 
 export interface ScoreResponse {
   contact_id: string;
@@ -85,6 +90,7 @@ export interface ScoreResponse {
   spice_tier: 'hot' | 'warm' | 'cold';
   overall_score: number;
 }
+
 
 export interface ScoringConfig {
   framework: 'mdcp' | 'bant' | 'spice';

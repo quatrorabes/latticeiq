@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
+import { Contact } from '../types'  // <-- ADD THIS IMPORT
+
 
 interface EnrichmentBullet {
   text: string
@@ -8,12 +10,14 @@ interface EnrichmentBullet {
   strength?: number | null
 }
 
+
 interface ContactProfileBox {
   headline?: string | null
   role_summary?: string | null
   seniority?: string | null
   background_bullets?: EnrichmentBullet[]
 }
+
 
 interface CompanyProfileBox {
   one_liner?: string | null
@@ -23,11 +27,13 @@ interface CompanyProfileBox {
   key_products_or_services?: EnrichmentBullet[]
 }
 
+
 interface CurrentFocusBox {
   strategic_initiatives?: EnrichmentBullet[]
   recent_projects?: EnrichmentBullet[]
   primary_kpis?: EnrichmentBullet[]
 }
+
 
 interface BuyingSignalsBox {
   recent_news?: EnrichmentBullet[]
@@ -36,11 +42,13 @@ interface BuyingSignalsBox {
   timing_triggers?: EnrichmentBullet[]
 }
 
+
 interface RisksAndObjectionsBox {
   risk_bullets?: EnrichmentBullet[]
   likely_objections?: EnrichmentBullet[]
   landmines?: EnrichmentBullet[]
 }
+
 
 interface MessagingBox {
   cold_openers?: EnrichmentBullet[]
@@ -48,12 +56,14 @@ interface MessagingBox {
   call_to_action_ideas?: EnrichmentBullet[]
 }
 
+
 interface EnrichmentMeta {
   generated_at?: string
   source?: string
   model?: string
   provider?: string
 }
+
 
 interface UnifiedEnrichmentResult {
   contact_id?: string
@@ -66,25 +76,9 @@ interface UnifiedEnrichmentResult {
   meta?: EnrichmentMeta
 }
 
-// Match the Contact type from your existing types file (snake_case)
-interface Contact {
-  id: string
-  first_name?: string
-  last_name?: string
-  email?: string
-  phone?: string
-  company?: string
-  title?: string
-  enrichment_data?: any
-  enrichment_status?: string
-  mdcp_score?: number
-  bant_score?: number
-  spice_score?: number
-  created_at?: string
-  updated_at?: string
-  workspace_id?: string
-  [key: string]: any  // Allow additional properties
-}
+
+// DELETED: The local Contact interface that was here - now using shared type
+
 
 interface ContactDetailModalProps {
   contact: Contact
@@ -92,6 +86,7 @@ interface ContactDetailModalProps {
   onClose: () => void
   onUpdate?: (contact: Contact) => void
 }
+
 
 export default function ContactDetailModal({ 
   contact, 
@@ -106,10 +101,11 @@ export default function ContactDetailModal({
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
 
+
   // Load enrichment data from contact record
   useEffect(() => {
     if (contact?.enrichment_data) {
-      const data = contact.enrichment_data?.data || contact.enrichment_data
+      const data = (contact.enrichment_data as any)?.data || contact.enrichment_data
       if (data && typeof data === 'object') {
         setEnrichmentData(data as UnifiedEnrichmentResult)
         setEnrichmentStatus('completed')
@@ -118,9 +114,11 @@ export default function ContactDetailModal({
       setEnrichmentData(null)
       setEnrichmentStatus('idle')
     }
-  }, [contact.id, contact.enrichment_data])
+  }, [contact?.id, contact?.enrichment_data])
+
 
   if (!isOpen) return null
+
 
   // Deep Enrichment handler
   const handleDeepEnrich = async () => {
@@ -128,10 +126,12 @@ export default function ContactDetailModal({
     setEnrichmentStatus('processing')
     setEnrichmentError(null)
 
+
     try {
       const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
       const { data: sessionData } = await supabase.auth.getSession()
       const token = sessionData?.session?.access_token
+
 
       const response = await fetch(
         `${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}`,
@@ -144,16 +144,20 @@ export default function ContactDetailModal({
         }
       )
 
+
       if (!response.ok) {
         throw new Error(`Enrichment failed: ${response.status}`)
       }
+
 
       // Poll for results
       let attempts = 0
       const maxAttempts = 30
 
+
       while (attempts < maxAttempts) {
         await new Promise(resolve => setTimeout(resolve, 1000))
+
 
         const resultResponse = await fetch(
           `${API_URL}/api/v3/enrichment/deep-enrich/${contact.id}/result`,
@@ -164,6 +168,7 @@ export default function ContactDetailModal({
           }
         )
 
+
         if (resultResponse.ok) {
           const result = await resultResponse.json()
           const enrichData =
@@ -171,19 +176,22 @@ export default function ContactDetailModal({
             result?.data?.contact_profile ? result.data :
             null
 
+
           if (enrichData && enrichData.contact_profile) {
             setEnrichmentData(enrichData as UnifiedEnrichmentResult)
             setEnrichmentStatus('completed')
             if (onUpdate) {
-              onUpdate({ ...contact, enrichment_data: { data: enrichData } })
+              onUpdate({ ...contact, enrichment_data: { data: enrichData } } as Contact)
             }
             setIsEnriching(false)
             return
           }
         }
 
+
         attempts++
       }
+
 
       throw new Error('Enrichment timed out. Please try again.')
     } catch (error) {
@@ -195,11 +203,13 @@ export default function ContactDetailModal({
     }
   }
 
+
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
     setCopiedField(field)
     setTimeout(() => setCopiedField(null), 2000)
   }
+
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'N/A'
@@ -208,11 +218,13 @@ export default function ContactDetailModal({
     })
   }
 
+
   const getBulletText = (bullet: any): string => {
     if (typeof bullet === 'string') return bullet
     if (bullet?.text) return bullet.text
     return String(bullet)
   }
+
 
   // Section Renderers
   const renderContactProfile = (data: ContactProfileBox | undefined) => {
@@ -249,6 +261,7 @@ export default function ContactDetailModal({
       </div>
     )
   }
+
 
   const renderCompanyProfile = (data: CompanyProfileBox | undefined) => {
     if (!data) return null
@@ -296,6 +309,7 @@ export default function ContactDetailModal({
       </div>
     )
   }
+
 
   const renderCurrentFocus = (data: CurrentFocusBox | undefined) => {
     if (!data) return null
@@ -352,6 +366,7 @@ export default function ContactDetailModal({
     )
   }
 
+
   const renderBuyingSignals = (data: BuyingSignalsBox | undefined) => {
     if (!data) return null
     const hasContent = data.recent_news?.length || data.hiring_signals?.length || data.tech_changes?.length || data.timing_triggers?.length
@@ -407,6 +422,7 @@ export default function ContactDetailModal({
     )
   }
 
+
   const renderRisksAndObjections = (data: RisksAndObjectionsBox | undefined) => {
     if (!data) return null
     const hasContent = data.risk_bullets?.length || data.likely_objections?.length || data.landmines?.length
@@ -461,6 +477,7 @@ export default function ContactDetailModal({
       </div>
     )
   }
+
 
   const renderMessaging = (data: MessagingBox | undefined) => {
     if (!data) return null
@@ -523,9 +540,11 @@ export default function ContactDetailModal({
     )
   }
 
-  // Main render - use snake_case fields
+
+  // Main render - use snake_case fields (now from shared Contact type)
   const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
   const initials = contactName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
+
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -552,6 +571,7 @@ export default function ContactDetailModal({
           </div>
         </div>
 
+
         {/* Tabs */}
         <div className="flex border-b border-slate-700 bg-slate-800/50">
           {(['overview', 'enrichment', 'outreach', 'scores'] as const).map(tab => (
@@ -571,6 +591,7 @@ export default function ContactDetailModal({
             </button>
           ))}
         </div>
+
 
         {/* Content */}
         <div className="p-4 overflow-y-auto max-h-[calc(90vh-180px)]">
@@ -612,12 +633,14 @@ export default function ContactDetailModal({
                 )}
               </div>
 
+
               {enrichmentError && (
                 <div className="bg-red-500/20 border border-red-500/50 text-red-300 px-4 py-3 rounded-lg flex items-center gap-2">
                   <AlertCircle className="w-4 h-4" />
                   {enrichmentError}
                 </div>
               )}
+
 
               {isEnriching && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -631,6 +654,7 @@ export default function ContactDetailModal({
                 </div>
               )}
 
+
               {enrichmentData && !isEnriching && (
                 <div className="space-y-4">
                   {renderContactProfile(enrichmentData.contact_profile)}
@@ -641,6 +665,7 @@ export default function ContactDetailModal({
                   {renderMessaging(enrichmentData.messaging)}
                 </div>
               )}
+
 
               {!enrichmentData && !isEnriching && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -654,6 +679,7 @@ export default function ContactDetailModal({
               )}
             </div>
           )}
+
 
           {/* Overview Tab */}
           {activeTab === 'overview' && (
@@ -677,6 +703,7 @@ export default function ContactDetailModal({
             </div>
           )}
 
+
           {/* Outreach Tab */}
           {activeTab === 'outreach' && (
             <div className="flex flex-col items-center justify-center py-12 text-center">
@@ -685,6 +712,7 @@ export default function ContactDetailModal({
               <p className="text-slate-500 text-sm">Coming soon...</p>
             </div>
           )}
+
 
           {/* Scores Tab */}
           {activeTab === 'scores' && (
