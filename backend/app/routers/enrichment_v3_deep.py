@@ -148,8 +148,7 @@ RESPONSE FORMAT:
 Start your response with { and end with }
 No text before or after the JSON object
 No markdown code blocks (```)
-No citation numbers like  or [1][2]"""
-
+Removed citation markers because it was causing issues"""
 
 # ---------------------------------------------------------------------------
 # JSON Repair Utilities
