@@ -34,3 +34,4 @@ openai>=1.0.0
 sqlalchemy
 psycopg2-binary
 psycopg2-binary
+httpx
