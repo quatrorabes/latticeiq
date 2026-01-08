@@ -289,7 +289,9 @@ except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
     print(f"⚠️ Quick Enrichment router not loaded: {e}")
 
-# Deep Enrichment Router (NEW - unified schema with boxes)
+# Deep Enrichment Router (NEW - unified schema with boxes) - DEBUG VERSION
+    print("=" * 60, flush=True)
+    print("ATTEMPTING TO LOAD DEEP ENRICHMENT ROUTER...", flush=True)
 try:
     from app.routers.enrichment_v3_deep import router as deepenrichrouter
     app.include_router(deepenrichrouter, prefix="/api/v3")
@@ -299,14 +301,14 @@ try:
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/result",
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/debug"
     ]})
-    print("✅ Deep Enrichment router loaded (unified box schema)")
+    print("✅ Deep Enrichment router loaded (unified box schema)", flush=True)
 except Exception as e:
     import traceback
     full_traceback = traceback.format_exc()
+    print(f"{'=' * 60}\nFATAL: Deep Enrichment router FAILED!\nError: {e}\n{'=' * 60}\n{full_traceback}\n{'=' * 60}", flush=True)
     logger.error({"event": "router_import_failed", "router": "enrichment_deep", "error": str(e), "traceback": full_traceback})
-    print(f"⚠️ Deep Enrichment router not loaded: {e}")
-    print(f"Full traceback:\n{full_traceback}")
-
+    raise RuntimeError(f"Deep Enrichment router failed: {e}")
+print("=" * 60, flush=True)
 
 
 # Scoring Router
