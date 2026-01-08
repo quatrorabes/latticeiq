@@ -301,8 +301,13 @@ try:
     ]})
     print("✅ Deep Enrichment router loaded (unified box schema)")
 except Exception as e:
-    logger.warning({"event": "router_import_failed", "router": "enrichment_deep", "error": str(e)})
+    import traceback
+    full_traceback = traceback.format_exc()
+    logger.error({"event": "router_import_failed", "router": "enrichment_deep", "error": str(e), "traceback": full_traceback})
     print(f"⚠️ Deep Enrichment router not loaded: {e}")
+    print(f"Full traceback:\n{full_traceback}")
+
+
 
 # Scoring Router
 try:
