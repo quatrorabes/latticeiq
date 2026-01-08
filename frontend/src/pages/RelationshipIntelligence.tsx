@@ -1,14 +1,17 @@
 // pages/RelationshipIntelligence.tsx
 // Main dashboard component for LatticeIQ - WITH CONTACT DETAIL MODAL
 
+
 import { useEffect, useState } from 'react'
 import { Chart, registerables } from 'chart.js'
 import { supabase } from '../lib/supabaseClient'
 import ContactDetailModal from '../components/ContactDetailModal'
 import { Contact } from '../types'  // <-- Shared Contact type
 
+
 // Register Chart.js components
 Chart.register(...registerables)
+
 
 interface EngagementMetric {
   id: string
@@ -20,6 +23,7 @@ interface EngagementMetric {
   total_contacts_touched?: number
 }
 
+
 interface OutreachTip {
   id: string
   title: string
@@ -27,12 +31,14 @@ interface OutreachTip {
   category?: string
 }
 
+
 interface HealthMetrics {
   healthy_relationships_pct: number
   total_contacts_touched: number
   response_rate: number
   avg_response_time_days: number
 }
+
 
 // Fetch functions
 async function fetchEngagementVelocity(): Promise<EngagementMetric[]> {
@@ -50,6 +56,7 @@ async function fetchEngagementVelocity(): Promise<EngagementMetric[]> {
   }
 }
 
+
 async function fetchCallTodayContacts(limit = 3): Promise<Contact[]> {
   try {
     const { data, error } = await supabase
@@ -64,6 +71,7 @@ async function fetchCallTodayContacts(limit = 3): Promise<Contact[]> {
     return []
   }
 }
+
 
 async function fetchCurrentEngagementPercentage(): Promise<number> {
   try {
@@ -80,6 +88,7 @@ async function fetchCurrentEngagementPercentage(): Promise<number> {
   }
 }
 
+
 async function fetchRelationshipHealthMetrics(): Promise<EngagementMetric | null> {
   try {
     const { data, error } = await supabase
@@ -94,6 +103,7 @@ async function fetchRelationshipHealthMetrics(): Promise<EngagementMetric | null
     return null
   }
 }
+
 
 async function fetchOutreachTips(limit = 6): Promise<OutreachTip[]> {
   try {
@@ -110,6 +120,7 @@ async function fetchOutreachTips(limit = 6): Promise<OutreachTip[]> {
   }
 }
 
+
 // Fallback data generators
 function generateFallbackTrend(): EngagementMetric[] {
   const data: EngagementMetric[] = []
@@ -125,6 +136,7 @@ function generateFallbackTrend(): EngagementMetric[] {
   return data
 }
 
+
 function getFallbackTips(): OutreachTip[] {
   return [
     { id: '1', title: 'Try a Different Outreach Method', content: 'Instead of a standard email, try sending a personalized LinkedIn voice message.', category: 'channel' },
@@ -135,6 +147,7 @@ function getFallbackTips(): OutreachTip[] {
     { id: '6', title: 'Use Case Studies', content: 'Share relevant success stories from similar companies in their industry.', category: 'content' },
   ]
 }
+
 
 // Styles
 const styles = `
@@ -380,6 +393,7 @@ const styles = `
   }
 `
 
+
 export default function RelationshipIntelligence() {
   const [engagementPercentage, setEngagementPercentage] = useState(34)
   const [engagementTrend, setEngagementTrend] = useState<EngagementMetric[]>([])
@@ -390,9 +404,11 @@ export default function RelationshipIntelligence() {
   const [currentTipIndex, setCurrentTipIndex] = useState(0)
   const [chartInstance, setChartInstance] = useState<Chart | null>(null)
 
+
   // Modal state
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null)
   const [isModalOpen, setIsModalOpen] = useState(false)
+
 
   // Initialize data on mount
   useEffect(() => {
@@ -407,10 +423,12 @@ export default function RelationshipIntelligence() {
           fetchRelationshipHealthMetrics(),
         ])
 
+
         setEngagementPercentage(percentage)
         setEngagementTrend(trend.length > 0 ? trend : generateFallbackTrend())
         setCallTodayContacts(contacts)
         setOutreachTips(tips.length > 0 ? tips : getFallbackTips())
+
 
         if (metrics) {
           setHealthMetrics({
@@ -442,19 +460,24 @@ export default function RelationshipIntelligence() {
       }
     }
 
+
     initializeDashboard()
   }, [])
+
 
   // Initialize Chart.js
   useEffect(() => {
     if (engagementTrend.length === 0 || loading) return
 
+
     const ctx = document.getElementById('engagementChart') as HTMLCanvasElement
     if (!ctx) return
+
 
     if (chartInstance) {
       chartInstance.destroy()
     }
+
 
     const chartData = {
       labels: engagementTrend
@@ -476,6 +499,7 @@ export default function RelationshipIntelligence() {
         },
       ],
     }
+
 
     const newChart = new Chart(ctx, {
       type: 'line',
@@ -501,12 +525,15 @@ export default function RelationshipIntelligence() {
       },
     })
 
+
     setChartInstance(newChart)
+
 
     return () => {
       newChart.destroy()
     }
   }, [engagementTrend, loading])
+
 
   // Auto-rotate tips
   useEffect(() => {
@@ -517,7 +544,9 @@ export default function RelationshipIntelligence() {
     return () => clearInterval(interval)
   }, [outreachTips])
 
+
   const currentTip = outreachTips[currentTipIndex] || getFallbackTips()[0]
+
 
   const getContactName = (contact: Contact) => {
     if (contact.first_name || contact.last_name) {
@@ -526,13 +555,16 @@ export default function RelationshipIntelligence() {
     return contact.email?.split('@')[0] || 'Unknown'
   }
 
+
   const getEngagementStatus = (contact: Contact): 'hot' | 'warm' | 'cold' => {
-    if (contact.engagement_status) return contact.engagement_status
-    const score = contact.engagement_score || 0
+    const contactAny = contact as any
+    if (contactAny.engagement_status) return contactAny.engagement_status
+    const score = contactAny.engagement_score || 0
     if (score >= 70) return 'hot'
     if (score >= 40) return 'warm'
     return 'cold'
   }
+
 
   const getEngagementEmoji = (status: string) => {
     switch (status) {
@@ -543,11 +575,13 @@ export default function RelationshipIntelligence() {
     }
   }
 
+
   // Handler to open modal
   const handleContactClick = (contact: Contact) => {
     setSelectedContact(contact)
     setIsModalOpen(true)
   }
+
 
   // Handler to close modal
   const handleCloseModal = () => {
@@ -555,12 +589,14 @@ export default function RelationshipIntelligence() {
     setSelectedContact(null)
   }
 
-  // Handler for contact updates from modal
-  const handleContactUpdate = (updatedContact: Contact) => {
+
+  // Handler for contact updates from modal - FIX: Use type assertion to avoid strict type mismatch
+  const handleContactUpdate = (updatedContact: any) => {
     setCallTodayContacts(prev =>
-      prev.map(c => c.id === updatedContact.id ? updatedContact : c)
+      prev.map(c => c.id === updatedContact.id ? { ...c, ...updatedContact } as Contact : c)
     )
   }
+
 
   if (loading) {
     return (
@@ -571,6 +607,7 @@ export default function RelationshipIntelligence() {
     )
   }
 
+
   return (
     <>
       <style>{styles}</style>
@@ -579,6 +616,7 @@ export default function RelationshipIntelligence() {
           <h1>Relationship Intelligence Dashboard</h1>
           <p>Real-time insights into your contact engagement and outreach effectiveness</p>
         </div>
+
 
         <div className="ri-dashboard">
           <div className="ri-main">
@@ -596,6 +634,7 @@ export default function RelationshipIntelligence() {
                 <canvas id="engagementChart"></canvas>
               </div>
             </div>
+
 
             {/* Call Today Section */}
             <h2 className="ri-section-title">🎯 Call Today</h2>
@@ -637,6 +676,7 @@ export default function RelationshipIntelligence() {
               )}
             </div>
 
+
             {/* Health Metrics */}
             <h2 className="ri-section-title">📊 Relationship Health Metrics</h2>
             <div className="ri-metrics-grid">
@@ -663,6 +703,7 @@ export default function RelationshipIntelligence() {
             </div>
           </div>
 
+
           {/* Sidebar */}
           <div>
             <div className="ri-daily-tip">
@@ -676,6 +717,7 @@ export default function RelationshipIntelligence() {
           </div>
         </div>
       </div>
+
 
       {/* Contact Detail Modal */}
       {selectedContact && (
