@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { Contact } from '../types'
-import { generateEmails, EmailVariant } from '../api/outreach'
+import { generateEmails, generateCallScripts, EmailVariant, CallScriptVariant } from '../api/outreach'
 
 
 interface EnrichmentBullet {
@@ -284,6 +284,19 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
   },
+  btnGreen: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.5rem 1rem',
+    borderRadius: '8px',
+    fontWeight: 500,
+    backgroundColor: '#059669',
+    color: 'white',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+  },
   btnDisabled: {
     display: 'flex',
     alignItems: 'center',
@@ -427,6 +440,13 @@ const styles = {
     marginBottom: '1rem',
     borderRadius: '0 6px 6px 0',
   },
+  callScriptContent: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderLeft: '3px solid #10b981',
+    padding: '1rem',
+    marginBottom: '1rem',
+    borderRadius: '0 6px 6px 0',
+  },
   emailSubject: {
     color: '#f8fafc',
     fontWeight: 500,
@@ -434,6 +454,22 @@ const styles = {
     marginBottom: '0.5rem',
   },
   emailBody: {
+    color: '#cbd5e1',
+    fontSize: '0.875rem',
+    lineHeight: 1.6,
+    whiteSpace: 'pre-wrap' as const,
+  },
+  scriptSection: {
+    marginBottom: '0.75rem',
+  },
+  scriptSectionLabel: {
+    color: '#34d399',
+    fontSize: '0.7rem',
+    fontWeight: 600,
+    textTransform: 'uppercase' as const,
+    marginBottom: '0.25rem',
+  },
+  scriptText: {
     color: '#cbd5e1',
     fontSize: '0.875rem',
     lineHeight: 1.6,
@@ -465,6 +501,19 @@ const styles = {
     border: '1px solid rgba(34, 197, 94, 0.2)',
     borderRadius: '6px',
     color: '#86efac',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    textDecoration: 'none',
+  },
+  callBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.25rem',
+    padding: '0.375rem 0.75rem',
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    border: '1px solid rgba(16, 185, 129, 0.2)',
+    borderRadius: '6px',
+    color: '#6ee7b7',
     fontSize: '0.75rem',
     cursor: 'pointer',
     textDecoration: 'none',
@@ -501,10 +550,15 @@ export default function ContactDetailModal({
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
   
-  // Outreach state
+  // Outreach state - Emails
   const [generatedEmails, setGeneratedEmails] = useState<EmailVariant[]>([])
   const [isGeneratingEmails, setIsGeneratingEmails] = useState(false)
   const [emailError, setEmailError] = useState<string | null>(null)
+  
+  // Outreach state - Call Scripts
+  const [generatedCallScripts, setGeneratedCallScripts] = useState<CallScriptVariant[]>([])
+  const [isGeneratingCallScripts, setIsGeneratingCallScripts] = useState(false)
+  const [callScriptError, setCallScriptError] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -521,6 +575,8 @@ export default function ContactDetailModal({
     // Reset outreach state when contact changes
     setGeneratedEmails([])
     setEmailError(null)
+    setGeneratedCallScripts([])
+    setCallScriptError(null)
   }, [contact?.id, contact?.enrichment_data])
 
 
@@ -617,6 +673,24 @@ export default function ContactDetailModal({
   }
 
 
+  // Generate call scripts handler
+  const handleGenerateCallScripts = async () => {
+    setIsGeneratingCallScripts(true)
+    setCallScriptError(null)
+    try {
+      const response = await generateCallScripts(contact.id, 3)
+      setGeneratedCallScripts(response.variants)
+      console.log('✅ Generated call script variants:', response.variants)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate call scripts'
+      setCallScriptError(message)
+      console.error('❌ Call script generation error:', error)
+    } finally {
+      setIsGeneratingCallScripts(false)
+    }
+  }
+
+
   const copyToClipboard = async (text: string, field: string) => {
     await navigator.clipboard.writeText(text)
     setCopiedField(field)
@@ -636,6 +710,11 @@ export default function ContactDetailModal({
     if (typeof bullet === 'string') return bullet
     if (bullet?.text) return bullet.text
     return String(bullet)
+  }
+
+
+  const formatCallScript = (script: CallScriptVariant): string => {
+    return `OPENER:\n${script.opener}\n\nBODY:\n${script.body}\n\nCLOSER:\n${script.closer}`
   }
 
 
@@ -990,7 +1069,7 @@ export default function ContactDetailModal({
               {tab === 'enrichment' && enrichmentData && (
                 <CheckCircle2 style={{ width: 16, height: 16, color: '#34d399', marginLeft: '0.25rem' }} />
               )}
-              {tab === 'outreach' && generatedEmails.length > 0 && (
+              {tab === 'outreach' && (generatedEmails.length > 0 || generatedCallScripts.length > 0) && (
                 <CheckCircle2 style={{ width: 16, height: 16, color: '#34d399', marginLeft: '0.25rem' }} />
               )}
             </button>
@@ -1101,7 +1180,7 @@ export default function ContactDetailModal({
           {/* Outreach Tab */}
           {activeTab === 'outreach' && (
             <div>
-              {/* Email Generation Section */}
+              {/* ========== EMAIL GENERATION SECTION ========== */}
               <div style={styles.outreachSection}>
                 <div style={styles.outreachSectionHeader}>
                   <Mail style={{ width: 20, height: 20, color: '#60a5fa' }} />
@@ -1154,7 +1233,7 @@ export default function ContactDetailModal({
                 {generatedEmails.length > 0 && !isGeneratingEmails && (
                   <div>
                     <p style={{ color: '#a5b4fc', fontSize: '0.875rem', marginBottom: '1rem' }}>
-                      ✨ {generatedEmails.length} variants generated
+                      ✨ {generatedEmails.length} email variants generated
                     </p>
                     {generatedEmails.map((variant, idx) => (
                       <div key={idx} style={styles.variantCard}>
@@ -1196,62 +1275,140 @@ export default function ContactDetailModal({
                   </div>
                 )}
 
-                {/* Empty State / Fallback to Enrichment Data */}
+                {/* Empty State for Emails */}
                 {generatedEmails.length === 0 && !isGeneratingEmails && (
-                  <div>
-                    <p style={styles.noDataText}>
-                      Click "Generate Email Variants" to create personalized, DISC-matched outreach emails.
-                    </p>
-
-                    {/* Fallback: Show enrichment cold openers if available */}
-                    {enrichmentData?.messaging?.cold_openers && enrichmentData.messaging.cold_openers.length > 0 && (
-                      <div style={styles.fallbackSection}>
-                        <p style={styles.fallbackLabel}>📝 Quick Openers (from enrichment)</p>
-                        {enrichmentData.messaging.cold_openers.map((opener, i) => (
-                          <div
-                            key={i}
-                            style={styles.copyableItem}
-                            onClick={() => copyToClipboard(getBulletText(opener), `enrichment-opener-${i}`)}
-                          >
-                            <span style={{ flex: 1 }}>{getBulletText(opener)}</span>
-                            {copiedField === `enrichment-opener-${i}` && (
-                              <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  <p style={styles.noDataText}>
+                    Click "Generate Email Variants" to create personalized, DISC-matched outreach emails.
+                  </p>
                 )}
               </div>
 
-              {/* Call Scripts Section */}
+              {/* ========== CALL SCRIPT SECTION ========== */}
               <div style={styles.outreachSection}>
                 <div style={styles.outreachSectionHeader}>
                   <Phone style={{ width: 20, height: 20, color: '#34d399' }} />
                   <h3 style={styles.outreachSectionTitle}>Call Scripts</h3>
                 </div>
 
-                <p style={styles.noDataText}>
-                  Call script generation coming soon...
-                </p>
+                {callScriptError && (
+                  <div style={styles.errorBox}>
+                    <AlertCircle style={{ width: 16, height: 16 }} />
+                    {callScriptError}
+                  </div>
+                )}
 
-                {/* Fallback: Show enrichment value props if available */}
-                {enrichmentData?.messaging?.value_props && enrichmentData.messaging.value_props.length > 0 && (
-                  <div style={styles.fallbackSection}>
-                    <p style={styles.fallbackLabel}>📞 Quick Talking Points (from enrichment)</p>
-                    {enrichmentData.messaging.value_props.map((prop, i) => (
-                      <div
-                        key={i}
-                        style={styles.copyableItem}
-                        onClick={() => copyToClipboard(getBulletText(prop), `enrichment-prop-${i}`)}
-                      >
-                        <span style={{ flex: 1 }}>{getBulletText(prop)}</span>
-                        {copiedField === `enrichment-prop-${i}` && (
-                          <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
-                        )}
+                {/* Generation Button */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <button
+                    style={isGeneratingCallScripts ? styles.btnDisabled : styles.btnGreen}
+                    onClick={handleGenerateCallScripts}
+                    disabled={isGeneratingCallScripts}
+                  >
+                    {isGeneratingCallScripts ? (
+                      <>
+                        <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                        Generating... (15-30s)
+                      </>
+                    ) : generatedCallScripts.length > 0 ? (
+                      <>
+                        <RefreshCw style={{ width: 16, height: 16 }} />
+                        Regenerate Call Scripts
+                      </>
+                    ) : (
+                      <>
+                        <Zap style={{ width: 16, height: 16 }} />
+                        Generate Call Scripts
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Loading State */}
+                {isGeneratingCallScripts && (
+                  <div style={styles.loadingContainer}>
+                    <Loader2 style={{ width: 40, height: 40, color: '#34d399', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
+                    <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Generating personalized call scripts...</p>
+                    <p style={{ color: '#64748b', fontSize: '0.75rem' }}>Creating DISC-matched scripts for {contact.first_name || 'contact'}</p>
+                  </div>
+                )}
+
+                {/* Generated Call Scripts */}
+                {generatedCallScripts.length > 0 && !isGeneratingCallScripts && (
+                  <div>
+                    <p style={{ color: '#6ee7b7', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                      📞 {generatedCallScripts.length} call script variants generated
+                    </p>
+                    {generatedCallScripts.map((script, idx) => (
+                      <div key={idx} style={styles.variantCard}>
+                        <div style={styles.variantHeader}>
+                          <span style={styles.variantBadge}>Variant {script.variant_number}</span>
+                          <span style={styles.styleBadge}>{script.style}</span>
+                          <span style={styles.qualityBadge}>Quality: {script.quality_score}/10</span>
+                        </div>
+
+                        <div style={styles.callScriptContent}>
+                          <div style={styles.scriptSection}>
+                            <div style={styles.scriptSectionLabel}>Opener</div>
+                            <div style={styles.scriptText}>{script.opener}</div>
+                          </div>
+                          <div style={styles.scriptSection}>
+                            <div style={styles.scriptSectionLabel}>Body</div>
+                            <div style={styles.scriptText}>{script.body}</div>
+                          </div>
+                          <div style={styles.scriptSection}>
+                            <div style={styles.scriptSectionLabel}>Closer</div>
+                            <div style={styles.scriptText}>{script.closer}</div>
+                          </div>
+                        </div>
+
+                        <div style={styles.variantActions}>
+                          <button
+                            style={styles.actionBtn}
+                            onClick={() => copyToClipboard(formatCallScript(script), `script-${idx}`)}
+                          >
+                            <Copy style={{ width: 14, height: 14 }} />
+                            {copiedField === `script-${idx}` ? 'Copied!' : 'Copy Script'}
+                          </button>
+                          {contact.phone && (
+                            <a
+                              href={`tel:${contact.phone}`}
+                              style={styles.callBtn}
+                            >
+                              <Phone style={{ width: 14, height: 14 }} />
+                              Call Now
+                            </a>
+                          )}
+                        </div>
                       </div>
                     ))}
+                  </div>
+                )}
+
+                {/* Empty State for Call Scripts */}
+                {generatedCallScripts.length === 0 && !isGeneratingCallScripts && (
+                  <div>
+                    <p style={styles.noDataText}>
+                      Click "Generate Call Scripts" to create personalized, DISC-matched call scripts.
+                    </p>
+
+                    {/* Fallback: Show enrichment value props if available */}
+                    {enrichmentData?.messaging?.value_props && enrichmentData.messaging.value_props.length > 0 && (
+                      <div style={styles.fallbackSection}>
+                        <p style={styles.fallbackLabel}>📞 Quick Talking Points (from enrichment)</p>
+                        {enrichmentData.messaging.value_props.map((prop, i) => (
+                          <div
+                            key={i}
+                            style={styles.copyableItem}
+                            onClick={() => copyToClipboard(getBulletText(prop), `enrichment-prop-${i}`)}
+                          >
+                            <span style={{ flex: 1 }}>{getBulletText(prop)}</span>
+                            {copiedField === `enrichment-prop-${i}` && (
+                              <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
