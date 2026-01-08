@@ -156,71 +156,60 @@ def strip_citations(text: str) -> str:
     """Remove citation markers from text."""
     if not text:
         return text
-    # Remove [1], [2], [123] style citations
     cleaned = re.sub(r'\[\d+\]', '', text)
-    # Also remove standalone numbers that look like citations at end of sentences
     cleaned = re.sub(r'\s+\d+\s*$', '', cleaned)
     return cleaned.strip()
 
 def repair_truncated_json(content: str) -> str:
     """Attempt to repair truncated JSON by closing open brackets/braces."""
     content = content.rstrip()
-    
-    # If it ends properly, return as-is
+
     if content.endswith('}'):
         return content
-    
-    # Remove trailing incomplete string/value
+
     lines = content.split('\n')
     while lines:
         last_line = lines[-1].strip()
-        # Keep if line ends with valid JSON terminators
         if last_line.endswith(('}', ']', '"', ',', 'null', 'true', 'false')) or re.search(r'\d$', last_line):
             break
         lines.pop()
-    
+
     if not lines:
-        return content  # Can't repair, return original
-    
+        return content
+
     content = '\n'.join(lines)
-    
-    # Remove trailing comma if present before closing
     content = re.sub(r',\s*$', '', content)
-    
-    # Count unmatched brackets/braces
+
     open_braces = content.count('{') - content.count('}')
     open_brackets = content.count('[') - content.count(']')
-    
-    # Check if we're in the middle of a string (odd number of unescaped quotes)
+
     in_string = (content.count('"') - content.count('\\"')) % 2 == 1
     if in_string:
         content += '"'
-    
-    # Close arrays first, then objects
+
     content += ']' * max(0, open_brackets)
     content += '}' * max(0, open_braces)
-    
+
     return content
 
 def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
     """Convert various formats to list of EnrichmentBullet objects."""
     if value is None:
         return []
-    
+
     if isinstance(value, list):
         result = []
         for item in value:
             if isinstance(item, dict):
                 if 'text' in item:
                     text = strip_citations(str(item.get('text', '')))
-                    if text:  # Only add non-empty bullets
+                    if text:
                         result.append(EnrichmentBullet(
                             text=text,
                             evidence=item.get('evidence'),
                             strength=item.get('strength')
                         ))
                 else:
-                    # Dict without 'text' key - stringify it
                     text = strip_citations(str(item))
                     if text:
                         result.append(EnrichmentBullet(text=text))
@@ -230,19 +219,17 @@ def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
                 if text:
                     result.append(EnrichmentBullet(text=text))
         return result
-    
+
     if isinstance(value, str):
-        # Split on newlines if multiple items
         lines = [l.strip().lstrip('- ') for l in value.split('\n') if l.strip()]
         return [EnrichmentBullet(text=strip_citations(line)) for line in lines if line]
-    
+
     if isinstance(value, dict):
-        # Single dict, wrap in list
         text = strip_citations(str(value.get('text', str(value))))
         if text:
             return [EnrichmentBullet(text=text)]
         return []
-    
+
     return []
 
 def ensure_string(value: Any) -> Optional[str]:
@@ -259,23 +246,21 @@ def ensure_string(value: Any) -> Optional[str]:
 
 def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str) -> UnifiedEnrichmentResult:
     """Transform AI response to match expected UnifiedEnrichmentResult schema."""
-    
-    # Extract raw sections with fallbacks (handle both snake_case and camelCase)
+
     contact_raw = parsed.get("contact_profile") or parsed.get("contactprofile") or {}
     company_raw = parsed.get("company_profile") or parsed.get("companyprofile") or {}
     focus_raw = parsed.get("current_focus") or parsed.get("currentfocus") or {}
     signals_raw = parsed.get("buying_signals") or parsed.get("buyingsignals") or {}
     risks_raw = parsed.get("risks_and_objections") or parsed.get("risksandobjections") or {}
     messaging_raw = parsed.get("messaging") or {}
-    
-    # Handle case where sections are arrays instead of objects
+
     if isinstance(focus_raw, list):
         focus_raw = {
             "strategic_initiatives": focus_raw,
             "recent_projects": [],
             "primary_kpis": []
         }
-    
+
     if isinstance(signals_raw, list):
         signals_raw = {
             "recent_news": signals_raw,
@@ -283,36 +268,35 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
             "tech_changes": [],
             "timing_triggers": []
         }
-    
+
     if isinstance(risks_raw, list):
         risks_raw = {
             "risk_bullets": risks_raw,
             "likely_objections": [],
             "landmines": []
         }
-    
+
     if isinstance(messaging_raw, list):
         messaging_raw = {
             "cold_openers": messaging_raw,
             "value_props": [],
             "call_to_action_ideas": []
         }
-    
-    # Build properly typed objects
+
     contact_profile = ContactProfileBox(
         headline=ensure_string(
-            contact_raw.get("headline") or 
-            contact_raw.get("title") or 
+            contact_raw.get("headline") or
+            contact_raw.get("title") or
             contact_raw.get("name")
         ),
         role_summary=ensure_string(
-            contact_raw.get("role_summary") or 
+            contact_raw.get("role_summary") or
             contact_raw.get("rolesummary") or
             contact_raw.get("experience") or
             contact_raw.get("summary")
         ),
         seniority=ensure_string(
-            contact_raw.get("seniority") or 
+            contact_raw.get("seniority") or
             contact_raw.get("credentials") or
             contact_raw.get("level")
         ),
@@ -324,10 +308,10 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
             contact_raw.get("background")
         )
     )
-    
+
     company_profile = CompanyProfileBox(
         one_liner=ensure_string(
-            company_raw.get("one_liner") or 
+            company_raw.get("one_liner") or
             company_raw.get("oneliner") or
             company_raw.get("type") or
             company_raw.get("description")
@@ -339,7 +323,7 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
             company_raw.get("size")
         ),
         region=ensure_string(
-            company_raw.get("region") or 
+            company_raw.get("region") or
             company_raw.get("office") or
             company_raw.get("location")
         ),
@@ -350,68 +334,68 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
             company_raw.get("products")
         )
     )
-    
+
     current_focus = CurrentFocusBox(
         strategic_initiatives=ensure_bullet_list(
-            focus_raw.get("strategic_initiatives") or 
+            focus_raw.get("strategic_initiatives") or
             focus_raw.get("strategicinitiatives")
         ),
         recent_projects=ensure_bullet_list(
-            focus_raw.get("recent_projects") or 
+            focus_raw.get("recent_projects") or
             focus_raw.get("recentprojects")
         ),
         primary_kpis=ensure_bullet_list(
-            focus_raw.get("primary_kpis") or 
+            focus_raw.get("primary_kpis") or
             focus_raw.get("primarykpis")
         )
     )
-    
+
     buying_signals = BuyingSignalsBox(
         recent_news=ensure_bullet_list(
-            signals_raw.get("recent_news") or 
+            signals_raw.get("recent_news") or
             signals_raw.get("recentnews")
         ),
         hiring_signals=ensure_bullet_list(
-            signals_raw.get("hiring_signals") or 
+            signals_raw.get("hiring_signals") or
             signals_raw.get("hiringsignals")
         ),
         tech_changes=ensure_bullet_list(
-            signals_raw.get("tech_changes") or 
+            signals_raw.get("tech_changes") or
             signals_raw.get("techchanges")
         ),
         timing_triggers=ensure_bullet_list(
-            signals_raw.get("timing_triggers") or 
+            signals_raw.get("timing_triggers") or
             signals_raw.get("timingtriggers")
         )
     )
-    
+
     risks_and_objections = RisksAndObjectionsBox(
         risk_bullets=ensure_bullet_list(
-            risks_raw.get("risk_bullets") or 
+            risks_raw.get("risk_bullets") or
             risks_raw.get("riskbullets")
         ),
         likely_objections=ensure_bullet_list(
-            risks_raw.get("likely_objections") or 
+            risks_raw.get("likely_objections") or
             risks_raw.get("likelyobjections")
         ),
         landmines=ensure_bullet_list(risks_raw.get("landmines"))
     )
-    
+
     messaging = MessagingBox(
         cold_openers=ensure_bullet_list(
-            messaging_raw.get("cold_openers") or 
+            messaging_raw.get("cold_openers") or
             messaging_raw.get("coldopeners")
         ),
         value_props=ensure_bullet_list(
-            messaging_raw.get("value_props") or 
+            messaging_raw.get("value_props") or
             messaging_raw.get("valueprops")
         ),
         call_to_action_ideas=ensure_bullet_list(
-            messaging_raw.get("call_to_action_ideas") or 
+            messaging_raw.get("call_to_action_ideas") or
             messaging_raw.get("calltoactionideas")
         )
     )
-    
+
     meta = EnrichmentMeta(
         generated_at=datetime.utcnow().isoformat(),
         source="deep",
@@ -420,7 +404,7 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
         confidence_score=None,
         version=1,
     )
-    
+
     return UnifiedEnrichmentResult(
         contact_id=contact_id,
         contact_profile=contact_profile,
@@ -433,32 +417,27 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
     )
 
 # ---------------------------------------------------------------------------
-# Perplexity API Call - IMPROVED with better prompt
+# Perplexity API Call
 # ---------------------------------------------------------------------------
 
 async def call_perplexity_deep_research(
     api_key: str,
     contact: Dict[str, Any],
 ) -> Dict[str, Any]:
-    """
-    Run deep research using Perplexity API with improved prompt for high-quality structured data.
-    """
-    
-    # Extract contact details
+    """Run deep research using Perplexity API."""
+
     name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
     company = contact.get("company") or ""
     title = contact.get("title") or contact.get("job_title") or ""
     linkedin_url = contact.get("linkedin_url") or ""
     website = contact.get("website") or ""
     email = contact.get("email") or ""
-    
-    # Extract domain from email if no website
+
     if not website and email and "@" in email:
         domain = email.split("@")[1]
         if domain and not domain.endswith(("gmail.com", "yahoo.com", "hotmail.com", "outlook.com")):
             website = f"https://{domain}"
-    
-    # Build the user prompt with all available context
+
     user_prompt = f"""Research this B2B sales prospect and return the complete JSON structure:
 
 CONTACT INFORMATION:
@@ -484,15 +463,15 @@ START YOUR RESPONSE WITH {{ AND END WITH }}"""
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
-    
+
     payload = {
         "model": "sonar-pro",
         "messages": [
             {"role": "system", "content": DEEP_ENRICH_SYSTEM_PROMPT},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.2,  # Lower temperature for more factual, consistent output
-        "max_tokens": 16000,  # High token limit to prevent truncation
+        "temperature": 0.2,
+        "max_tokens": 16000,
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -508,19 +487,16 @@ START YOUR RESPONSE WITH {{ AND END WITH }}"""
     data = resp.json()
     content = data["choices"][0]["message"]["content"]
 
-    # Strip markdown code blocks if present
     clean_content = content.strip()
     if clean_content.startswith("```"):
         clean_content = re.sub(r'^```(?:json)?\s*', '', clean_content)
         clean_content = re.sub(r'\s*```$', '', clean_content)
-    
-    # Remove any text before the first { or after the last }
+
     first_brace = clean_content.find('{')
     last_brace = clean_content.rfind('}')
     if first_brace != -1 and last_brace != -1:
         clean_content = clean_content[first_brace:last_brace + 1]
-    
-    # Attempt to repair truncated JSON
+
     clean_content = repair_truncated_json(clean_content)
 
     try:
@@ -547,16 +523,14 @@ def build_unified_from_deep(
     parsed: Dict[str, Any],
     model_name: str,
 ) -> UnifiedEnrichmentResult:
-    """Build UnifiedEnrichmentResult from parsed AI response with schema transformation."""
+    """Build UnifiedEnrichmentResult from parsed AI response."""
     return transform_to_schema(contact_id, parsed, model_name)
 
 def merge_quick_and_deep(
     quick: Optional[UnifiedEnrichmentResult],
     deep: UnifiedEnrichmentResult,
 ) -> UnifiedEnrichmentResult:
-    """
-    Use deep as the source of truth; fall back to quick where deep is empty.
-    """
+    """Use deep as source of truth; fall back to quick where deep is empty."""
 
     if not quick:
         return deep
@@ -583,7 +557,109 @@ def merge_quick_and_deep(
     return merged
 
 # ---------------------------------------------------------------------------
-# Endpoints
+# POST Endpoint - TRIGGER Deep Enrichment (THIS WAS MISSING!)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/deep-enrich/{contact_id}",
+    response_model=DeepEnrichmentStatus,
+    summary="Trigger deep enrichment for a contact",
+)
+async def trigger_deep_enrichment(
+    contact_id: str = Path(...),
+    user=Depends(get_current_user),
+    supabase: Client = Depends(get_supabase),
+):
+    """
+    Trigger deep enrichment for a contact using Perplexity API.
+    Returns immediately with status, enrichment runs synchronously.
+    """
+    
+    api_key = os.getenv("PERPLEXITY_API_KEY")
+    if not api_key:
+        logger.error("PERPLEXITY_API_KEY not configured")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Deep enrichment service not configured",
+        )
+    
+    try:
+        contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
+        
+        if not contact_res.data or len(contact_res.data) == 0:
+            raise HTTPException(status_code=404, detail="Contact not found")
+        
+        contact = contact_res.data
+        
+        if not isinstance(contact, dict):
+            logger.error(f"Contact is not a dict, got: {type(contact)}")
+            raise HTTPException(status_code=500, detail="Invalid contact data")
+        
+        supabase.table("contacts").update({
+            "enrichment_status": "processing"
+        }).eq("id", contact_id).execute()
+        
+        logger.info(f"Starting deep enrichment for contact {contact_id}")
+        result = await call_perplexity_deep_research(api_key, contact)
+        
+        unified = build_unified_from_deep(
+            contact_id=contact_id,
+            parsed=result["parsed_payload"],
+            model_name=result["model"],
+        )
+        
+        existing_data = contact.get("enrichment_data") or {}
+        quick_result = None
+        if existing_data.get("mode") == "quick" and existing_data.get("data"):
+            try:
+                quick_result = UnifiedEnrichmentResult.parse_obj(existing_data["data"])
+            except Exception as e:
+                logger.warning(f"Failed to parse existing quick enrichment: {e}")
+        
+        if quick_result:
+            unified = merge_quick_and_deep(quick_result, unified)
+        
+        enrichment_payload = {
+            "mode": "deep",
+            "data": unified.dict(),
+            "raw_provider_response_deep": result.get("raw_provider_response"),
+            "raw_parsed_payload_deep": result.get("parsed_payload"),
+            "enriched_at": datetime.utcnow().isoformat(),
+        }
+        
+        supabase.table("contacts").update({
+            "enrichment_data": enrichment_payload,
+            "enrichment_status": "completed",
+        }).eq("id", contact_id).execute()
+        
+        logger.info(f"Deep enrichment completed for contact {contact_id}")
+        
+        return DeepEnrichmentStatus(
+            contact_id=contact_id,
+            job_id=None,
+            status="completed",
+            error=None,
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Deep enrichment failed for {contact_id}: {e}")
+        
+        try:
+            supabase.table("contacts").update({
+                "enrichment_status": "failed"
+            }).eq("id", contact_id).execute()
+        except Exception:
+            pass
+        
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Deep enrichment failed: {str(e)}",
+        )
+
+# ---------------------------------------------------------------------------
+# GET Endpoints
 # ---------------------------------------------------------------------------
 
 @router.get(
@@ -597,48 +673,42 @@ async def deep_enrich_result(
     supabase: Client = Depends(get_supabase),
 ):
     """Get the enrichment result for a contact - supports 3 storage formats"""
-    
+
     try:
         contact_res = supabase.table("contacts").select(
             "id, enrichment_data"
         ).eq("id", contact_id).execute()
-        
-        # ✅ DEFENSIVE HANDLING
+
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
-        
-        # ✅ CRITICAL FIX: Extract first item from list
-        contact = contact_res.data[0]
-        
-        # ✅ VALIDATE TYPE
+
+        contact = contact_res.data
+
         if not isinstance(contact, dict):
             logger.error(f"Contact is not a dict, got: {type(contact)}")
             raise HTTPException(status_code=500, detail="Invalid contact data")
-        
+
         enrichment_data = contact.get("enrichment_data") or {}
-        
+
         if not enrichment_data:
             raise HTTPException(status_code=404, detail="No enrichment data found")
-        
-        # Format 1: {"mode": "deep", "data": {...}}
+
         if enrichment_data.get("mode") in ("deep", "quick") and enrichment_data.get("data"):
             return UnifiedEnrichmentResult.parse_obj(enrichment_data["data"])
-        
-        # Format 2: {"data": {"meta": {"source": "quick"}, ...}} (direct structure)
+
         if enrichment_data.get("data") and isinstance(enrichment_data["data"], dict):
             inner = enrichment_data["data"]
-            if inner.get("meta"):  # Has UnifiedEnrichmentResult structure
+            if inner.get("meta"):
                 return UnifiedEnrichmentResult.parse_obj(inner)
-        
-        # Format 3: Direct UnifiedEnrichmentResult at top level
+
         if enrichment_data.get("meta"):
             return UnifiedEnrichmentResult.parse_obj(enrichment_data)
-        
+
         raise HTTPException(
-            status_code=404, 
+            status_code=404,
             detail=f"Enrichment data not in expected format. Keys: {list(enrichment_data.keys())}"
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -656,27 +726,23 @@ async def deep_enrich_status(
     supabase: Client = Depends(get_supabase),
 ):
     """Get the enrichment status for a contact"""
-    
+
     try:
         contact_res = supabase.table("contacts").select(
             "id, enrichment_status"
         ).eq("id", contact_id).execute()
-        
-        # ✅ DEFENSIVE HANDLING
+
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
-        
-        # ✅ CRITICAL FIX: Extract first item from list
-        contact = contact_res.data[0]
-        
-        # ✅ VALIDATE TYPE
+
+        contact = contact_res.data
+
         if not isinstance(contact, dict):
             logger.error(f"Contact is not a dict, got: {type(contact)}")
             raise HTTPException(status_code=500, detail="Invalid contact data")
-        
+
         status_value = contact.get("enrichment_status") or "pending"
-        
-        # Map database status to API status
+
         mapped = "queued"
         if status_value in ("pending", None):
             mapped = "queued"
@@ -686,14 +752,14 @@ async def deep_enrich_status(
             mapped = "completed"
         elif status_value == "failed":
             mapped = "failed"
-        
+
         return DeepEnrichmentStatus(
             contact_id=contact_id,
             job_id=None,
             status=mapped,
             error=None,
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
@@ -712,31 +778,28 @@ async def deep_enrich_debug(
     supabase: Client = Depends(get_supabase),
 ):
     """Debug endpoint - return all enrichment data and raw payloads"""
-    
+
     try:
         contact_res = supabase.table("contacts").select(
             "id, enrichment_data"
         ).eq("id", contact_id).execute()
-        
-        # ✅ DEFENSIVE HANDLING
+
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
-        
-        # ✅ CRITICAL FIX: Extract first item from list
-        contact = contact_res.data[0]
-        
-        # ✅ VALIDATE TYPE
+
+        contact = contact_res.data
+
         if not isinstance(contact, dict):
             logger.error(f"Contact is not a dict, got: {type(contact)}")
             raise HTTPException(status_code=500, detail="Invalid contact data")
-        
+
         data = contact.get("enrichment_data") or {}
         if not data or data.get("mode") != "deep":
             raise HTTPException(
                 status_code=404,
                 detail="No deep enrichment data found",
             )
-        
+
         parsed_unified = UnifiedEnrichmentResult.parse_obj(data["data"])
         status_obj = DeepEnrichmentStatus(
             contact_id=contact_id,
@@ -744,7 +807,7 @@ async def deep_enrich_debug(
             status="completed",
             error=None,
         )
-        
+
         return DebugDeepEnrichResponse(
             contact_id=contact_id,
             job_id=None,
@@ -757,7 +820,7 @@ async def deep_enrich_debug(
             parsed=parsed_unified,
             status=status_obj,
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
