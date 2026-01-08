@@ -223,7 +223,7 @@ export function ContactsTable({
         <tbody>
           {sortedContacts.map((contact) => {
             const isEnriching = enrichingIds.has(contact.id);
-            const fullName = `${contact.first_name} ${contact.last_name}`;
+            const fullName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
 
 
             return (
@@ -235,7 +235,7 @@ export function ContactsTable({
                 <td className="py-3 px-4">
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 rounded-full ${getAvatarColor(fullName)} flex items-center justify-center text-white font-medium text-sm`}>
-                      {getInitials(contact.first_name, contact.last_name)}
+                      {getInitials(contact.first_name || '', contact.last_name || '')}
                     </div>
                     <div>
                       <div className="text-slate-200 font-medium">{fullName}</div>
