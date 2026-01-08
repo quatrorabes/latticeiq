@@ -35,7 +35,6 @@ router = APIRouter(prefix="/enrichment", tags=["enrichment-deep"])
 
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 
-
 # ---------------------------------------------------------------------------
 # IMPROVED SYSTEM PROMPT - Explicit JSON schema for high-quality data
 # ---------------------------------------------------------------------------
@@ -46,7 +45,7 @@ CRITICAL REQUIREMENTS:
 1. Return VALID JSON only - no markdown, no extra text, no code blocks
 2. All fields must match the EXACT structure below
 3. Use empty arrays [] if no data found for a section
-4. NEVER include citation markers like [1], [2], [23] in any text
+4. NEVER include citation markers in any text
 5. No explanations before or after - ONLY the JSON object
 6. Each bullet must have 3-5 items minimum when data is available
 
@@ -147,23 +146,21 @@ RESEARCH INSTRUCTIONS:
 RESPONSE FORMAT:
 Start your response with { and end with }
 No text before or after the JSON object
-No markdown code blocks (```)
-Removed citation markers because it was causing issues"""
+No markdown code blocks"""
 
 # ---------------------------------------------------------------------------
 # JSON Repair Utilities
 # ---------------------------------------------------------------------------
 
 def strip_citations(text: str) -> str:
-    """Remove citation markers like,, etc. from text."""[3][1][2]
+    """Remove citation markers from text."""
     if not text:
         return text
-    # Remove,,,, etc.[12][1][2]
+    # Remove [1], [2], [123] style citations
     cleaned = re.sub(r'\[\d+\]', '', text)
     # Also remove standalone numbers that look like citations at end of sentences
     cleaned = re.sub(r'\s+\d+\s*$', '', cleaned)
     return cleaned.strip()
-
 
 def repair_truncated_json(content: str) -> str:
     """Attempt to repair truncated JSON by closing open brackets/braces."""
@@ -204,7 +201,6 @@ def repair_truncated_json(content: str) -> str:
     content += '}' * max(0, open_braces)
     
     return content
-
 
 def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
     """Convert various formats to list of EnrichmentBullet objects."""
@@ -249,7 +245,6 @@ def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
     
     return []
 
-
 def ensure_string(value: Any) -> Optional[str]:
     """Ensure value is a clean string or None."""
     if value is None:
@@ -261,7 +256,6 @@ def ensure_string(value: Any) -> Optional[str]:
         joined = '; '.join(str(v) for v in value if v)
         return strip_citations(joined) if joined else None
     return strip_citations(str(value))
-
 
 def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str) -> UnifiedEnrichmentResult:
     """Transform AI response to match expected UnifiedEnrichmentResult schema."""
@@ -438,7 +432,6 @@ def transform_to_schema(contact_id: str, parsed: Dict[str, Any], model_name: str
         meta=meta,
     )
 
-
 # ---------------------------------------------------------------------------
 # Perplexity API Call - IMPROVED with better prompt
 # ---------------------------------------------------------------------------
@@ -499,7 +492,7 @@ START YOUR RESPONSE WITH {{ AND END WITH }}"""
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.2,  # Lower temperature for more factual, consistent output
-        "max_tokens": 4000,  # High token limit to prevent truncation
+        "max_tokens": 16000,  # High token limit to prevent truncation
     }
 
     async with httpx.AsyncClient(timeout=120) as client:
@@ -545,7 +538,6 @@ START YOUR RESPONSE WITH {{ AND END WITH }}"""
         "model": data.get("model") or "sonar-pro",
     }
 
-
 # ---------------------------------------------------------------------------
 # Legacy build function (now wraps transform_to_schema)
 # ---------------------------------------------------------------------------
@@ -557,7 +549,6 @@ def build_unified_from_deep(
 ) -> UnifiedEnrichmentResult:
     """Build UnifiedEnrichmentResult from parsed AI response with schema transformation."""
     return transform_to_schema(contact_id, parsed, model_name)
-
 
 def merge_quick_and_deep(
     quick: Optional[UnifiedEnrichmentResult],
@@ -591,7 +582,6 @@ def merge_quick_and_deep(
 
     return merged
 
-
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
@@ -613,7 +603,7 @@ async def deep_enrich_contact(
         raise HTTPException(status_code=404, detail="Contact not found")
     
     # Extract first item from the list
-    contact = contact_res.data[0]
+    contact = contact_res.data
     
     # Double-check we have a dict
     if not isinstance(contact, dict):
@@ -689,11 +679,10 @@ async def deep_enrich_contact(
             error=str(e),
         )
 
-
 @router.get(
     "/deep-enrich/{contact_id}/result",
     response_model=UnifiedEnrichmentResult,
-    summary="Get the final merged enrichment result (deep preferred, quick fallback)",
+    summary="Get the final merged enrichment result",
 )
 async def deep_enrich_result(
     contact_id: str = Path(...),
@@ -707,7 +696,7 @@ async def deep_enrich_result(
     if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
     
-    contact = contact_res.data[0]
+    contact = contact_res.data
     enrichment_data = contact.get("enrichment_data") or {}
     
     if not enrichment_data:
@@ -748,7 +737,7 @@ async def deep_enrich_status(
     if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    contact = contact_res.data[0]
+    contact = contact_res.data
     status_value = contact.get("enrichment_status") or "pending"
 
     mapped = "queued"
@@ -768,7 +757,6 @@ async def deep_enrich_status(
         error=None,
     )
 
-
 @router.get(
     "/deep-enrich/{contact_id}/debug",
     response_model=DebugDeepEnrichResponse,
@@ -786,7 +774,7 @@ async def deep_enrich_debug(
     if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    contact = contact_res.data[0]
+    contact = contact_res.data
     data = contact.get("enrichment_data") or {}
     if not data or data.get("mode") != "deep":
         raise HTTPException(
