@@ -397,10 +397,11 @@ export default function ContactsPage() {
               <tr 
                 key={contact.id} 
                 style={styles.tr}
-                onClick={() => setSelectedContact(contact)}
-                alert('CLICKED!')
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onClick={() => {
+                  alert('CLICKED!')  // This should show a popup
+                  setSelectedContact(contact)
+                }}
+
               >
                 <td style={styles.td}>
                   <div style={styles.contactInfo}>
