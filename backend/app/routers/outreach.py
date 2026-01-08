@@ -436,7 +436,7 @@ IF "We already have a solution":
 ════════════════════════════════════════════════════════════════
 """
 
-    def generate_all_scripts(self, contact: Dict, business_context: str = "") -> Dict:
+        def generate_all_scripts(self, contact: Dict, business_context: str = "") -> Dict:
         """Generate all 3 script variants"""
 
         name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
@@ -453,11 +453,19 @@ IF "We already have a solution":
         for variant in [1, 2, 3]:
             try:
                 script_content = self.generate_script(contact, variant, business_context)
+                
+                # Parse the script into opener/body/closer sections
+                opener, body, closer = self._parse_script_sections(script_content)
+                
                 scripts.append(CallScriptVariant(
                     variant_number=variant,
                     style=SCRIPT_STYLES[variant],
                     style_description=self._get_style_description(variant),
-                    script=script_content
+                    opener=opener,
+                    body=body,
+                    closer=closer,
+                    quality_score=8.0,
+                    quality_notes="AI-generated DISC-optimized script"
                 ))
                 logger.info(f"✅ Generated call script variant {variant}")
             except Exception as e:
@@ -466,7 +474,11 @@ IF "We already have a solution":
                     variant_number=variant,
                     style=SCRIPT_STYLES[variant],
                     style_description=self._get_style_description(variant),
-                    script=f"Error generating script: {str(e)}"
+                    opener=f"Error: {str(e)}",
+                    body="Script generation failed. Please try again.",
+                    closer="Thank you for your time.",
+                    quality_score=0.0,
+                    quality_notes=f"Error: {str(e)}"
                 ))
 
         return {
@@ -481,14 +493,60 @@ IF "We already have a solution":
             "generated_at": datetime.utcnow().isoformat()
         }
 
-    def _get_style_description(self, variant: int) -> str:
-        """Get description for script style"""
-        descriptions = {
-            1: "Get to the point quickly, focus on results and ROI",
-            2: "Build rapport first, focus on relationship and understanding",
-            3: "Lead with insights, position yourself as a strategic advisor"
-        }
-        return descriptions.get(variant, "")
+    def _parse_script_sections(self, script_content: str) -> tuple:
+        """Parse script content into opener, body, closer sections"""
+        
+        # Default fallback
+        opener = ""
+        body = script_content
+        closer = ""
+        
+        # Try to extract sections based on markers
+        import re
+        
+        # Look for OPENER section
+        opener_match = re.search(r'(?:📞\s*OPENER|OPENER)[^\n]*\n(.*?)(?=🎯|HOOK|VALUE|❓|DISCOVERY|$)', script_content, re.DOTALL | re.IGNORECASE)
+        if opener_match:
+            opener = opener_match.group(1).strip()
+        
+        # Look for middle sections (HOOK + DISCOVERY) as body
+        body_parts = []
+        
+        hook_match = re.search(r'(?:🎯\s*HOOK|HOOK|VALUE PROP)[^\n]*\n(.*?)(?=❓|DISCOVERY|🛡️|OBJECTION|📅|CLOSE|$)', script_content, re.DOTALL | re.IGNORECASE)
+        if hook_match:
+            body_parts.append(hook_match.group(1).strip())
+        
+        discovery_match = re.search(r'(?:❓\s*DISCOVERY|DISCOVERY QUESTIONS)[^\n]*\n(.*?)(?=🛡️|OBJECTION|📅|CLOSE|$)', script_content, re.DOTALL | re.IGNORECASE)
+        if discovery_match:
+            body_parts.append(discovery_match.group(1).strip())
+        
+        objection_match = re.search(r'(?:🛡️\s*OBJECTION|OBJECTION HANDLING)[^\n]*\n(.*?)(?=📅|CLOSE|$)', script_content, re.DOTALL | re.IGNORECASE)
+        if objection_match:
+            body_parts.append(objection_match.group(1).strip())
+        
+        if body_parts:
+            body = "\n\n".join(body_parts)
+        
+        # Look for CLOSE section
+        close_match = re.search(r'(?:📅\s*CLOSE|CLOSE|CLOSING)[^\n]*\n(.*?)$', script_content, re.DOTALL | re.IGNORECASE)
+        if close_match:
+            closer = close_match.group(1).strip()
+        
+        # If nothing parsed, split roughly into thirds
+        if not opener and not closer:
+            lines = script_content.strip().split('\n')
+            total = len(lines)
+            if total >= 6:
+                opener = '\n'.join(lines[:total//3])
+                body = '\n'.join(lines[total//3:2*total//3])
+                closer = '\n'.join(lines[2*total//3:])
+            else:
+                opener = lines[0] if lines else ""
+                body = '\n'.join(lines[1:-1]) if len(lines) > 2 else script_content
+                closer = lines[-1] if len(lines) > 1 else ""
+        
+        return opener or "Hello, this is [Your Name].", body or script_content, closer or "Thank you for your time."
+
 
 
 # ============================================================================
