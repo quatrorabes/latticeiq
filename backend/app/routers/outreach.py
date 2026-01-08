@@ -436,8 +436,8 @@ IF "We already have a solution":
 ════════════════════════════════════════════════════════════════
 """
 
-        def generate_all_scripts(self, contact: Dict, business_context: str = "") -> Dict:
-            """Generate all 3 script variants"""
+    def generate_all_scripts(self, contact: Dict, business_context: str = "") -> Dict:
+        """Generate all 3 script variants"""
 
         name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
         if not name:
