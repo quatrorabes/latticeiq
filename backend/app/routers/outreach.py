@@ -114,12 +114,16 @@ class BusinessProfileResponse(BusinessProfileCreate):
 class EmailVariant(BaseModel):
     id: Optional[str] = None
     variant_number: int
-    style: str
-    style_description: str
-    subject: str
-    body: str
-    quality_score: float
-    quality_notes: str
+    style: str = ""
+    style_description: str = ""
+    subject: str = ""
+    body: str = ""
+    quality_score: float = 0.0
+    quality_notes: str = ""
+    is_favorite: Optional[bool] = False
+    is_sent: Optional[bool] = False
+    sent_at: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class GenerateEmailsRequest(BaseModel):
@@ -130,14 +134,14 @@ class GenerateEmailsRequest(BaseModel):
 
 class GenerateEmailsResponse(BaseModel):
     contact_id: str
-    contact_name: str
-    company: str
-    title: str
-    variants: List[EmailVariant]
-    generated_at: str
-    model_used: str
-    total_tokens: int
-    estimated_cost: float
+    contact_name: str = ""
+    company: Optional[str] = ""
+    title: Optional[str] = ""
+    variants: List[EmailVariant] = Field(default_factory=list)
+    generated_at: str = ""
+    model_used: str = ""
+    total_tokens: int = 0
+    estimated_cost: float = 0.0
 
 
 class RegenerateEmailRequest(BaseModel):
@@ -148,32 +152,44 @@ class RegenerateEmailRequest(BaseModel):
 
 # Call Script Models
 class CallScriptVariant(BaseModel):
+    id: Optional[str] = None
     variant_number: int
-    style: str
-    style_description: str
-    script: str
+    style: str = ""
+    style_description: str = ""
+    opener: str = ""
+    body: str = ""
+    closer: str = ""
+    quality_score: float = 0.0
+    quality_notes: str = ""
+    is_favorite: Optional[bool] = False
+    created_at: Optional[str] = None
 
 
 class PersonalityInfo(BaseModel):
     mbti: Optional[str] = None
-    disc: str
-    disc_name: str
+    disc: str = ""
+    disc_name: str = ""
 
 
 class GenerateCallScriptsRequest(BaseModel):
     contact_id: str
     business_context: Optional[str] = None
+    num_variants: int = Field(default=3, ge=1, le=5)
 
 
 class GenerateCallScriptsResponse(BaseModel):
-    success: bool
+    success: bool = True
     contact_id: str
-    contact_name: str
-    company: str
-    title: str
-    personality: PersonalityInfo
-    scripts: List[CallScriptVariant]
-    generated_at: str
+    contact_name: str = ""
+    company: Optional[str] = ""
+    title: Optional[str] = ""
+    personality: Optional[PersonalityInfo] = None
+    variants: List[CallScriptVariant] = Field(default_factory=list)
+    generated_at: str = ""
+    model_used: str = ""
+    total_tokens: int = 0
+    estimated_cost: float = 0.0
+
 
 
 # ============================================================================

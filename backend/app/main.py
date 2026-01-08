@@ -291,8 +291,8 @@ except Exception as e:
 
 # Deep Enrichment Router (NEW - unified schema with boxes)
 try:
-    from app.routers.enrichment_v3_deep import router as enrichment_v3_deep_router
-    app.include_router(deep_enrich_router, prefix="/api/v3")
+    from app.routers.enrichment_v3_deep import router as deepenrichrouter
+    app.include_router(deepenrichrouter, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrichment_deep", "endpoints": [
         "POST /api/v3/enrichment/deep-enrich/{contact_id}",
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/status",
@@ -307,7 +307,7 @@ except Exception as e:
 # Scoring Router
 try:
     from app.scoring.router import router as scoring_router
-    app.include_router(enrichment_v3_deep_router, prefix="/api/v3")
+    app.include_router(scoring_router, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "scoring"})
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
