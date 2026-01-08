@@ -394,14 +394,12 @@ export default function ContactsPage() {
           </thead>
           <tbody>
             {filteredContacts.map((contact) => (
-              <tr 
-                key={contact.id} 
-                style={styles.tr}
-                onClick={() => {
-                  alert('CLICKED!')  // This should show a popup
-                  setSelectedContact(contact)
-                }}
-
+              <tr
+              key={contact.id}
+              style={styles.tr}
+              onClick={() => setSelectedContact(contact)}
+              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)'}
+              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <td style={styles.td}>
                   <div style={styles.contactInfo}>
