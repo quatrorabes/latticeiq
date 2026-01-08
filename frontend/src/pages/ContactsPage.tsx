@@ -5,16 +5,20 @@ import { fetchContacts, deleteContact } from '../api/contacts';
 import { Contact } from '../types';
 import ContactDetailModal from '../components/ContactDetailModal';
 
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filter, setFilter] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+
 
   useEffect(() => {
     loadContacts();
   }, []);
+
 
   const loadContacts = async () => {
     setLoading(true);
@@ -28,6 +32,7 @@ export default function ContactsPage() {
     }
   };
 
+
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this contact?')) return;
@@ -39,6 +44,19 @@ export default function ContactsPage() {
     }
   };
 
+
+  const handleRowClick = (contact: Contact) => {
+    setSelectedContact(contact);
+    setIsModalOpen(true);
+  };
+
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedContact(null);
+  };
+
+
   const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
     const score = contact.mdcp_score || 0;
     if (score >= 70) return 'hot';
@@ -46,14 +64,17 @@ export default function ContactsPage() {
     return 'cold';
   };
 
+
   const getContactName = (contact: Contact): string => {
     return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
   };
+
 
   const getInitials = (contact: Contact): string => {
     const name = getContactName(contact);
     return name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '??';
   };
+
 
   const filteredContacts = contacts.filter(contact => {
     const matchesSearch = 
@@ -65,12 +86,14 @@ export default function ContactsPage() {
     return matchesSearch && getTier(contact) === filter;
   });
 
+
   const counts = {
     all: contacts.length,
     hot: contacts.filter(c => getTier(c) === 'hot').length,
     warm: contacts.filter(c => getTier(c) === 'warm').length,
     cold: contacts.filter(c => getTier(c) === 'cold').length,
   };
+
 
   const styles = {
     page: {
@@ -319,6 +342,7 @@ export default function ContactsPage() {
     } as React.CSSProperties,
   };
 
+
   if (loading) {
     return (
       <div style={styles.page}>
@@ -329,6 +353,7 @@ export default function ContactsPage() {
       </div>
     );
   }
+
 
   return (
     <div style={styles.page}>
@@ -354,6 +379,7 @@ export default function ContactsPage() {
         </div>
       </div>
 
+
       <div style={styles.controlsCard}>
         <input
           type="text"
@@ -378,6 +404,7 @@ export default function ContactsPage() {
         </div>
       </div>
 
+
       <div style={styles.tableCard}>
         <table style={styles.table}>
           <thead>
@@ -395,11 +422,11 @@ export default function ContactsPage() {
           <tbody>
             {filteredContacts.map((contact) => (
               <tr
-              key={contact.id}
-              style={styles.tr}
-              onClick={() => setSelectedContact(contact)}
-              onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)'}
-              onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                key={contact.id}
+                style={styles.tr}
+                onClick={() => handleRowClick(contact)}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
               >
                 <td style={styles.td}>
                   <div style={styles.contactInfo}>
@@ -441,6 +468,7 @@ export default function ContactsPage() {
           </tbody>
         </table>
 
+
         {filteredContacts.length === 0 && (
           <div style={styles.emptyState}>
             <p>No contacts found matching your criteria.</p>
@@ -448,13 +476,12 @@ export default function ContactsPage() {
         )}
       </div>
 
-      {selectedContact && (
-        <ContactDetailModal
-          contact={selectedContact}
-          isOpen={!!selectedContact}
-          onClose={() => setSelectedContact(null)}
-        />
-      )}
+
+      <ContactDetailModal
+        contact={selectedContact!}
+        isOpen={isModalOpen}
+        onClose={handleCloseModal}
+      />
     </div>
   );
 }
