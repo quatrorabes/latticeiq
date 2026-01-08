@@ -675,6 +675,11 @@ async def trigger_deep_enrichment(
 # GET Endpoints
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# GET Endpoints - FIXED with list unwrapping
+# ---------------------------------------------------------------------------
+
+
 @router.get(
     "/deep-enrich/{contact_id}/result",
     response_model=UnifiedEnrichmentResult,
@@ -695,7 +700,12 @@ async def deep_enrich_result(
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
 
+        # FIX: Extract first item from list
         contact = contact_res.data
+        if isinstance(contact, list):
+            contact = contact[0]
+        if isinstance(contact, list):  # Double-nested edge case
+            contact = contact[0]
 
         if not isinstance(contact, dict):
             logger.error(f"Contact is not a dict, got: {type(contact)}")
@@ -748,7 +758,12 @@ async def deep_enrich_status(
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
 
+        # FIX: Extract first item from list
         contact = contact_res.data
+        if isinstance(contact, list):
+            contact = contact[0]
+        if isinstance(contact, list):  # Double-nested edge case
+            contact = contact[0]
 
         if not isinstance(contact, dict):
             logger.error(f"Contact is not a dict, got: {type(contact)}")
@@ -800,7 +815,12 @@ async def deep_enrich_debug(
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
 
+        # FIX: Extract first item from list
         contact = contact_res.data
+        if isinstance(contact, list):
+            contact = contact[0]
+        if isinstance(contact, list):  # Double-nested edge case
+            contact = contact[0]
 
         if not isinstance(contact, dict):
             logger.error(f"Contact is not a dict, got: {type(contact)}")
@@ -839,3 +859,4 @@ async def deep_enrich_debug(
     except Exception as e:
         logger.error(f"Failed to get debug info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
