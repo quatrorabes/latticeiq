@@ -547,6 +547,16 @@ IF "We already have a solution":
         
         return opener or "Hello, this is [Your Name].", body or script_content, closer or "Thank you for your time."
 
+    def _get_style_description(self, variant: int) -> str:
+        """Get description for script style"""
+        descriptions = {
+            1: "Get to the point quickly, focus on results and ROI",
+            2: "Build rapport first, focus on relationship and understanding",
+            3: "Lead with insights, position yourself as a strategic advisor"
+        }
+        return descriptions.get(variant, "")
+
+
 
 
 # ============================================================================
