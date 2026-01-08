@@ -100,6 +100,7 @@ export default function ContactDetailModal({
   const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle')
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  console.log('MODAL PROPS:', { contact, isOpen })  // ADD THIS LINE
 
 
   // Load enrichment data from contact record
