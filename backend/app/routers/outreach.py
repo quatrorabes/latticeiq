@@ -1193,7 +1193,7 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
                 "contact_id": request.contact_id,
                 "content_type": "call_script",
                 "variant_number": script.variant_number,
-                "body": script.script,
+                "body": f"OPENER:\n{script.opener}\n\nBODY:\n{script.body}\n\nCLOSER:\n{script.closer}",
                 "style": script.style,
                 "style_description": script.style_description,
                 "model_used": "perplexity/gpt-4o"
