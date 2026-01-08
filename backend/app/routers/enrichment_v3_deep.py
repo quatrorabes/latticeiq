@@ -148,7 +148,7 @@ RESPONSE FORMAT:
 Start your response with { and end with }
 No text before or after the JSON object
 No markdown code blocks (```)
-No citation numbers like  or """[1][2]
+No citation numbers like  or [1][2]"""
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +156,7 @@ No citation numbers like  or """[1][2]
 # ---------------------------------------------------------------------------
 
 def strip_citations(text: str) -> str:
-    """Remove citation markers like,, etc. from text."""[2][3][1]
+    """Remove citation markers like,, etc. from text."""[3][1][2]
     if not text:
         return text
     # Remove,,,, etc.[12][1][2]
