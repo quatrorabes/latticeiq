@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
-import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert } from 'lucide-react'
+import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { Contact } from '../types'
+import { generateEmails, EmailVariant } from '../api/outreach'
 
 
 interface EnrichmentBullet {
@@ -270,6 +271,19 @@ const styles = {
     cursor: 'pointer',
     fontSize: '0.875rem',
   },
+  btnSecondary: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.5rem 1rem',
+    borderRadius: '8px',
+    fontWeight: 500,
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    color: '#a5b4fc',
+    border: '1px solid rgba(99, 102, 241, 0.3)',
+    cursor: 'pointer',
+    fontSize: '0.875rem',
+  },
   btnDisabled: {
     display: 'flex',
     alignItems: 'center',
@@ -355,6 +369,122 @@ const styles = {
     display: 'block',
     marginBottom: '0.5rem',
   },
+  // Outreach-specific styles
+  outreachSection: {
+    marginBottom: '2rem',
+  },
+  outreachSectionHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    marginBottom: '1rem',
+  },
+  outreachSectionTitle: {
+    color: 'white',
+    fontWeight: 600,
+    fontSize: '1rem',
+    margin: 0,
+  },
+  variantCard: {
+    backgroundColor: 'rgba(30, 41, 59, 0.5)',
+    border: '1px solid #334155',
+    borderRadius: '8px',
+    padding: '1rem',
+    marginBottom: '1rem',
+  },
+  variantHeader: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.75rem',
+    marginBottom: '0.75rem',
+  },
+  variantBadge: {
+    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    color: '#a5b4fc',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+    fontWeight: 600,
+  },
+  styleBadge: {
+    backgroundColor: 'rgba(52, 211, 153, 0.2)',
+    color: '#6ee7b7',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+  },
+  qualityBadge: {
+    backgroundColor: 'rgba(251, 191, 36, 0.2)',
+    color: '#fcd34d',
+    padding: '0.25rem 0.5rem',
+    borderRadius: '4px',
+    fontSize: '0.75rem',
+  },
+  emailContent: {
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderLeft: '3px solid #6366f1',
+    padding: '1rem',
+    marginBottom: '1rem',
+    borderRadius: '0 6px 6px 0',
+  },
+  emailSubject: {
+    color: '#f8fafc',
+    fontWeight: 500,
+    fontSize: '0.875rem',
+    marginBottom: '0.5rem',
+  },
+  emailBody: {
+    color: '#cbd5e1',
+    fontSize: '0.875rem',
+    lineHeight: 1.6,
+    whiteSpace: 'pre-wrap' as const,
+  },
+  variantActions: {
+    display: 'flex',
+    gap: '0.5rem',
+  },
+  actionBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.25rem',
+    padding: '0.375rem 0.75rem',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+    border: '1px solid rgba(99, 102, 241, 0.2)',
+    borderRadius: '6px',
+    color: '#a5b4fc',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    textDecoration: 'none',
+  },
+  sendBtn: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.25rem',
+    padding: '0.375rem 0.75rem',
+    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+    border: '1px solid rgba(34, 197, 94, 0.2)',
+    borderRadius: '6px',
+    color: '#86efac',
+    fontSize: '0.75rem',
+    cursor: 'pointer',
+    textDecoration: 'none',
+  },
+  fallbackSection: {
+    marginTop: '1.5rem',
+    paddingTop: '1.5rem',
+    borderTop: '1px solid #334155',
+  },
+  fallbackLabel: {
+    color: '#94a3b8',
+    fontSize: '0.85rem',
+    marginBottom: '1rem',
+  },
+  noDataText: {
+    color: '#64748b',
+    fontSize: '0.875rem',
+    textAlign: 'center' as const,
+    padding: '1rem',
+  },
 }
 
 
@@ -370,6 +500,11 @@ export default function ContactDetailModal({
   const [enrichmentStatus, setEnrichmentStatus] = useState<'idle' | 'processing' | 'completed' | 'failed'>('idle')
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
   const [copiedField, setCopiedField] = useState<string | null>(null)
+  
+  // Outreach state
+  const [generatedEmails, setGeneratedEmails] = useState<EmailVariant[]>([])
+  const [isGeneratingEmails, setIsGeneratingEmails] = useState(false)
+  const [emailError, setEmailError] = useState<string | null>(null)
 
 
   useEffect(() => {
@@ -383,6 +518,9 @@ export default function ContactDetailModal({
       setEnrichmentData(null)
       setEnrichmentStatus('idle')
     }
+    // Reset outreach state when contact changes
+    setGeneratedEmails([])
+    setEmailError(null)
   }, [contact?.id, contact?.enrichment_data])
 
 
@@ -457,6 +595,24 @@ export default function ContactDetailModal({
       setEnrichmentStatus('failed')
     } finally {
       setIsEnriching(false)
+    }
+  }
+
+
+  // Generate emails handler
+  const handleGenerateEmails = async () => {
+    setIsGeneratingEmails(true)
+    setEmailError(null)
+    try {
+      const response = await generateEmails(contact.id, 3)
+      setGeneratedEmails(response.variants)
+      console.log('✅ Generated email variants:', response.variants)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to generate emails'
+      setEmailError(message)
+      console.error('❌ Email generation error:', error)
+    } finally {
+      setIsGeneratingEmails(false)
     }
   }
 
@@ -834,12 +990,37 @@ export default function ContactDetailModal({
               {tab === 'enrichment' && enrichmentData && (
                 <CheckCircle2 style={{ width: 16, height: 16, color: '#34d399', marginLeft: '0.25rem' }} />
               )}
+              {tab === 'outreach' && generatedEmails.length > 0 && (
+                <CheckCircle2 style={{ width: 16, height: 16, color: '#34d399', marginLeft: '0.25rem' }} />
+              )}
             </button>
           ))}
         </div>
 
         {/* Content */}
         <div style={styles.content}>
+          {/* Overview Tab */}
+          {activeTab === 'overview' && (
+            <div style={styles.grid2}>
+              <div style={styles.card}>
+                <span style={styles.label}>Email</span>
+                <span style={styles.value}>{contact.email || 'N/A'}</span>
+              </div>
+              <div style={styles.card}>
+                <span style={styles.label}>Phone</span>
+                <span style={styles.value}>{contact.phone || 'N/A'}</span>
+              </div>
+              <div style={styles.card}>
+                <span style={styles.label}>Company</span>
+                <span style={styles.value}>{contact.company || 'N/A'}</span>
+              </div>
+              <div style={styles.card}>
+                <span style={styles.label}>Title</span>
+                <span style={styles.value}>{contact.title || 'N/A'}</span>
+              </div>
+            </div>
+          )}
+
           {/* Enrichment Tab */}
           {activeTab === 'enrichment' && (
             <div>
@@ -917,34 +1098,163 @@ export default function ContactDetailModal({
             </div>
           )}
 
-          {/* Overview Tab */}
-          {activeTab === 'overview' && (
-            <div style={styles.grid2}>
-              <div style={styles.card}>
-                <span style={styles.label}>Email</span>
-                <span style={styles.value}>{contact.email || 'N/A'}</span>
-              </div>
-              <div style={styles.card}>
-                <span style={styles.label}>Phone</span>
-                <span style={styles.value}>{contact.phone || 'N/A'}</span>
-              </div>
-              <div style={styles.card}>
-                <span style={styles.label}>Company</span>
-                <span style={styles.value}>{contact.company || 'N/A'}</span>
-              </div>
-              <div style={styles.card}>
-                <span style={styles.label}>Title</span>
-                <span style={styles.value}>{contact.title || 'N/A'}</span>
-              </div>
-            </div>
-          )}
-
           {/* Outreach Tab */}
           {activeTab === 'outreach' && (
-            <div style={styles.emptyState}>
-              <MessageSquare style={{ width: 48, height: 48, color: '#475569', marginBottom: '1rem' }} />
-              <h3 style={styles.emptyTitle}>Outreach Templates</h3>
-              <p style={styles.emptyText}>Coming soon...</p>
+            <div>
+              {/* Email Generation Section */}
+              <div style={styles.outreachSection}>
+                <div style={styles.outreachSectionHeader}>
+                  <Mail style={{ width: 20, height: 20, color: '#60a5fa' }} />
+                  <h3 style={styles.outreachSectionTitle}>Email Outreach</h3>
+                </div>
+
+                {emailError && (
+                  <div style={styles.errorBox}>
+                    <AlertCircle style={{ width: 16, height: 16 }} />
+                    {emailError}
+                  </div>
+                )}
+
+                {/* Generation Button */}
+                <div style={{ marginBottom: '1rem' }}>
+                  <button
+                    style={isGeneratingEmails ? styles.btnDisabled : styles.btnPrimary}
+                    onClick={handleGenerateEmails}
+                    disabled={isGeneratingEmails}
+                  >
+                    {isGeneratingEmails ? (
+                      <>
+                        <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                        Generating... (15-30s)
+                      </>
+                    ) : generatedEmails.length > 0 ? (
+                      <>
+                        <RefreshCw style={{ width: 16, height: 16 }} />
+                        Regenerate Email Variants
+                      </>
+                    ) : (
+                      <>
+                        <Zap style={{ width: 16, height: 16 }} />
+                        Generate Email Variants
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* Loading State */}
+                {isGeneratingEmails && (
+                  <div style={styles.loadingContainer}>
+                    <Loader2 style={{ width: 40, height: 40, color: '#60a5fa', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
+                    <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Generating personalized email variants...</p>
+                    <p style={{ color: '#64748b', fontSize: '0.75rem' }}>Creating DISC-matched outreach for {contact.first_name || 'contact'}</p>
+                  </div>
+                )}
+
+                {/* Generated Emails */}
+                {generatedEmails.length > 0 && !isGeneratingEmails && (
+                  <div>
+                    <p style={{ color: '#a5b4fc', fontSize: '0.875rem', marginBottom: '1rem' }}>
+                      ✨ {generatedEmails.length} variants generated
+                    </p>
+                    {generatedEmails.map((variant, idx) => (
+                      <div key={idx} style={styles.variantCard}>
+                        <div style={styles.variantHeader}>
+                          <span style={styles.variantBadge}>Variant {variant.variant_number}</span>
+                          <span style={styles.styleBadge}>{variant.style}</span>
+                          <span style={styles.qualityBadge}>Quality: {variant.quality_score}/10</span>
+                        </div>
+
+                        <div style={styles.emailContent}>
+                          <div style={styles.emailSubject}>
+                            <strong>Subject:</strong> {variant.subject}
+                          </div>
+                          <div style={styles.emailBody}>
+                            {variant.body}
+                          </div>
+                        </div>
+
+                        <div style={styles.variantActions}>
+                          <button
+                            style={styles.actionBtn}
+                            onClick={() => copyToClipboard(`Subject: ${variant.subject}\n\n${variant.body}`, `email-${idx}`)}
+                          >
+                            <Copy style={{ width: 14, height: 14 }} />
+                            {copiedField === `email-${idx}` ? 'Copied!' : 'Copy'}
+                          </button>
+                          {contact.email && (
+                            <a
+                              href={`mailto:${contact.email}?subject=${encodeURIComponent(variant.subject)}&body=${encodeURIComponent(variant.body)}`}
+                              style={styles.sendBtn}
+                            >
+                              <Send style={{ width: 14, height: 14 }} />
+                              Send Email
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Empty State / Fallback to Enrichment Data */}
+                {generatedEmails.length === 0 && !isGeneratingEmails && (
+                  <div>
+                    <p style={styles.noDataText}>
+                      Click "Generate Email Variants" to create personalized, DISC-matched outreach emails.
+                    </p>
+
+                    {/* Fallback: Show enrichment cold openers if available */}
+                    {enrichmentData?.messaging?.cold_openers && enrichmentData.messaging.cold_openers.length > 0 && (
+                      <div style={styles.fallbackSection}>
+                        <p style={styles.fallbackLabel}>📝 Quick Openers (from enrichment)</p>
+                        {enrichmentData.messaging.cold_openers.map((opener, i) => (
+                          <div
+                            key={i}
+                            style={styles.copyableItem}
+                            onClick={() => copyToClipboard(getBulletText(opener), `enrichment-opener-${i}`)}
+                          >
+                            <span style={{ flex: 1 }}>{getBulletText(opener)}</span>
+                            {copiedField === `enrichment-opener-${i}` && (
+                              <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Call Scripts Section */}
+              <div style={styles.outreachSection}>
+                <div style={styles.outreachSectionHeader}>
+                  <Phone style={{ width: 20, height: 20, color: '#34d399' }} />
+                  <h3 style={styles.outreachSectionTitle}>Call Scripts</h3>
+                </div>
+
+                <p style={styles.noDataText}>
+                  Call script generation coming soon...
+                </p>
+
+                {/* Fallback: Show enrichment value props if available */}
+                {enrichmentData?.messaging?.value_props && enrichmentData.messaging.value_props.length > 0 && (
+                  <div style={styles.fallbackSection}>
+                    <p style={styles.fallbackLabel}>📞 Quick Talking Points (from enrichment)</p>
+                    {enrichmentData.messaging.value_props.map((prop, i) => (
+                      <div
+                        key={i}
+                        style={styles.copyableItem}
+                        onClick={() => copyToClipboard(getBulletText(prop), `enrichment-prop-${i}`)}
+                      >
+                        <span style={{ flex: 1 }}>{getBulletText(prop)}</span>
+                        {copiedField === `enrichment-prop-${i}` && (
+                          <span style={{ color: '#34d399', fontSize: '0.75rem' }}>Copied!</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
