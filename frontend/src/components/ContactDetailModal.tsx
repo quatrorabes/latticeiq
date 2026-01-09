@@ -95,6 +95,23 @@ interface QuickEnrichResult {
 }
 
 
+// Legacy format from backend (snake_case / camelCase mix from Python)
+interface QuickEnrichLegacyResponse {
+  summary?: string
+  openingline?: string
+  talkingpoints?: string
+  personatype?: string
+  vertical?: string
+  inferredtitle?: string
+  inferredcompanywebsite?: string
+  inferredlocation?: string
+  provider?: string
+  model?: string
+  generatedat?: string
+  rawtext?: string
+}
+
+
 interface ContactDetailModalProps {
   contact: Contact
   isOpen: boolean
@@ -591,6 +608,31 @@ const styles = {
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com'
 
 
+// Helper to parse legacy response into QuickEnrichResult
+function parseLegacyToQuickEnrich(legacy: QuickEnrichLegacyResponse): QuickEnrichResult {
+  // Parse talking points - backend sends as string with " • " separator
+  let talkingPoints: string[] = []
+  if (legacy.talkingpoints) {
+    talkingPoints = legacy.talkingpoints.split(' • ').filter(Boolean)
+  }
+  
+  return {
+    summary: legacy.summary || undefined,
+    opening_line: legacy.openingline || undefined,
+    talking_points: talkingPoints.length > 0 ? talkingPoints : undefined,
+    vertical: legacy.vertical || undefined,
+    provider: legacy.provider || undefined,
+    generated_at: legacy.generatedat || undefined,
+  }
+}
+
+
+// Helper to check if data is UnifiedEnrichmentResult format
+function isUnifiedFormat(data: any): data is UnifiedEnrichmentResult {
+  return data && (data.contact_profile || data.company_profile || data.messaging)
+}
+
+
 export default function ContactDetailModal({ 
   contact, 
   isOpen, 
@@ -634,13 +676,33 @@ export default function ContactDetailModal({
     setLocalContact(contact)
     
     if (contact?.enrichment_data) {
-      const data = (contact.enrichment_data as any)?.data || contact.enrichment_data
-      if (data && typeof data === 'object') {
-        // Check if it's deep enrichment (has contact_profile) or quick enrichment (has summary)
-        if (data.contact_profile) {
-          setEnrichmentData(data as UnifiedEnrichmentResult)
-        } else if (data.summary || data.talking_points) {
-          setQuickEnrichData(data as QuickEnrichResult)
+      const rawData = contact.enrichment_data as any
+      
+      // Check for the new structure: { mode: 'quick', data: {...}, legacy: {...} }
+      if (rawData?.mode === 'quick') {
+        // Quick enrich format from backend
+        if (rawData.data && isUnifiedFormat(rawData.data)) {
+          setEnrichmentData(rawData.data as UnifiedEnrichmentResult)
+        }
+        if (rawData.legacy) {
+          setQuickEnrichData(parseLegacyToQuickEnrich(rawData.legacy))
+        }
+      } else {
+        // Legacy format - try to detect what type of data it is
+        const data = rawData?.data || rawData
+        
+        if (data && typeof data === 'object') {
+          if (isUnifiedFormat(data)) {
+            // Deep enrichment format
+            setEnrichmentData(data as UnifiedEnrichmentResult)
+          } else if (data.summary || data.talking_points || data.openingline) {
+            // Quick enrichment legacy format
+            if (data.openingline) {
+              setQuickEnrichData(parseLegacyToQuickEnrich(data))
+            } else {
+              setQuickEnrichData(data as QuickEnrichResult)
+            }
+          }
         }
       }
     } else {
@@ -695,15 +757,16 @@ export default function ContactDetailModal({
       const result = await response.json()
       console.log('✅ Scoring result:', result)
       
-      // Extract scores from result - handle various response formats
-      const scores = result.scores || result.data?.scores || result
-      
-      // Update local contact with new scores
+      // Update local contact with new scores - handle ScoreResponse format
       const updatedContact = {
         ...localContact,
-        mdcp_score: scores.mdcp_score ?? scores.mdcp ?? localContact.mdcp_score,
-        bant_score: scores.bant_score ?? scores.bant ?? localContact.bant_score,
-        spice_score: scores.spice_score ?? scores.spice ?? localContact.spice_score,
+        mdcp_score: result.mdcp_score ?? localContact.mdcp_score,
+        mdcp_tier: result.mdcp_tier ?? localContact.mdcp_tier,
+        bant_score: result.bant_score ?? localContact.bant_score,
+        bant_tier: result.bant_tier ?? localContact.bant_tier,
+        spice_score: result.spice_score ?? localContact.spice_score,
+        spice_tier: result.spice_tier ?? localContact.spice_tier,
+        overall_score: result.overall_score ?? localContact.overall_score,
       }
       
       setLocalContact(updatedContact)
@@ -716,7 +779,8 @@ export default function ContactDetailModal({
       console.log('📊 Updated scores:', {
         mdcp: updatedContact.mdcp_score,
         bant: updatedContact.bant_score,
-        spice: updatedContact.spice_score
+        spice: updatedContact.spice_score,
+        overall: updatedContact.overall_score
       })
     } catch (error) {
       console.error('❌ Scoring error:', error)
@@ -754,13 +818,30 @@ export default function ContactDetailModal({
       const result = await response.json()
       console.log('✅ Quick enrich result:', result)
       
-      // The result might be directly the data or wrapped
-      const enrichData = result.data || result
-      setQuickEnrichData(enrichData as QuickEnrichResult)
+      // Parse the response - backend returns:
+      // { contactid, status, data: UnifiedEnrichmentResult, legacy: QuickEnrichLegacyData }
       
-      // Update parent if callback provided
+      // Set quick intel data from legacy field
+      if (result.legacy) {
+        const quickData = parseLegacyToQuickEnrich(result.legacy)
+        console.log('📋 Parsed quick intel data:', quickData)
+        setQuickEnrichData(quickData)
+      }
+      
+      // Also set deep enrichment data from data field (it's in UnifiedEnrichmentResult format)
+      if (result.data && isUnifiedFormat(result.data)) {
+        console.log('📊 Setting enrichment data from quick-enrich:', result.data)
+        setEnrichmentData(result.data as UnifiedEnrichmentResult)
+      }
+      
+      // Update parent if callback provided - store full response structure
       if (onUpdate) {
-        onUpdate({ ...contact, enrichment_data: enrichData } as Contact)
+        const enrichmentPayload = {
+          mode: 'quick',
+          data: result.data,
+          legacy: result.legacy,
+        }
+        onUpdate({ ...contact, enrichment_data: enrichmentPayload } as Contact)
       }
       
       // Auto-trigger scoring after successful quick enrich
