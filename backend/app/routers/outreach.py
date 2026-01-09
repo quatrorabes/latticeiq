@@ -1237,7 +1237,7 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
         if not contact_res.data:
             raise HTTPException(status_code=404, detail="Contact not found")
 
-        contact = contact_res.data  # ✅ FIX: Get first item, not entire list
+        contact = contact_res.data[0]  # ✅ FIX: Get first item, not entire list
 
         # Get business profile for context
         business_context = ""
@@ -1248,7 +1248,7 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
                 .execute()
             
             if profile_res.data and len(profile_res.data) > 0:
-                bp = profile_res.data  # ✅ FIX: Get first item, not entire list
+                bp = profile_res.data[0]  # ✅ FIX: Get first item, not entire list
                 
                 # Handle both dict and object types from Supabase
                 if isinstance(bp, dict):
