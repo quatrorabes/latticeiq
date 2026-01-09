@@ -290,11 +290,11 @@ except Exception as e:
     print(f"⚠️ Quick Enrichment router not loaded: {e}")
 
 # Deep Enrichment Router (NEW - unified schema with boxes) - DEBUG VERSION
-    print("=" * 60, flush=True)
-    print("ATTEMPTING TO LOAD DEEP ENRICHMENT ROUTER...", flush=True)
+print("=" * 60, flush=True)
+print("ATTEMPTING TO LOAD DEEP ENRICHMENT ROUTER...", flush=True)
 try:
     from app.routers.enrichment_v3_deep import router as deepenrichrouter
-    app.include_router(deepenrichrouter, prefix="/api/v3")
+    app.include_router(deepenrichrouter, prefix="/api/v3/enrichment")
     logger.info({"event": "router_registered", "router": "enrichment_deep", "endpoints": [
         "POST /api/v3/enrichment/deep-enrich/{contact_id}",
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/status",
@@ -302,23 +302,41 @@ try:
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/debug"
     ]})
     print("✅ Deep Enrichment router loaded (unified box schema)", flush=True)
+    ENRICHMENT_V3_DEEP_AVAILABLE = True
 except Exception as e:
     import traceback
     full_traceback = traceback.format_exc()
     print(f"{'=' * 60}\nFATAL: Deep Enrichment router FAILED!\nError: {e}\n{'=' * 60}\n{full_traceback}\n{'=' * 60}", flush=True)
     logger.error({"event": "router_import_failed", "router": "enrichment_deep", "error": str(e), "traceback": full_traceback})
-    raise RuntimeError(f"Deep Enrichment router failed: {e}")
+    ENRICHMENT_V3_DEEP_AVAILABLE = False
+    deepenrichrouter = None
 print("=" * 60, flush=True)
 
-
-# Scoring Router
+# ============================================================================
+# Scoring Router - WITH SUPABASE INJECTION FIX
+# ============================================================================
 try:
-    from app.scoring.router import router as scoring_router
+    from app.scoring.router import router as scoring_router, set_supabase_client as set_scoring_supabase
     app.include_router(scoring_router, prefix="/api/v3")
-    logger.info({"event": "router_registered", "router": "scoring"})
+    
+    # CRITICAL FIX: Inject Supabase client into scoring router
+    # Without this, scoring endpoints return "Database not initialized"
+    if supabase:
+        set_scoring_supabase(supabase)
+        logger.info({"event": "scoring_supabase_injected", "status": "success"})
+        print("✅ Scoring router loaded + Supabase injected")
+    else:
+        logger.warning({"event": "scoring_supabase_not_injected", "reason": "supabase client is None"})
+        print("⚠️ Scoring router loaded but Supabase not available")
+    
+    logger.info({"event": "router_registered", "router": "scoring", "endpoints": [
+        "GET /api/v3/scoring/config/{framework}",
+        "POST /api/v3/scoring/calculate-all/{contact_id}",
+        "POST /api/v3/scoring/score-all"
+    ]})
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
-
+    print(f"⚠️ Scoring router not loaded: {e}")
 
 # ============================================================================
 # OUTREACH ROUTER - Email Generation + DISC Call Scripts
