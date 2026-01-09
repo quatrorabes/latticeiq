@@ -87,16 +87,26 @@ export interface CallScriptVariant {
 }
 
 
+export interface PersonalityInfo {
+  mbti?: string;
+  disc: string;
+  disc_name: string;
+}
+
+
+// Updated to match actual backend response (uses "scripts" not "variants")
 export interface GenerateCallScriptsResponse {
+  success: boolean;
   contact_id: string;
   contact_name: string;
   company: string;
   title: string;
-  variants: CallScriptVariant[];
+  personality?: PersonalityInfo;
+  scripts: CallScriptVariant[];  // Backend returns "scripts", not "variants"
   generated_at: string;
-  model_used: string;
-  total_tokens: number;
-  estimated_cost: number;
+  model_used?: string;
+  total_tokens?: number;
+  estimated_cost?: number;
 }
 
 
