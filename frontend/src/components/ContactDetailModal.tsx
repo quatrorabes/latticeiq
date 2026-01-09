@@ -5,6 +5,40 @@ import { Contact } from '../types'
 import { generateEmails, generateCallScripts } from '../api/outreach'
 
 
+// Add these 4 interfaces RIGHT HERE (after the outreach import)
+export interface CallScriptVariant {
+  variant_number: number
+  style: string
+  style_description: string
+  opener: string
+  body: string
+  closer: string
+  quality_score: number
+  quality_notes: string
+}
+
+export interface EmailVariant {
+  subject: string
+  body: string
+}
+
+export interface GenerateCallScriptsResponse {
+  success: boolean
+  scripts: CallScriptVariant[]
+}
+
+export interface GenerateEmailsResponse {
+  success: boolean
+  variants: EmailVariant[]
+}
+
+// Then continue with your existing interfaces below:
+interface EnrichmentBullet {
+  text: string
+  evidence?: string | null
+  strength?: number | null
+}
+
 interface EnrichmentBullet {
   text: string
   evidence?: string | null
@@ -97,31 +131,6 @@ interface ContactDetailModalProps {
 }
 
 
-interface CallScriptVariant {
-  variant_number: number
-  style: string
-  style_description: string
-  opener: string
-  body: string
-  closer: string
-  quality_score: number
-  quality_notes: string
-}
-
-interface EmailVariant {
-  subject: string
-  body: string
-}
-
-interface GenerateCallScriptsResponse {
-  success: boolean
-  scripts: CallScriptVariant[]  // Backend returns 'scripts' array
-}
-
-interface GenerateEmailsResponse {
-  success: boolean
-  variants: EmailVariant[]  // Backend returns 'variants' array
-}
 
 // Styles object
 const styles = {
