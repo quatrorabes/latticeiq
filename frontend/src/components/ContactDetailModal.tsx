@@ -2,35 +2,14 @@ import React, { useState, useEffect } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { Contact } from '../types'
-import { generateEmails, generateCallScripts } from '../api/outreach'
+import { 
+  generateEmails, 
+  generateCallScripts,
+  EmailVariant,
+  CallScriptVariant 
+} from '../api/outreach'
 
 
-// Add these 4 interfaces RIGHT HERE (after the outreach import)
-export interface CallScriptVariant {
-  variant_number: number
-  style: string
-  style_description: string
-  opener: string
-  body: string
-  closer: string
-  quality_score: number
-  quality_notes: string
-}
-
-export interface EmailVariant {
-  subject: string
-  body: string
-}
-
-export interface GenerateCallScriptsResponse {
-  success: boolean
-  scripts: CallScriptVariant[]
-}
-
-export interface GenerateEmailsResponse {
-  success: boolean
-  variants: EmailVariant[]
-}
 
 // Then continue with your existing interfaces below:
 interface EnrichmentBullet {
@@ -649,7 +628,7 @@ export default function ContactDetailModal({
   const [generatedCallScripts, setGeneratedCallScripts] = useState<CallScriptVariant[]>([])
   const [isGeneratingCallScripts, setIsGeneratingCallScripts] = useState(false)
   const [callScriptError, setCallScriptError] = useState<string | null>(null)
-
+  
 
   useEffect(() => {
     if (contact?.enrichment_data) {
@@ -843,15 +822,14 @@ const handleGenerateCallScripts = async () => {
   try {
     const response = await generateCallScripts(contact.id, 3)
     console.log('📥 Full response from generateCallScripts:', response)
-    console.log('📊 response.scripts:', response.scripts)
+    console.log('📊 response.variants:', response.variants)
     
-    // The API returns response.scripts as an array
-    if (response.scripts && Array.isArray(response.scripts)) {
-      console.log('✅ Setting call scripts with', response.scripts.length, 'scripts')
-      setGeneratedCallScripts(response.scripts)
+    if (response.variants && Array.isArray(response.variants)) {
+      console.log('✅ Setting call scripts with', response.variants.length, 'scripts')
+      setGeneratedCallScripts(response.variants)
     } else {
-      console.error('❌ No scripts array in response:', response)
-      setCallScriptError('Invalid response format - no scripts array')
+      console.error('❌ No variants array in response:', response)
+      setCallScriptError('Invalid response format - no variants array')
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate call scripts'
@@ -861,6 +839,7 @@ const handleGenerateCallScripts = async () => {
     setIsGeneratingCallScripts(false)
   }
 }
+
 
 
   const copyToClipboard = async (text: string, field: string) => {
