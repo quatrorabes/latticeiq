@@ -1225,94 +1225,84 @@ async def generate_emails(request: GenerateEmailsRequest):
 
 @router.post("/generate-call-scripts")
 async def generate_call_scripts(request: GenerateCallScriptsRequest):
-    """Generate DISC-optimized call script variants for a contact"""
+    """Generate DISC-optimized call script variants for a contact."""
     try:
         supabase = get_supabase()
-
-        contact_res = supabase.table("contacts")\
-            .select("*")\
-            .eq("id", request.contact_id)\
-            .execute()
-
+        
+        # Get contact from database
+        contact_res = supabase.table("contacts").select("*").eq("id", request.contact_id).execute()
         if not contact_res.data:
             raise HTTPException(status_code=404, detail="Contact not found")
-
-        contact = contact_res.data[0]  # ✅ FIX: Get first item, not entire list
-
+        contact = contact_res.data[0]  # FIX: Extract first item from list
+        
         # Get business profile for context
         business_context = ""
         try:
-            profile_res = supabase.table("business_profiles")\
-                .select("*")\
-                .eq("is_default", True)\
-                .execute()
-            
+            profile_res = supabase.table("business_profiles").select("*").eq("is_default", True).execute()
             if profile_res.data and len(profile_res.data) > 0:
-                bp = profile_res.data[0]  # ✅ FIX: Get first item, not entire list
+                bp = profile_res.data[0]  # FIX: Extract first item from list
                 
                 # Handle both dict and object types from Supabase
                 if isinstance(bp, dict):
-                    company_name = bp.get('company_name', '')
-                    what_you_do = bp.get('what_you_do', '')
-                    value_prop = bp.get('primary_value_prop', '')
+                    company_name = bp.get("company_name", "")
+                    what_you_do = bp.get("what_you_do", "")
+                    value_prop = bp.get("primary_value_prop", "")
                 else:
-                    company_name = getattr(bp, 'company_name', '')
-                    what_you_do = getattr(bp, 'what_you_do', '')
-                    value_prop = getattr(bp, 'primary_value_prop', '')
+                    company_name = getattr(bp, "company_name", "")
+                    what_you_do = getattr(bp, "what_you_do", "")
+                    value_prop = getattr(bp, "primary_value_prop", "")
                 
                 if company_name or what_you_do or value_prop:
                     business_context = f"{company_name} - {what_you_do}. Value: {value_prop}"
         except Exception as e:
             logger.warning(f"Could not load business profile: {e}")
-            business_context = ""
-
+        
         # Override with request context if provided
         if request.business_context:
             business_context = request.business_context
-
+        
+        # Generate call scripts
         generator = CallScriptGenerator()
         result = generator.generate_all_scripts(contact, business_context)
-
+        
         # Verify result has scripts
         if not result or "scripts" not in result:
             raise HTTPException(status_code=500, detail="Failed to generate scripts")
-
-        # Save scripts to database
-        for script in result["scripts"]:
-            supabase.table("outreach_content").insert({
-                "contact_id": request.contact_id,
-                "content_type": "call_script",
-                "variant_number": script.variant_number,
-                "body": f"OPENER:\n{script.opener}\n\nBODY:\n{script.body}\n\nCLOSER:\n{script.closer}",
-                "style": script.style,
-                "style_description": script.style_description,
-                "model_used": "perplexity/gpt-4o"
-            }).execute()
-
-        # ✅ EXPLICIT RETURN with JSONResponse for reliability
+        
+        # FIX: Convert all Pydantic models to dicts before returning
+        scripts_serializable = []
+        for script in result.get("scripts", []):
+            # If script is a Pydantic model, convert to dict
+            if hasattr(script, "model_dump"):
+                script_dict = script.model_dump()
+            elif hasattr(script, "dict"):
+                script_dict = script.dict()
+            else:
+                script_dict = script if isinstance(script, dict) else {}
+            
+            scripts_serializable.append(script_dict)
+        
+        # FIX: Convert personality if it's a Pydantic model
+        personality = result.get("personality")
+        if hasattr(personality, "model_dump"):
+            personality_dict = personality.model_dump()
+        elif hasattr(personality, "dict"):
+            personality_dict = personality.dict()
+        else:
+            personality_dict = personality if isinstance(personality, dict) else {}
+        
+        # EXPLICIT RETURN with JSONResponse - now all dicts, fully serializable
         return JSONResponse({
             "success": True,
             "contact_id": request.contact_id,
-            "contact_name": result.get("contact_name", ""),
+            "contact_name": contact.get("firstname", "") + " " + contact.get("lastname", ""),
             "company": contact.get("company", "Unknown"),
             "title": contact.get("title", "Unknown"),
-            "personality": result.get("personality", {}),
-            "scripts": [
-                {
-                    "variant_number": script.variant_number,
-                    "style": script.style,
-                    "style_description": script.style_description,
-                    "opener": script.opener,
-                    "body": script.body,
-                    "closer": script.closer,
-                    "quality_score": getattr(script, "quality_score", 0.0),
-                    "quality_notes": getattr(script, "quality_notes", "AI-generated DISC-optimized")
-                }
-                for script in result.get("scripts", [])
-            ],
+            "personality": personality_dict,  # Now a dict, not Pydantic model
+            "scripts": scripts_serializable,  # Now all dicts, not Pydantic models
             "generated_at": result.get("generated_at", "")
         })
-
+    
     except HTTPException:
         raise
     except Exception as e:
