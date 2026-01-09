@@ -822,14 +822,14 @@ const handleGenerateCallScripts = async () => {
   try {
     const response = await generateCallScripts(contact.id, 3)
     console.log('📥 Full response from generateCallScripts:', response)
-    console.log('📊 response.variants:', response.variants)
+    console.log('📊 response.scripts:', response.scripts)
     
-    if (response.variants && Array.isArray(response.variants)) {
-      console.log('✅ Setting call scripts with', response.variants.length, 'scripts')
-      setGeneratedCallScripts(response.variants)
+    if (response.scripts && Array.isArray(response.scripts)) {
+      console.log('✅ Setting call scripts with', response.scripts.length, 'scripts')
+      setGeneratedCallScripts(response.scripts)
     } else {
-      console.error('❌ No variants array in response:', response)
-      setCallScriptError('Invalid response format - no variants array')
+      console.error('❌ No scripts array in response:', response)
+      setCallScriptError('Invalid response format - no scripts array')
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to generate call scripts'
@@ -839,6 +839,7 @@ const handleGenerateCallScripts = async () => {
     setIsGeneratingCallScripts(false)
   }
 }
+
 
 
 
