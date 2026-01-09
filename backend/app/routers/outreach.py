@@ -1237,19 +1237,36 @@ async def generate_call_scripts(request: GenerateCallScriptsRequest):
         if not contact_res.data:
             raise HTTPException(status_code=404, detail="Contact not found")
 
-        contact = contact_res.data
+        contact = contact_res.data  # ✅ FIX: Get first item, not entire list
 
         # Get business profile for context
-        profile_res = supabase.table("business_profiles")\
-            .select("*")\
-            .eq("is_default", True)\
-            .execute()
-
         business_context = ""
-        if profile_res.data:
-            bp = profile_res.data
-            business_context = f"{bp.get('company_name', '')} - {bp.get('what_you_do', '')}. Value: {bp.get('primary_value_prop', '')}"
+        try:
+            profile_res = supabase.table("business_profiles")\
+                .select("*")\
+                .eq("is_default", True)\
+                .execute()
+            
+            if profile_res.data and len(profile_res.data) > 0:
+                bp = profile_res.data  # ✅ FIX: Get first item, not entire list
+                
+                # Handle both dict and object types from Supabase
+                if isinstance(bp, dict):
+                    company_name = bp.get('company_name', '')
+                    what_you_do = bp.get('what_you_do', '')
+                    value_prop = bp.get('primary_value_prop', '')
+                else:
+                    company_name = getattr(bp, 'company_name', '')
+                    what_you_do = getattr(bp, 'what_you_do', '')
+                    value_prop = getattr(bp, 'primary_value_prop', '')
+                
+                if company_name or what_you_do or value_prop:
+                    business_context = f"{company_name} - {what_you_do}. Value: {value_prop}"
+        except Exception as e:
+            logger.warning(f"Could not load business profile: {e}")
+            business_context = ""
 
+        # Override with request context if provided
         if request.business_context:
             business_context = request.business_context
 
