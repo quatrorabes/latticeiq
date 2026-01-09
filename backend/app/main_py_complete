@@ -1,0 +1,221 @@
+"""
+FastAPI application entry point for LatticeIQ backend.
+Initializes routes, middleware, and database connections.
+"""
+
+import sys
+import logging
+from contextlib import asynccontextmanager
+from datetime import datetime
+
+from fastapi import FastAPI, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+# Add app directory to path
+sys.path.insert(0, "/app")
+sys.path.insert(0, "/app/app")
+
+# ============================================================================
+# ROUTER IMPORTS
+# ============================================================================
+
+try:
+    from app.routers.contacts import router as contacts_router
+    logger_contacts = "✓ contacts router imported"
+except Exception as e:
+    logger_contacts = f"✗ contacts router failed: {e}"
+
+try:
+    from app.routers.enrichment import router as enrichment_router
+    logger_enrichment = "✓ enrichment router imported"
+except Exception as e:
+    logger_enrichment = f"✗ enrichment router failed: {e}"
+
+try:
+    from app.routers.enrichment_v3_deep import router as enrichment_v3_deep_router
+    logger_enrichment_v3_deep = "✓ enrichment_v3_deep router imported"
+    ENRICHMENT_V3_DEEP_AVAILABLE = True
+except Exception as e:
+    logger_enrichment_v3_deep = f"✗ enrichment_v3_deep router failed: {e}"
+    ENRICHMENT_V3_DEEP_AVAILABLE = False
+    enrichment_v3_deep_router = None
+
+try:
+    from app.routers.integrations import router as integrations_router
+    logger_integrations = "✓ integrations router imported"
+except Exception as e:
+    logger_integrations = f"✗ integrations router failed: {e}"
+
+try:
+    from app.routers.hubspot import router as hubspot_router
+    logger_hubspot = "✓ hubspot router imported"
+except Exception as e:
+    logger_hubspot = f"✗ hubspot router failed: {e}"
+
+# Scoring router - DISABLED (keeping for reference)
+scoring_router = None
+SCORING_AVAILABLE = False
+
+# ============================================================================
+# LOGGING SETUP
+# ============================================================================
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# LIFESPAN MANAGEMENT
+# ============================================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application startup and shutdown events."""
+    # Startup
+    logger.info("=" * 80)
+    logger.info("LatticeIQ Backend Starting...")
+    logger.info("=" * 80)
+    logger.info(f"Timestamp: {datetime.utcnow().isoformat()}Z")
+    logger.info("")
+    logger.info("Router Status:")
+    logger.info(f"  {logger_contacts}")
+    logger.info(f"  {logger_enrichment}")
+    logger.info(f"  {logger_enrichment_v3_deep}")
+    logger.info(f"  {logger_integrations}")
+    logger.info(f"  {logger_hubspot}")
+    logger.info("")
+    logger.info("Feature Status:")
+    logger.info(f"  Enrichment V3 Deep: {'ENABLED' if ENRICHMENT_V3_DEEP_AVAILABLE else 'DISABLED'}")
+    logger.info(f"  Scoring: {'ENABLED' if SCORING_AVAILABLE else 'DISABLED'}")
+    logger.info("")
+    logger.info("=" * 80)
+    yield
+    # Shutdown
+    logger.info("LatticeIQ Backend Shutting Down...")
+
+# ============================================================================
+# FASTAPI APP INITIALIZATION
+# ============================================================================
+
+app = FastAPI(
+    title="LatticeIQ API",
+    description="B2B Sales Intelligence Platform - AI-powered contact enrichment and scoring",
+    version="3.0.0",
+    lifespan=lifespan,
+)
+
+# ============================================================================
+# CORS MIDDLEWARE
+# ============================================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:8000",
+        "https://latticeiq.vercel.app",
+        "https://latticeiq-backend.onrender.com",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ============================================================================
+# ROUTE REGISTRATION
+# ============================================================================
+# Core routers
+app.include_router(contacts_router, prefix="/api/v3", tags=["Contacts"])
+app.include_router(enrichment_router, prefix="/api/v3/enrichment", tags=["Enrichment"])
+
+# ✅ CRITICAL: Register enrichment_v3_deep router
+if ENRICHMENT_V3_DEEP_AVAILABLE and enrichment_v3_deep_router:
+    app.include_router(
+        enrichment_v3_deep_router,
+        prefix="/api/v3/enrichment",
+        tags=["Deep Enrichment"],
+    )
+    logger.info("✓ Registered enrichment_v3_deep router at /api/v3/enrichment")
+else:
+    logger.warning("✗ enrichment_v3_deep router NOT registered - module import failed")
+
+# Integration routers
+app.include_router(integrations_router, prefix="/api/v3/integrations", tags=["Integrations"])
+app.include_router(hubspot_router, prefix="/api/v3", tags=["HubSpot"])
+
+# Scoring router - disabled for now
+if SCORING_AVAILABLE and scoring_router:
+    app.include_router(scoring_router, prefix="/api/v3", tags=["Scoring"])
+else:
+    logger.info("Scoring router not registered - disabled for maintenance")
+
+# ============================================================================
+# HEALTH CHECK ENDPOINT
+# ============================================================================
+
+@app.get("/health")
+async def health_check():
+    """Check backend health and router status."""
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ok",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "database": "connected",
+            "enrichment": "available",
+            "enrichment_v3_deep": "available" if ENRICHMENT_V3_DEEP_AVAILABLE else "unavailable",
+            "scoring": "disabled_for_maintenance" if not SCORING_AVAILABLE else "available",
+    )
+
+@app.get("/api/v3/health")
+async def health_check_v3():
+    """V3 API health check."""
+    return health_check()
+
+# ============================================================================
+# ADDITIONAL ENDPOINTS
+# ============================================================================
+
+@app.get("/")
+async def root():
+    """Root endpoint."""
+    return {
+        "message": "LatticeIQ Backend API",
+        "version": "3.0.0",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+    }
+
+# ============================================================================
+# ERROR HANDLERS
+# ============================================================================
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    """Global exception handler."""
+    logger.error(f"Unhandled exception: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "Internal server error",
+            "detail": str(exc),
+        },
+    )
+
+# ============================================================================
+# STARTUP LOGGING
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=True,
+        log_level="info",
+    )
