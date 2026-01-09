@@ -10,14 +10,7 @@ import {
 } from '../api/outreach'
 
 
-
 // Then continue with your existing interfaces below:
-interface EnrichmentBullet {
-  text: string
-  evidence?: string | null
-  strength?: number | null
-}
-
 interface EnrichmentBullet {
   text: string
   evidence?: string | null
@@ -108,7 +101,6 @@ interface ContactDetailModalProps {
   onClose: () => void
   onUpdate?: (contact: Contact) => void
 }
-
 
 
 // Styles object
@@ -617,6 +609,13 @@ export default function ContactDetailModal({
   const [isQuickEnriching, setIsQuickEnriching] = useState(false)
   const [quickEnrichError, setQuickEnrichError] = useState<string | null>(null)
   
+  // Scoring state
+  const [isScoring, setIsScoring] = useState(false)
+  const [scoringError, setScoringError] = useState<string | null>(null)
+  
+  // Local contact state for scores (to show updated scores without full refresh)
+  const [localContact, setLocalContact] = useState<Contact>(contact)
+  
   const [copiedField, setCopiedField] = useState<string | null>(null)
   
   // Outreach state - Emails
@@ -631,6 +630,9 @@ export default function ContactDetailModal({
   
 
   useEffect(() => {
+    // Update local contact when prop changes
+    setLocalContact(contact)
+    
     if (contact?.enrichment_data) {
       const data = (contact.enrichment_data as any)?.data || contact.enrichment_data
       if (data && typeof data === 'object') {
@@ -648,6 +650,7 @@ export default function ContactDetailModal({
     // Reset errors
     setEnrichmentError(null)
     setQuickEnrichError(null)
+    setScoringError(null)
     // Reset outreach state when contact changes
     setGeneratedEmails([])
     setEmailError(null)
@@ -662,6 +665,65 @@ export default function ContactDetailModal({
   const getAuthToken = async (): Promise<string | null> => {
     const { data: sessionData } = await supabase.auth.getSession()
     return sessionData?.session?.access_token || null
+  }
+
+
+  // Score Contact - calls /api/v3/scoring/score-contact/{id}
+  const handleScoreContact = async () => {
+    setIsScoring(true)
+    setScoringError(null)
+
+    try {
+      const token = await getAuthToken()
+      
+      const response = await fetch(
+        `${API_URL}/api/v3/scoring/score-contact/${contact.id}`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token && { Authorization: `Bearer ${token}` })
+          }
+        }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Scoring failed: ${response.status}`)
+      }
+
+      const result = await response.json()
+      console.log('✅ Scoring result:', result)
+      
+      // Extract scores from result - handle various response formats
+      const scores = result.scores || result.data?.scores || result
+      
+      // Update local contact with new scores
+      const updatedContact = {
+        ...localContact,
+        mdcp_score: scores.mdcp_score ?? scores.mdcp ?? localContact.mdcp_score,
+        bant_score: scores.bant_score ?? scores.bant ?? localContact.bant_score,
+        spice_score: scores.spice_score ?? scores.spice ?? localContact.spice_score,
+      }
+      
+      setLocalContact(updatedContact)
+      
+      // Update parent if callback provided
+      if (onUpdate) {
+        onUpdate(updatedContact)
+      }
+      
+      console.log('📊 Updated scores:', {
+        mdcp: updatedContact.mdcp_score,
+        bant: updatedContact.bant_score,
+        spice: updatedContact.spice_score
+      })
+    } catch (error) {
+      console.error('❌ Scoring error:', error)
+      setScoringError(error instanceof Error ? error.message : 'Scoring failed')
+    } finally {
+      setIsScoring(false)
+    }
   }
 
 
@@ -700,6 +762,13 @@ export default function ContactDetailModal({
       if (onUpdate) {
         onUpdate({ ...contact, enrichment_data: enrichData } as Contact)
       }
+      
+      // Auto-trigger scoring after successful quick enrich
+      console.log('🎯 Auto-triggering scoring after Quick Enrich...')
+      setTimeout(() => {
+        handleScoreContact()
+      }, 500) // Small delay to let UI update first
+      
     } catch (error) {
       console.error('❌ Quick enrichment error:', error)
       setQuickEnrichError(error instanceof Error ? error.message : 'Quick enrichment failed')
@@ -769,6 +838,13 @@ export default function ContactDetailModal({
               onUpdate({ ...contact, enrichment_data: { data: enrichData } } as Contact)
             }
             setIsEnriching(false)
+            
+            // Auto-trigger scoring after successful deep enrich
+            console.log('🎯 Auto-triggering scoring after Deep Enrich...')
+            setTimeout(() => {
+              handleScoreContact()
+            }, 500) // Small delay to let UI update first
+            
             return
           }
         }
@@ -1626,19 +1702,86 @@ const handleGenerateCallScripts = async () => {
 
           {/* Scores Tab */}
           {activeTab === 'scores' && (
-            <div style={styles.grid3}>
-              <div style={{ ...styles.card, textAlign: 'center' as const }}>
-                <span style={styles.label}>MDCP Score</span>
-                <span style={{ ...styles.scoreValue, color: '#818cf8' }}>{contact.mdcp_score ?? 0}</span>
+            <div>
+              {/* Rescore Action Bar */}
+              <div style={styles.actionBar}>
+                <div style={styles.buttonGroup}>
+                  <button
+                    style={isScoring ? styles.btnDisabled : styles.btnPrimary}
+                    onClick={handleScoreContact}
+                    disabled={isScoring}
+                  >
+                    {isScoring ? (
+                      <>
+                        <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
+                        Scoring... (3-5s)
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw style={{ width: 16, height: 16 }} />
+                        Rescore Contact
+                      </>
+                    )}
+                  </button>
+                </div>
+                <span style={styles.metaText}>
+                  Scores based on enrichment data
+                </span>
               </div>
-              <div style={{ ...styles.card, textAlign: 'center' as const }}>
-                <span style={styles.label}>BANT Score</span>
-                <span style={{ ...styles.scoreValue, color: '#34d399' }}>{contact.bant_score ?? 0}</span>
-              </div>
-              <div style={{ ...styles.card, textAlign: 'center' as const }}>
-                <span style={styles.label}>SPICE Score</span>
-                <span style={{ ...styles.scoreValue, color: '#fbbf24' }}>{contact.spice_score ?? 0}</span>
-              </div>
+
+              {/* Scoring Error */}
+              {scoringError && (
+                <div style={styles.errorBox}>
+                  <AlertCircle style={{ width: 16, height: 16 }} />
+                  {scoringError}
+                </div>
+              )}
+
+              {/* Loading State */}
+              {isScoring && (
+                <div style={styles.loadingContainer}>
+                  <Loader2 style={{ width: 40, height: 40, color: '#818cf8', marginBottom: '1rem', animation: 'spin 1s linear infinite' }} />
+                  <p style={{ color: '#cbd5e1', marginBottom: '0.5rem' }}>Calculating scores...</p>
+                  <p style={{ color: '#64748b', fontSize: '0.75rem' }}>Analyzing MDCP, BANT, and SPICE criteria</p>
+                </div>
+              )}
+
+              {/* Scores Grid */}
+              {!isScoring && (
+                <div style={styles.grid3}>
+                  <div style={{ ...styles.card, textAlign: 'center' as const }}>
+                    <span style={styles.label}>MDCP Score</span>
+                    <span style={{ ...styles.scoreValue, color: '#818cf8' }}>{localContact.mdcp_score ?? 0}</span>
+                    <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.5rem' }}>
+                      Market, Decision, Competition, Process
+                    </p>
+                  </div>
+                  <div style={{ ...styles.card, textAlign: 'center' as const }}>
+                    <span style={styles.label}>BANT Score</span>
+                    <span style={{ ...styles.scoreValue, color: '#34d399' }}>{localContact.bant_score ?? 0}</span>
+                    <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.5rem' }}>
+                      Budget, Authority, Need, Timeline
+                    </p>
+                  </div>
+                  <div style={{ ...styles.card, textAlign: 'center' as const }}>
+                    <span style={styles.label}>SPICE Score</span>
+                    <span style={{ ...styles.scoreValue, color: '#fbbf24' }}>{localContact.spice_score ?? 0}</span>
+                    <p style={{ color: '#64748b', fontSize: '0.7rem', marginTop: '0.5rem' }}>
+                      Situation, Pain, Impact, Critical Event
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Helpful Info */}
+              {!hasAnyEnrichment && !isScoring && (
+                <div style={{ ...styles.card, backgroundColor: 'rgba(251, 191, 36, 0.1)', border: '1px solid rgba(251, 191, 36, 0.3)' }}>
+                  <p style={{ color: '#fcd34d', fontSize: '0.875rem', margin: 0 }}>
+                    💡 <strong>Tip:</strong> Enrich this contact first to get more accurate scores. 
+                    Go to the Enrichment tab and run Quick or Deep Enrich.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
