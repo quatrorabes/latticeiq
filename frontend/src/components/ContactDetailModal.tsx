@@ -668,7 +668,7 @@ export default function ContactDetailModal({
   }
 
 
-  // Score Contact - calls /api/v3/scoring/score-contact/{id}
+  // Score Contact - calls /api/v3/scoring/calculate-all/{id}
   const handleScoreContact = async () => {
     setIsScoring(true)
     setScoringError(null)
@@ -677,7 +677,7 @@ export default function ContactDetailModal({
       const token = await getAuthToken()
       
       const response = await fetch(
-        `${API_URL}/api/v3/scoring/score-contact/${contact.id}`,
+        `${API_URL}/api/v3/scoring/calculate-all/${contact.id}`,
         {
           method: 'POST',
           headers: {
