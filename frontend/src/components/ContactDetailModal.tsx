@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { Contact } from '../types'
-import { generateEmails, generateCallScripts, EmailVariant, CallScriptVariant } from '../api/outreach'
+import { generateEmails, generateCallScripts } from '../api/outreach'
 
 
 interface EnrichmentBullet {
@@ -96,6 +96,32 @@ interface ContactDetailModalProps {
   onUpdate?: (contact: Contact) => void
 }
 
+
+interface CallScriptVariant {
+  variant_number: number
+  style: string
+  style_description: string
+  opener: string
+  body: string
+  closer: string
+  quality_score: number
+  quality_notes: string
+}
+
+interface EmailVariant {
+  subject: string
+  body: string
+}
+
+interface GenerateCallScriptsResponse {
+  success: boolean
+  scripts: CallScriptVariant[]  // Backend returns 'scripts' array
+}
+
+interface GenerateEmailsResponse {
+  success: boolean
+  variants: EmailVariant[]  // Backend returns 'variants' array
+}
 
 // Styles object
 const styles = {
@@ -776,8 +802,7 @@ export default function ContactDetailModal({
   const handleGenerateEmails = async () => {
   console.log('🚀 Starting email generation for contact:', contact.id)
   setIsGeneratingEmails(true)
-  setEmailError(null)
-  
+  setEmailError(null) 
   try {
     const response = await generateEmails(contact.id, 3)
     console.log('📥 Full response from generateEmails:', response)
@@ -802,12 +827,10 @@ export default function ContactDetailModal({
 
 
   // Generate call scripts handler
-
 const handleGenerateCallScripts = async () => {
   console.log('🚀 Starting call script generation for contact:', contact.id)
   setIsGeneratingCallScripts(true)
   setCallScriptError(null)
-  
   try {
     const response = await generateCallScripts(contact.id, 3)
     console.log('📥 Full response from generateCallScripts:', response)
