@@ -774,38 +774,61 @@ export default function ContactDetailModal({
 
   // Generate emails handler
   const handleGenerateEmails = async () => {
-    setIsGeneratingEmails(true)
-    setEmailError(null)
-    try {
-      const response = await generateEmails(contact.id, 3)
+  console.log('🚀 Starting email generation for contact:', contact.id)
+  setIsGeneratingEmails(true)
+  setEmailError(null)
+  
+  try {
+    const response = await generateEmails(contact.id, 3)
+    console.log('📥 Full response from generateEmails:', response)
+    console.log('📊 response.variants:', response.variants)
+    
+    // The API returns response.variants as an array
+    if (response.variants && Array.isArray(response.variants)) {
+      console.log('✅ Setting email variants with', response.variants.length, 'emails')
       setGeneratedEmails(response.variants)
-      console.log('✅ Generated email variants:', response.variants)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to generate emails'
-      setEmailError(message)
-      console.error('❌ Email generation error:', error)
-    } finally {
-      setIsGeneratingEmails(false)
+    } else {
+      console.error('❌ No variants array in response:', response)
+      setEmailError('Invalid response format - no variants array')
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to generate emails'
+    console.error('❌ Email generation error:', message, error)
+    setEmailError(message)
+  } finally {
+    setIsGeneratingEmails(false)
   }
+}
 
 
   // Generate call scripts handler
-  const handleGenerateCallScripts = async () => {
-    setIsGeneratingCallScripts(true)
-    setCallScriptError(null)
-    try {
-      const response = await generateCallScripts(contact.id, 3)
-      setGeneratedCallScripts(response.variants)
-      console.log('✅ Generated call script variants:', response.variants)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to generate call scripts'
-      setCallScriptError(message)
-      console.error('❌ Call script generation error:', error)
-    } finally {
-      setIsGeneratingCallScripts(false)
+
+const handleGenerateCallScripts = async () => {
+  console.log('🚀 Starting call script generation for contact:', contact.id)
+  setIsGeneratingCallScripts(true)
+  setCallScriptError(null)
+  
+  try {
+    const response = await generateCallScripts(contact.id, 3)
+    console.log('📥 Full response from generateCallScripts:', response)
+    console.log('📊 response.scripts:', response.scripts)
+    
+    // The API returns response.scripts as an array
+    if (response.scripts && Array.isArray(response.scripts)) {
+      console.log('✅ Setting call scripts with', response.scripts.length, 'scripts')
+      setGeneratedCallScripts(response.scripts)
+    } else {
+      console.error('❌ No scripts array in response:', response)
+      setCallScriptError('Invalid response format - no scripts array')
     }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to generate call scripts'
+    console.error('❌ Call script generation error:', message, error)
+    setCallScriptError(message)
+  } finally {
+    setIsGeneratingCallScripts(false)
   }
+}
 
 
   const copyToClipboard = async (text: string, field: string) => {
