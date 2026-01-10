@@ -1,74 +1,266 @@
 // ============================================================================
 // FILE: frontend/src/pages/SettingsPage.tsx
-// PURPOSE: Settings page with Data Sources tab wired to real backend
-// VERSION: 2.1.0 - Fixed HubSpot API key passing via header
+// PURPOSE: Settings page with Data Sources tab - FIXED buttons, filters, limits
+// VERSION: 2.2.0 - Added import filters, fixed pagination, consistent styling
 // ============================================================================
 
 import { useState, useEffect } from 'react';
-import { User, Database, Bell, Users, Mail, Briefcase, CheckCircle, XCircle, Loader2, RefreshCw, Eye, Upload } from 'lucide-react';
-import '../styles/SettingsPage.css';
+import { 
+  User, Database, Bell, Users, Mail, Briefcase, CheckCircle, XCircle, 
+  Loader2, RefreshCw, Eye, Upload, Link2, BarChart3, Linkedin, Filter,
+  Calendar, ChevronDown
+} from 'lucide-react';
 import BusinessProfileForm from '../components/BusinessProfileForm';
-import { API_URL, API_ENDPOINTS } from '../lib/constants';
+import { API_URL } from '../lib/constants';
 import { supabase } from '../lib/supabaseClient';
 
 type TabType = 'profile' | 'business' | 'data-sources' | 'notifications' | 'workspace';
 
+
+// ============================================================================
+// SHARED STYLES
+// ============================================================================
+
+const sharedStyles = {
+  btnPrimary: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.5rem',
+    background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+    border: 'none',
+    borderRadius: '10px',
+    color: 'white',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+    transition: 'all 0.2s ease',
+  } as React.CSSProperties,
+  
+  btnPrimaryDisabled: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.5rem',
+    background: 'rgba(99, 102, 241, 0.3)',
+    border: 'none',
+    borderRadius: '10px',
+    color: 'rgba(255, 255, 255, 0.5)',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+    cursor: 'not-allowed',
+  } as React.CSSProperties,
+  
+  btnSecondary: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.5rem',
+    background: 'rgba(99, 102, 241, 0.1)',
+    border: '1px solid rgba(99, 102, 241, 0.3)',
+    borderRadius: '10px',
+    color: '#f8fafc',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  } as React.CSSProperties,
+  
+  btnSecondaryDisabled: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.5rem',
+    background: 'rgba(148, 163, 184, 0.1)',
+    border: '1px solid rgba(148, 163, 184, 0.2)',
+    borderRadius: '10px',
+    color: '#64748b',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+    cursor: 'not-allowed',
+  } as React.CSSProperties,
+
+  btnDanger: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.5rem',
+    background: 'rgba(239, 68, 68, 0.15)',
+    border: '1px solid rgba(239, 68, 68, 0.3)',
+    borderRadius: '10px',
+    color: '#ef4444',
+    fontWeight: 600,
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  } as React.CSSProperties,
+
+  tab: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.25rem',
+    background: 'rgba(99, 102, 241, 0.1)',
+    border: '1px solid rgba(99, 102, 241, 0.2)',
+    borderRadius: '10px',
+    color: '#94a3b8',
+    fontWeight: 600,
+    fontSize: '0.9rem',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+  } as React.CSSProperties,
+
+  tabActive: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    padding: '0.75rem 1.25rem',
+    background: '#6366f1',
+    border: '1px solid #6366f1',
+    borderRadius: '10px',
+    color: 'white',
+    fontWeight: 600,
+    fontSize: '0.9rem',
+    cursor: 'pointer',
+  } as React.CSSProperties,
+
+  input: {
+    width: '100%',
+    padding: '0.875rem 1rem',
+    background: '#0f172a',
+    border: '1px solid rgba(148, 163, 184, 0.15)',
+    borderRadius: '10px',
+    color: '#f8fafc',
+    fontSize: '0.95rem',
+    outline: 'none',
+    transition: 'border-color 0.2s ease',
+  } as React.CSSProperties,
+
+  select: {
+    padding: '0.875rem 1rem',
+    background: '#0f172a',
+    border: '1px solid rgba(148, 163, 184, 0.15)',
+    borderRadius: '10px',
+    color: '#f8fafc',
+    fontSize: '0.95rem',
+    cursor: 'pointer',
+    outline: 'none',
+  } as React.CSSProperties,
+
+  fileInput: {
+    display: 'none',
+  } as React.CSSProperties,
+
+  fileLabel: {
+    display: 'flex',
+    flexDirection: 'column' as const,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '2rem',
+    background: 'rgba(99, 102, 241, 0.05)',
+    border: '2px dashed rgba(99, 102, 241, 0.3)',
+    borderRadius: '12px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    color: '#94a3b8',
+    gap: '0.75rem',
+  } as React.CSSProperties,
+};
+
+
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<TabType>('profile');
 
+  const pageStyles = {
+    page: {
+      minHeight: '100vh',
+      background: '#0f172a',
+      padding: '2rem',
+      color: '#f8fafc',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    } as React.CSSProperties,
+
+    header: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem',
+      marginBottom: '2rem',
+      paddingBottom: '1.5rem',
+      borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+    } as React.CSSProperties,
+
+    headerIcon: {
+      width: '48px',
+      height: '48px',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.3)',
+      borderRadius: '12px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      color: '#6366f1',
+    } as React.CSSProperties,
+
+    title: {
+      fontSize: '2rem',
+      fontWeight: 800,
+      margin: 0,
+      letterSpacing: '-0.02em',
+    } as React.CSSProperties,
+
+    subtitle: {
+      fontSize: '0.95rem',
+      color: '#94a3b8',
+      margin: '0.25rem 0 0 0',
+    } as React.CSSProperties,
+
+    tabs: {
+      display: 'flex',
+      gap: '0.75rem',
+      marginBottom: '2rem',
+      flexWrap: 'wrap' as const,
+    } as React.CSSProperties,
+
+    content: {
+      maxWidth: '1200px',
+    } as React.CSSProperties,
+  };
+
   return (
-    <div className="settings-page">
-      <div className="page-header">
-        <div className="header-main">
-          <User size={32} />
-          <div>
-            <h1>Settings</h1>
-            <p>Manage your account and workspace preferences</p>
-          </div>
+    <div style={pageStyles.page}>
+      <div style={pageStyles.header}>
+        <div style={pageStyles.headerIcon}>
+          <User size={24} />
+        </div>
+        <div>
+          <h1 style={pageStyles.title}>Settings</h1>
+          <p style={pageStyles.subtitle}>Manage your account and workspace preferences</p>
         </div>
       </div>
 
       {/* Tab Navigation */}
-      <div className="settings-tabs">
-        <button
-          className={`settings-tab ${activeTab === 'profile' ? 'active' : ''}`}
-          onClick={() => setActiveTab('profile')}
-        >
-          <User size={20} />
-          <span>Profile</span>
-        </button>
-        <button
-          className={`settings-tab ${activeTab === 'business' ? 'active' : ''}`}
-          onClick={() => setActiveTab('business')}
-        >
-          <Briefcase size={20} />
-          <span>Business</span>
-        </button>
-        <button
-          className={`settings-tab ${activeTab === 'data-sources' ? 'active' : ''}`}
-          onClick={() => setActiveTab('data-sources')}
-        >
-          <Database size={20} />
-          <span>Data Sources</span>
-        </button>
-        <button
-          className={`settings-tab ${activeTab === 'notifications' ? 'active' : ''}`}
-          onClick={() => setActiveTab('notifications')}
-        >
-          <Bell size={20} />
-          <span>Notifications</span>
-        </button>
-        <button
-          className={`settings-tab ${activeTab === 'workspace' ? 'active' : ''}`}
-          onClick={() => setActiveTab('workspace')}
-        >
-          <Users size={20} />
-          <span>Workspace</span>
-        </button>
+      <div style={pageStyles.tabs}>
+        {[
+          { id: 'profile', label: 'Profile', icon: User },
+          { id: 'business', label: 'Business', icon: Briefcase },
+          { id: 'data-sources', label: 'Data Sources', icon: Database },
+          { id: 'notifications', label: 'Notifications', icon: Bell },
+          { id: 'workspace', label: 'Workspace', icon: Users },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            style={activeTab === id ? sharedStyles.tabActive : sharedStyles.tab}
+            onClick={() => setActiveTab(id as TabType)}
+          >
+            <Icon size={18} />
+            <span>{label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Tab Content */}
-      <div className="settings-content">
+      <div style={pageStyles.content}>
         {activeTab === 'profile' && <ProfileTab />}
         {activeTab === 'business' && <BusinessProfileForm />}
         {activeTab === 'data-sources' && <DataSourcesTab />}
@@ -79,12 +271,52 @@ export default function SettingsPage() {
   );
 }
 
+
+// ============================================================================
+// PROFILE TAB
+// ============================================================================
+
 function ProfileTab() {
   const [name, setName] = useState('John Doe');
   const [email, setEmail] = useState('john@example.com');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+
+  const styles = {
+    section: {
+      background: '#1e293b',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    sectionTitle: {
+      fontSize: '1.25rem',
+      fontWeight: 700,
+      margin: '0 0 0.5rem 0',
+      color: '#f8fafc',
+    } as React.CSSProperties,
+
+    sectionDesc: {
+      fontSize: '0.9rem',
+      color: '#94a3b8',
+      margin: '0 0 1.5rem 0',
+    } as React.CSSProperties,
+
+    formGroup: {
+      marginBottom: '1.25rem',
+    } as React.CSSProperties,
+
+    label: {
+      display: 'block',
+      fontSize: '0.9rem',
+      fontWeight: 600,
+      color: '#94a3b8',
+      marginBottom: '0.5rem',
+    } as React.CSSProperties,
+  };
 
   const handleSaveProfile = () => {
     alert('Profile updated successfully!');
@@ -102,71 +334,71 @@ function ProfileTab() {
   };
 
   return (
-    <div className="tab-content">
-      <div className="settings-section">
-        <h2>Profile Information</h2>
-        <p className="section-description">Update your personal information</p>
+    <div>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Profile Information</h2>
+        <p style={styles.sectionDesc}>Update your personal information</p>
 
-        <div className="form-group">
-          <label className="form-label">Full Name</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Full Name</label>
           <input
             type="text"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
           />
         </div>
 
-        <div className="form-group">
-          <label className="form-label">Email Address</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Email Address</label>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
           />
         </div>
 
-        <button onClick={handleSaveProfile} className="btn-primary">
+        <button onClick={handleSaveProfile} style={sharedStyles.btnPrimary}>
           Save Changes
         </button>
       </div>
 
-      <div className="settings-section">
-        <h2>Change Password</h2>
-        <p className="section-description">Ensure your account stays secure</p>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Change Password</h2>
+        <p style={styles.sectionDesc}>Ensure your account stays secure</p>
 
-        <div className="form-group">
-          <label className="form-label">Current Password</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Current Password</label>
           <input
             type="password"
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
           />
         </div>
 
-        <div className="form-group">
-          <label className="form-label">New Password</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>New Password</label>
           <input
             type="password"
             value={newPassword}
             onChange={(e) => setNewPassword(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
           />
         </div>
 
-        <div className="form-group">
-          <label className="form-label">Confirm New Password</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Confirm New Password</label>
           <input
             type="password"
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
           />
         </div>
 
-        <button onClick={handleChangePassword} className="btn-primary">
+        <button onClick={handleChangePassword} style={sharedStyles.btnPrimary}>
           Change Password
         </button>
       </div>
@@ -176,7 +408,7 @@ function ProfileTab() {
 
 
 // ============================================================================
-// DATA SOURCES TAB - WIRED TO BACKEND
+// DATA SOURCES TAB - WITH FILTERS & FIXED LIMITS
 // ============================================================================
 
 interface TestResult {
@@ -216,6 +448,13 @@ function DataSourcesTab() {
   const [batchSize, setBatchSize] = useState(50);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
   
+  // NEW: Import Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [createdAfter, setCreatedAfter] = useState('');
+  const [modifiedAfter, setModifiedAfter] = useState('');
+  const [leadStatus, setLeadStatus] = useState<string[]>([]);
+  const [lifecycleStage, setLifecycleStage] = useState<string[]>([]);
+  
   // Connection state
   const [testResult, setTestResult] = useState<TestResult | null>(null);
   const [testing, setTesting] = useState(false);
@@ -227,6 +466,273 @@ function DataSourcesTab() {
   const [previewing, setPreviewing] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState<ImportResult | null>(null);
+
+  const styles = {
+    section: {
+      background: '#1e293b',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    sectionHeader: {
+      display: 'flex',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    sectionTitle: {
+      fontSize: '1.25rem',
+      fontWeight: 700,
+      margin: '0 0 0.5rem 0',
+      color: '#f8fafc',
+    } as React.CSSProperties,
+
+    sectionDesc: {
+      fontSize: '0.9rem',
+      color: '#94a3b8',
+      margin: 0,
+    } as React.CSSProperties,
+
+    formGroup: {
+      marginBottom: '1.25rem',
+    } as React.CSSProperties,
+
+    formRow: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+      gap: '1rem',
+    } as React.CSSProperties,
+
+    label: {
+      display: 'block',
+      fontSize: '0.9rem',
+      fontWeight: 600,
+      color: '#94a3b8',
+      marginBottom: '0.5rem',
+    } as React.CSSProperties,
+
+    labelSm: {
+      display: 'block',
+      fontSize: '0.8rem',
+      fontWeight: 600,
+      color: '#64748b',
+      marginBottom: '0.5rem',
+    } as React.CSSProperties,
+
+    hint: {
+      fontSize: '0.85rem',
+      color: '#64748b',
+      marginTop: '0.5rem',
+    } as React.CSSProperties,
+
+    buttonRow: {
+      display: 'flex',
+      gap: '1rem',
+      flexWrap: 'wrap' as const,
+      marginTop: '1.5rem',
+    } as React.CSSProperties,
+
+    alert: {
+      display: 'flex',
+      alignItems: 'flex-start',
+      gap: '0.75rem',
+      padding: '1rem 1.25rem',
+      borderRadius: '10px',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    alertSuccess: {
+      background: 'rgba(34, 197, 94, 0.1)',
+      border: '1px solid rgba(34, 197, 94, 0.3)',
+      color: '#22c55e',
+    } as React.CSSProperties,
+
+    alertError: {
+      background: 'rgba(239, 68, 68, 0.1)',
+      border: '1px solid rgba(239, 68, 68, 0.3)',
+      color: '#ef4444',
+    } as React.CSSProperties,
+
+    statusBadge: {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.4rem 0.9rem',
+      borderRadius: '6px',
+      fontSize: '0.85rem',
+      fontWeight: 600,
+      background: 'rgba(34, 197, 94, 0.15)',
+      color: '#22c55e',
+      border: '1px solid rgba(34, 197, 94, 0.3)',
+    } as React.CSSProperties,
+
+    connectionInfo: {
+      background: 'rgba(99, 102, 241, 0.05)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '10px',
+      padding: '1rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    infoRow: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      padding: '0.5rem 0',
+      borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+    } as React.CSSProperties,
+
+    infoLabel: {
+      color: '#94a3b8',
+      fontSize: '0.9rem',
+    } as React.CSSProperties,
+
+    infoValue: {
+      color: '#f8fafc',
+      fontWeight: 600,
+      fontSize: '0.9rem',
+    } as React.CSSProperties,
+
+    checkbox: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.75rem',
+      cursor: 'pointer',
+    } as React.CSSProperties,
+
+    infoBox: {
+      background: 'rgba(99, 102, 241, 0.05)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '10px',
+      padding: '1rem',
+      marginTop: '1.5rem',
+    } as React.CSSProperties,
+
+    // Filter section
+    filterToggle: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.5rem 1rem',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '8px',
+      color: '#f8fafc',
+      fontSize: '0.9rem',
+      fontWeight: 500,
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
+    filterPanel: {
+      background: 'rgba(15, 23, 42, 0.5)',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '10px',
+      padding: '1.25rem',
+      marginBottom: '1.5rem',
+      marginTop: '1rem',
+    } as React.CSSProperties,
+
+    filterTitle: {
+      fontSize: '0.95rem',
+      fontWeight: 600,
+      color: '#f8fafc',
+      margin: '0 0 1rem 0',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+    } as React.CSSProperties,
+
+    // Preview box
+    previewBox: {
+      background: 'rgba(99, 102, 241, 0.05)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '10px',
+      padding: '1.25rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    previewStats: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(3, 1fr)',
+      gap: '1rem',
+      marginTop: '1rem',
+    } as React.CSSProperties,
+
+    stat: {
+      textAlign: 'center' as const,
+      padding: '1rem',
+      background: 'rgba(148, 163, 184, 0.05)',
+      borderRadius: '8px',
+    } as React.CSSProperties,
+
+    statValue: {
+      display: 'block',
+      fontSize: '1.5rem',
+      fontWeight: 700,
+      color: '#f8fafc',
+    } as React.CSSProperties,
+
+    statLabel: {
+      display: 'block',
+      fontSize: '0.8rem',
+      color: '#94a3b8',
+      marginTop: '0.25rem',
+    } as React.CSSProperties,
+
+    // Coming soon
+    comingSoonGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+      gap: '1rem',
+    } as React.CSSProperties,
+
+    comingSoonCard: {
+      background: 'rgba(99, 102, 241, 0.05)',
+      border: '1px solid rgba(99, 102, 241, 0.15)',
+      borderRadius: '12px',
+      padding: '1.25rem',
+      textAlign: 'center' as const,
+      transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
+    comingSoonIcon: {
+      width: '48px',
+      height: '48px',
+      background: 'rgba(99, 102, 241, 0.1)',
+      borderRadius: '12px',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      margin: '0 auto 0.75rem',
+      color: '#6366f1',
+    } as React.CSSProperties,
+
+    comingSoonTitle: {
+      fontSize: '1rem',
+      fontWeight: 600,
+      color: '#f8fafc',
+      margin: '0 0 0.25rem 0',
+    } as React.CSSProperties,
+
+    comingSoonDesc: {
+      fontSize: '0.85rem',
+      color: '#94a3b8',
+      margin: '0 0 0.75rem 0',
+    } as React.CSSProperties,
+
+    comingSoonBadge: {
+      display: 'inline-block',
+      padding: '0.25rem 0.75rem',
+      background: 'rgba(148, 163, 184, 0.1)',
+      borderRadius: '4px',
+      fontSize: '0.75rem',
+      fontWeight: 600,
+      color: '#64748b',
+    } as React.CSSProperties,
+  };
 
   // ============================================================================
   // AUTH HELPER
@@ -258,13 +764,12 @@ function DataSourcesTab() {
       
       if (response.ok) {
         const data = await response.json();
-        if (data && data.status === 'connected') {
+        if (data && data.status === 'active') {
           setIsConnected(true);
           setConnectionInfo(data);
         }
       }
     } catch (err) {
-      // No existing connection, that's fine
       console.log('No existing HubSpot connection');
     }
   };
@@ -374,7 +879,8 @@ function DataSourcesTab() {
         const data = await response.json();
         setIsConnected(true);
         setConnectionInfo(data);
-        setHubspotToken(''); // Clear the input
+        setHubspotToken('');
+        setTestResult(null);
         alert('✅ HubSpot connected successfully!');
       } else {
         const error = await response.json();
@@ -388,7 +894,34 @@ function DataSourcesTab() {
   };
 
   // ============================================================================
-  // HUBSPOT PREVIEW IMPORT (FIXED - uses header)
+  // BUILD FILTERS OBJECT
+  // ============================================================================
+
+  const buildFilters = () => {
+    const filters: any = {
+      require_email: true,
+      skip_existing: skipDuplicates,
+      limit: batchSize
+    };
+
+    if (createdAfter) {
+      filters.created_after = new Date(createdAfter).toISOString();
+    }
+    if (modifiedAfter) {
+      filters.modified_after = new Date(modifiedAfter).toISOString();
+    }
+    if (leadStatus.length > 0) {
+      filters.lead_statuses = leadStatus;
+    }
+    if (lifecycleStage.length > 0) {
+      filters.lifecycle_stages = lifecycleStage;
+    }
+
+    return filters;
+  };
+
+  // ============================================================================
+  // HUBSPOT PREVIEW IMPORT
   // ============================================================================
 
   const handlePreviewImport = async () => {
@@ -398,7 +931,6 @@ function DataSourcesTab() {
     try {
       const headers = await getAuthHeaders();
       
-      // Pass API key via header if not connected
       if (!isConnected && hubspotToken) {
         headers['X-HubSpot-API-Key'] = hubspotToken;
       }
@@ -428,7 +960,7 @@ function DataSourcesTab() {
   };
 
   // ============================================================================
-  // HUBSPOT IMPORT (FIXED - uses header)
+  // HUBSPOT IMPORT - FIXED with proper filters
   // ============================================================================
 
   const handleHubspotImport = async () => {
@@ -438,7 +970,7 @@ function DataSourcesTab() {
     }
 
     const confirmMsg = importPreview 
-      ? `Import ${importPreview.valid_contacts} contacts from HubSpot?`
+      ? `Import ${Math.min(importPreview.valid_contacts, batchSize)} contacts from HubSpot?`
       : `Import up to ${batchSize} contacts from HubSpot?`;
     
     if (!confirm(confirmMsg)) return;
@@ -449,17 +981,12 @@ function DataSourcesTab() {
     try {
       const headers = await getAuthHeaders();
       
-      // Pass API key via header if not connected
       if (!isConnected && hubspotToken) {
         headers['X-HubSpot-API-Key'] = hubspotToken;
       }
 
       const body = {
-        filters: {
-          require_email: true,
-          skip_existing: skipDuplicates,
-          limit: batchSize
-        }
+        filters: buildFilters()
       };
 
       const response = await fetch(`${API_URL}/api/v3/hubspot/import`, {
@@ -471,9 +998,7 @@ function DataSourcesTab() {
       if (response.ok) {
         const result = await response.json();
         setImportResult(result);
-        setImportPreview(null); // Clear preview
-        
-        // Refresh connection info
+        setImportPreview(null);
         checkExistingConnection();
       } else {
         const error = await response.json();
@@ -491,56 +1016,56 @@ function DataSourcesTab() {
   // ============================================================================
 
   return (
-    <div className="tab-content">
+    <div>
       {/* CSV Upload Section */}
-      <div className="settings-section">
-        <div className="section-header">
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
           <div>
-            <h2>Upload CSV File</h2>
-            <p className="section-description">Import contacts from a CSV file</p>
+            <h2 style={styles.sectionTitle}>Upload CSV File</h2>
+            <p style={styles.sectionDesc}>Import contacts from a CSV file</p>
           </div>
         </div>
 
-        <div className="upload-area">
-          <input
-            type="file"
-            accept=".csv"
-            onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
-            className="file-input"
-            id="csv-upload"
-          />
-          <label htmlFor="csv-upload" className="file-label">
-            <Database size={48} />
-            <span className="file-label-text">
-              {csvFile ? csvFile.name : 'Click to select CSV file'}
-            </span>
-            <span className="file-label-hint">Supports .csv files</span>
-          </label>
-        </div>
+        <input
+          type="file"
+          accept=".csv"
+          onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
+          style={sharedStyles.fileInput}
+          id="csv-upload"
+        />
+        <label htmlFor="csv-upload" style={sharedStyles.fileLabel}>
+          <Upload size={40} />
+          <span style={{ fontWeight: 600, color: '#f8fafc' }}>
+            {csvFile ? csvFile.name : 'Click to select'}
+          </span>
+          <span>Supports .csv files</span>
+        </label>
 
         {csvFile && (
-          <button 
-            onClick={handleCsvUpload} 
-            className="btn-primary"
-            disabled={csvUploading}
-          >
-            {csvUploading ? (
-              <>
-                <Loader2 size={20} className="spin" />
-                Uploading...
-              </>
-            ) : (
-              <>
-                <Upload size={20} />
-                Upload CSV
-              </>
-            )}
-          </button>
+          <div style={styles.buttonRow}>
+            <button 
+              onClick={handleCsvUpload} 
+              style={csvUploading ? sharedStyles.btnPrimaryDisabled : sharedStyles.btnPrimary}
+              disabled={csvUploading}
+            >
+              {csvUploading ? (
+                <>
+                  <Loader2 size={18} className="spin" />
+                  Uploading...
+                </>
+              ) : (
+                <>
+                  <Upload size={18} />
+                  Upload CSV
+                </>
+              )}
+            </button>
+          </div>
         )}
 
-        <div className="info-box">
-          <strong>CSV Format Requirements:</strong>
-          <ul>
+        <div style={styles.infoBox}>
+          <strong style={{ color: '#f8fafc' }}>CSV Format Requirements:</strong>
+          <ul style={{ margin: '0.75rem 0 0 1.25rem', color: '#94a3b8', lineHeight: 1.8 }}>
             <li>Must include: first_name, last_name</li>
             <li>At least ONE of: email, phone, company, linkedin_url</li>
             <li>Optional: job_title, industry, city, state</li>
@@ -550,37 +1075,37 @@ function DataSourcesTab() {
       </div>
 
       {/* HubSpot Section */}
-      <div className="settings-section">
-        <div className="section-header">
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
           <div>
-            <h2>HubSpot Connection</h2>
-            <p className="section-description">Connect your HubSpot account to import contacts</p>
+            <h2 style={styles.sectionTitle}>HubSpot Connection</h2>
+            <p style={styles.sectionDesc}>Connect your HubSpot account to import contacts</p>
           </div>
           {isConnected && (
-            <span className="status-badge connected">
+            <span style={styles.statusBadge}>
               <CheckCircle size={16} />
               Connected
             </span>
           )}
         </div>
 
-        {/* Show connection info if connected */}
+        {/* Connection info if connected */}
         {isConnected && connectionInfo && (
-          <div className="connection-info">
-            <div className="info-row">
-              <span className="info-label">Account:</span>
-              <span className="info-value">{connectionInfo.account_name || connectionInfo.account_id}</span>
+          <div style={styles.connectionInfo}>
+            <div style={styles.infoRow}>
+              <span style={styles.infoLabel}>Account:</span>
+              <span style={styles.infoValue}>{connectionInfo.account_name || connectionInfo.account_id}</span>
             </div>
             {connectionInfo.total_imported > 0 && (
-              <div className="info-row">
-                <span className="info-label">Total Imported:</span>
-                <span className="info-value">{connectionInfo.total_imported.toLocaleString()} contacts</span>
+              <div style={styles.infoRow}>
+                <span style={styles.infoLabel}>Total Imported:</span>
+                <span style={styles.infoValue}>{connectionInfo.total_imported?.toLocaleString()} contacts</span>
               </div>
             )}
             {connectionInfo.last_sync_at && (
-              <div className="info-row">
-                <span className="info-label">Last Import:</span>
-                <span className="info-value">{new Date(connectionInfo.last_sync_at).toLocaleDateString()}</span>
+              <div style={{...styles.infoRow, borderBottom: 'none'}}>
+                <span style={styles.infoLabel}>Last Import:</span>
+                <span style={styles.infoValue}>{new Date(connectionInfo.last_sync_at).toLocaleDateString()}</span>
               </div>
             )}
           </div>
@@ -589,31 +1114,34 @@ function DataSourcesTab() {
         {/* Token input - only show if not connected */}
         {!isConnected && (
           <>
-            <div className="form-group">
-              <label className="form-label">HubSpot Private App Token</label>
+            <div style={styles.formGroup}>
+              <label style={styles.label}>HubSpot Private App Token</label>
               <input
                 type="password"
                 value={hubspotToken}
                 onChange={(e) => setHubspotToken(e.target.value)}
-                className="form-input"
+                style={sharedStyles.input}
                 placeholder="pat-na1-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
               />
-              <span className="form-hint">
+              <p style={styles.hint}>
                 HubSpot → Settings → Integrations → Private Apps → Create app with "crm.objects.contacts.read" scope
-              </span>
+              </p>
             </div>
 
             {/* Test Result */}
             {testResult && (
-              <div className={`alert ${testResult.success ? 'alert-success' : 'alert-error'}`}>
+              <div style={{
+                ...styles.alert,
+                ...(testResult.success ? styles.alertSuccess : styles.alertError)
+              }}>
                 {testResult.success ? (
                   <>
                     <CheckCircle size={20} />
                     <div>
                       <strong>Connection successful!</strong>
-                      <p>Account: {testResult.account_name || testResult.account_id}</p>
+                      <p style={{ margin: '0.25rem 0 0 0' }}>Account: Portal {testResult.account_id}</p>
                       {testResult.contact_count !== undefined && (
-                        <p>{testResult.contact_count.toLocaleString()} contacts available</p>
+                        <p style={{ margin: '0.25rem 0 0 0' }}>{testResult.contact_count.toLocaleString()} contacts available</p>
                       )}
                     </div>
                   </>
@@ -627,10 +1155,10 @@ function DataSourcesTab() {
             )}
 
             {/* Test & Connect buttons */}
-            <div className="button-row">
+            <div style={styles.buttonRow}>
               <button
                 onClick={handleTestConnection}
-                className="btn-secondary"
+                style={!hubspotToken || testing ? sharedStyles.btnSecondaryDisabled : sharedStyles.btnSecondary}
                 disabled={!hubspotToken || testing}
               >
                 {testing ? (
@@ -648,7 +1176,7 @@ function DataSourcesTab() {
 
               <button
                 onClick={handleConnect}
-                className="btn-primary"
+                style={!testResult?.success || testing ? sharedStyles.btnPrimaryDisabled : sharedStyles.btnPrimary}
                 disabled={!testResult?.success || testing}
               >
                 <CheckCircle size={16} />
@@ -661,64 +1189,153 @@ function DataSourcesTab() {
         {/* Import Settings - show if connected OR has valid test */}
         {(isConnected || testResult?.success) && (
           <>
-            <div className="form-group">
-              <label className="form-label">Import Settings</label>
-              <div className="form-row">
-                <div>
-                  <label className="form-label-sm">Batch Size</label>
-                  <select
-                    value={batchSize}
-                    onChange={(e) => setBatchSize(parseInt(e.target.value))}
-                    className="form-input"
-                  >
-                    <option value={25}>25 contacts</option>
-                    <option value={50}>50 contacts</option>
-                    <option value={100}>100 contacts</option>
-                    <option value={200}>200 contacts</option>
-                    <option value={500}>500 contacts</option>
-                  </select>
-                </div>
-              </div>
-              <span className="form-hint">
-                Start with 25-50 for testing, increase once verified
-              </span>
+            <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#f8fafc', margin: '2rem 0 1rem 0' }}>
+              Import Settings
+            </h3>
+
+            {/* Batch Size */}
+            <div style={styles.formGroup}>
+              <label style={styles.labelSm}>Batch Size</label>
+              <select
+                value={batchSize}
+                onChange={(e) => setBatchSize(parseInt(e.target.value))}
+                style={{...sharedStyles.select, width: '200px'}}
+              >
+                <option value={25}>25 contacts</option>
+                <option value={50}>50 contacts</option>
+                <option value={100}>100 contacts</option>
+                <option value={200}>200 contacts</option>
+                <option value={500}>500 contacts</option>
+                <option value={1000}>1,000 contacts</option>
+                <option value={5000}>5,000 contacts</option>
+              </select>
+              <p style={styles.hint}>Start with 25-50 for testing, increase once verified</p>
             </div>
 
-            <div className="checkbox-group">
-              <label className="checkbox-label">
+            {/* Skip Duplicates */}
+            <div style={{ marginBottom: '1.25rem' }}>
+              <label style={styles.checkbox}>
                 <input 
                   type="checkbox" 
                   checked={skipDuplicates}
                   onChange={(e) => setSkipDuplicates(e.target.checked)}
+                  style={{ width: '18px', height: '18px', accentColor: '#6366f1' }}
                 />
-                <span>Skip Duplicates</span>
+                <span style={{ color: '#f8fafc', fontWeight: 500 }}>Skip Duplicates</span>
               </label>
-              <span className="form-hint">Skip contacts that already exist (by email)</span>
+              <p style={{...styles.hint, marginLeft: '1.75rem'}}>Skip contacts that already exist (by email)</p>
             </div>
+
+            {/* Filter Toggle */}
+            <button 
+              onClick={() => setShowFilters(!showFilters)}
+              style={styles.filterToggle}
+            >
+              <Filter size={16} />
+              {showFilters ? 'Hide Filters' : 'Show Import Filters'}
+              <ChevronDown 
+                size={16} 
+                style={{ 
+                  transform: showFilters ? 'rotate(180deg)' : 'rotate(0deg)',
+                  transition: 'transform 0.2s ease'
+                }} 
+              />
+            </button>
+
+            {/* Filter Panel */}
+            {showFilters && (
+              <div style={styles.filterPanel}>
+                <h4 style={styles.filterTitle}>
+                  <Calendar size={16} />
+                  Import Filters
+                </h4>
+                
+                <div style={styles.formRow}>
+                  <div>
+                    <label style={styles.labelSm}>Created After</label>
+                    <input
+                      type="date"
+                      value={createdAfter}
+                      onChange={(e) => setCreatedAfter(e.target.value)}
+                      style={sharedStyles.input}
+                    />
+                  </div>
+                  <div>
+                    <label style={styles.labelSm}>Modified After</label>
+                    <input
+                      type="date"
+                      value={modifiedAfter}
+                      onChange={(e) => setModifiedAfter(e.target.value)}
+                      style={sharedStyles.input}
+                    />
+                  </div>
+                </div>
+
+                <div style={{...styles.formRow, marginTop: '1rem'}}>
+                  <div>
+                    <label style={styles.labelSm}>Lead Status</label>
+                    <select
+                      multiple
+                      value={leadStatus}
+                      onChange={(e) => setLeadStatus(Array.from(e.target.selectedOptions, opt => opt.value))}
+                      style={{...sharedStyles.select, height: '100px'}}
+                    >
+                      <option value="NEW">New</option>
+                      <option value="OPEN">Open</option>
+                      <option value="IN_PROGRESS">In Progress</option>
+                      <option value="OPEN_DEAL">Open Deal</option>
+                      <option value="UNQUALIFIED">Unqualified</option>
+                      <option value="ATTEMPTED_TO_CONTACT">Attempted to Contact</option>
+                      <option value="CONNECTED">Connected</option>
+                      <option value="BAD_TIMING">Bad Timing</option>
+                    </select>
+                    <p style={styles.hint}>Ctrl+click to select multiple</p>
+                  </div>
+                  <div>
+                    <label style={styles.labelSm}>Lifecycle Stage</label>
+                    <select
+                      multiple
+                      value={lifecycleStage}
+                      onChange={(e) => setLifecycleStage(Array.from(e.target.selectedOptions, opt => opt.value))}
+                      style={{...sharedStyles.select, height: '100px'}}
+                    >
+                      <option value="subscriber">Subscriber</option>
+                      <option value="lead">Lead</option>
+                      <option value="marketingqualifiedlead">Marketing Qualified Lead</option>
+                      <option value="salesqualifiedlead">Sales Qualified Lead</option>
+                      <option value="opportunity">Opportunity</option>
+                      <option value="customer">Customer</option>
+                      <option value="evangelist">Evangelist</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Import Preview */}
             {importPreview && (
-              <div className="preview-box">
-                <h4>Import Preview</h4>
-                <div className="preview-stats">
-                  <div className="stat">
-                    <span className="stat-value">{importPreview.total_contacts.toLocaleString()}</span>
-                    <span className="stat-label">Total in HubSpot</span>
+              <div style={styles.previewBox}>
+                <h4 style={{ margin: 0, color: '#f8fafc' }}>Import Preview</h4>
+                <div style={styles.previewStats}>
+                  <div style={styles.stat}>
+                    <span style={styles.statValue}>{importPreview.total_contacts.toLocaleString()}</span>
+                    <span style={styles.statLabel}>Total in HubSpot</span>
                   </div>
-                  <div className="stat valid">
-                    <span className="stat-value">{importPreview.valid_contacts.toLocaleString()}</span>
-                    <span className="stat-label">Valid to Import</span>
+                  <div style={{...styles.stat, background: 'rgba(34, 197, 94, 0.1)'}}>
+                    <span style={{...styles.statValue, color: '#22c55e'}}>{importPreview.valid_contacts.toLocaleString()}</span>
+                    <span style={styles.statLabel}>Valid to Import</span>
                   </div>
-                  <div className="stat rejected">
-                    <span className="stat-value">{importPreview.rejected_contacts.toLocaleString()}</span>
-                    <span className="stat-label">Will be Skipped</span>
+                  <div style={{...styles.stat, background: 'rgba(245, 158, 11, 0.1)'}}>
+                    <span style={{...styles.statValue, color: '#f59e0b'}}>{importPreview.rejected_contacts.toLocaleString()}</span>
+                    <span style={styles.statLabel}>Will be Skipped</span>
                   </div>
                 </div>
                 
                 {Object.keys(importPreview.rejection_reasons).length > 0 && (
-                  <div className="rejection-reasons">
+                  <div style={{ marginTop: '1rem', fontSize: '0.9rem', color: '#94a3b8' }}>
                     <strong>Skip Reasons:</strong>
-                    <ul>
+                    <ul style={{ margin: '0.5rem 0 0 1.25rem' }}>
                       {Object.entries(importPreview.rejection_reasons).map(([reason, count]) => (
                         <li key={reason}>
                           {reason.replace(/_/g, ' ')}: {count}
@@ -732,23 +1349,27 @@ function DataSourcesTab() {
 
             {/* Import Result */}
             {importResult && (
-              <div className="alert alert-success">
+              <div style={{...styles.alert, ...styles.alertSuccess}}>
                 <CheckCircle size={20} />
                 <div>
                   <strong>Import Complete!</strong>
-                  <p>Successfully imported {importResult.imported_count.toLocaleString()} contacts.</p>
+                  <p style={{ margin: '0.25rem 0 0 0' }}>
+                    Successfully imported {importResult.imported_count.toLocaleString()} contacts.
+                  </p>
                   {importResult.skipped_count > 0 && (
-                    <p>{importResult.skipped_count} skipped (duplicates or invalid)</p>
+                    <p style={{ margin: '0.25rem 0 0 0' }}>
+                      {importResult.skipped_count} skipped (duplicates or invalid)
+                    </p>
                   )}
                 </div>
               </div>
             )}
 
             {/* Action Buttons */}
-            <div className="button-row">
+            <div style={styles.buttonRow}>
               <button
                 onClick={handlePreviewImport}
-                className="btn-secondary"
+                style={previewing || importing ? sharedStyles.btnSecondaryDisabled : sharedStyles.btnSecondary}
                 disabled={previewing || importing}
               >
                 {previewing ? (
@@ -766,18 +1387,18 @@ function DataSourcesTab() {
 
               <button 
                 onClick={handleHubspotImport} 
-                className="btn-primary"
+                style={importing || previewing ? sharedStyles.btnPrimaryDisabled : sharedStyles.btnPrimary}
                 disabled={importing || previewing}
               >
                 {importing ? (
                   <>
-                    <Loader2 size={20} className="spin" />
+                    <Loader2 size={18} className="spin" />
                     Importing...
                   </>
                 ) : (
                   <>
-                    <Mail size={20} />
-                    Import {importPreview ? importPreview.valid_contacts.toLocaleString() : batchSize} Contacts
+                    <Mail size={18} />
+                    Import {importPreview ? Math.min(importPreview.valid_contacts, batchSize).toLocaleString() : batchSize} Contacts
                   </>
                 )}
               </button>
@@ -785,41 +1406,54 @@ function DataSourcesTab() {
           </>
         )}
 
-        <div className="info-box">
-          <strong>Need help getting your HubSpot API key?</strong>
-          <a href="https://developers.hubspot.com/docs/api/private-apps" target="_blank" rel="noopener noreferrer" className="info-link">
+        <div style={styles.infoBox}>
+          <strong style={{ color: '#f8fafc' }}>Need help getting your HubSpot API key?</strong>
+          <a 
+            href="https://developers.hubspot.com/docs/api/private-apps" 
+            target="_blank" 
+            rel="noopener noreferrer" 
+            style={{ display: 'block', marginTop: '0.5rem', color: '#6366f1' }}
+          >
             View HubSpot Private Apps Documentation →
           </a>
         </div>
       </div>
 
       {/* Coming Soon Section */}
-      <div className="settings-section">
-        <div className="section-header">
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
           <div>
-            <h2>Coming Soon</h2>
-            <p className="section-description">Additional data source integrations</p>
+            <h2 style={styles.sectionTitle}>Coming Soon</h2>
+            <p style={styles.sectionDesc}>Additional data source integrations</p>
           </div>
         </div>
 
-        <div className="coming-soon-grid">
-          <div className="coming-soon-card">
-            <div className="coming-soon-icon">📊</div>
-            <h3>Salesforce</h3>
-            <p>Sync contacts and deals</p>
-            <span className="coming-soon-badge">Q1 2026</span>
+        <div style={styles.comingSoonGrid}>
+          <div style={styles.comingSoonCard}>
+            <div style={styles.comingSoonIcon}>
+              <BarChart3 size={24} />
+            </div>
+            <h3 style={styles.comingSoonTitle}>Salesforce</h3>
+            <p style={styles.comingSoonDesc}>Sync contacts and deals</p>
+            <span style={styles.comingSoonBadge}>Q1 2026</span>
           </div>
-          <div className="coming-soon-card">
-            <div className="coming-soon-icon">🔗</div>
-            <h3>Pipedrive</h3>
-            <p>Import pipeline data</p>
-            <span className="coming-soon-badge">Q1 2026</span>
+          
+          <div style={styles.comingSoonCard}>
+            <div style={styles.comingSoonIcon}>
+              <Link2 size={24} />
+            </div>
+            <h3 style={styles.comingSoonTitle}>Pipedrive</h3>
+            <p style={styles.comingSoonDesc}>Import pipeline data</p>
+            <span style={styles.comingSoonBadge}>Q1 2026</span>
           </div>
-          <div className="coming-soon-card">
-            <div className="coming-soon-icon">💼</div>
-            <h3>LinkedIn</h3>
-            <p>Extract lead information</p>
-            <span className="coming-soon-badge">Q2 2026</span>
+          
+          <div style={styles.comingSoonCard}>
+            <div style={styles.comingSoonIcon}>
+              <Linkedin size={24} />
+            </div>
+            <h3 style={styles.comingSoonTitle}>LinkedIn</h3>
+            <p style={styles.comingSoonDesc}>Extract lead information</p>
+            <span style={styles.comingSoonBadge}>Q2 2026</span>
           </div>
         </div>
       </div>
@@ -827,6 +1461,10 @@ function DataSourcesTab() {
   );
 }
 
+
+// ============================================================================
+// NOTIFICATIONS TAB
+// ============================================================================
 
 function NotificationsTab() {
   const [emailNotifications, setEmailNotifications] = useState(true);
@@ -835,82 +1473,131 @@ function NotificationsTab() {
   const [slackWebhook, setSlackWebhook] = useState('');
   const [minScore, setMinScore] = useState(70);
 
+  const styles = {
+    section: {
+      background: '#1e293b',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    sectionTitle: {
+      fontSize: '1.25rem',
+      fontWeight: 700,
+      margin: '0 0 0.5rem 0',
+      color: '#f8fafc',
+    } as React.CSSProperties,
+
+    sectionDesc: {
+      fontSize: '0.9rem',
+      color: '#94a3b8',
+      margin: '0 0 1.5rem 0',
+    } as React.CSSProperties,
+
+    formGroup: {
+      marginBottom: '1.25rem',
+    } as React.CSSProperties,
+
+    label: {
+      display: 'block',
+      fontSize: '0.9rem',
+      fontWeight: 600,
+      color: '#94a3b8',
+      marginBottom: '0.5rem',
+    } as React.CSSProperties,
+
+    hint: {
+      fontSize: '0.85rem',
+      color: '#64748b',
+      marginTop: '0.5rem',
+    } as React.CSSProperties,
+
+    checkbox: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.75rem',
+      marginBottom: '1rem',
+      cursor: 'pointer',
+    } as React.CSSProperties,
+  };
+
   const handleSaveNotifications = () => {
     alert('Notification settings saved!');
   };
 
   return (
-    <div className="tab-content">
-      <div className="settings-section">
-        <h2>Email Notifications</h2>
-        <p className="section-description">Control when we send you emails</p>
+    <div>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Email Notifications</h2>
+        <p style={styles.sectionDesc}>Control when we send you emails</p>
 
-        <div className="checkbox-group">
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={emailNotifications}
-              onChange={(e) => setEmailNotifications(e.target.checked)}
-            />
-            <span>Enable email notifications</span>
-          </label>
-        </div>
+        <label style={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={emailNotifications}
+            onChange={(e) => setEmailNotifications(e.target.checked)}
+            style={{ width: '18px', height: '18px', accentColor: '#6366f1' }}
+          />
+          <span style={{ color: '#f8fafc' }}>Enable email notifications</span>
+        </label>
 
-        <div className="checkbox-group">
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={hotLeadAlerts}
-              onChange={(e) => setHotLeadAlerts(e.target.checked)}
-            />
-            <span>Notify for hot leads (score ≥ 70)</span>
-          </label>
-        </div>
+        <label style={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={hotLeadAlerts}
+            onChange={(e) => setHotLeadAlerts(e.target.checked)}
+            style={{ width: '18px', height: '18px', accentColor: '#6366f1' }}
+          />
+          <span style={{ color: '#f8fafc' }}>Notify for hot leads (score ≥ 70)</span>
+        </label>
 
-        <div className="checkbox-group">
-          <label className="checkbox-label">
-            <input
-              type="checkbox"
-              checked={enrichmentComplete}
-              onChange={(e) => setEnrichmentComplete(e.target.checked)}
-            />
-            <span>Notify when enrichment completes</span>
-          </label>
-        </div>
+        <label style={styles.checkbox}>
+          <input
+            type="checkbox"
+            checked={enrichmentComplete}
+            onChange={(e) => setEnrichmentComplete(e.target.checked)}
+            style={{ width: '18px', height: '18px', accentColor: '#6366f1' }}
+          />
+          <span style={{ color: '#f8fafc' }}>Notify when enrichment completes</span>
+        </label>
       </div>
 
-      <div className="settings-section">
-        <h2>Slack Integration</h2>
-        <p className="section-description">Get real-time alerts in Slack</p>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Slack Integration</h2>
+        <p style={styles.sectionDesc}>Get real-time alerts in Slack</p>
 
-        <div className="form-group">
-          <label className="form-label">Slack Webhook URL</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Slack Webhook URL</label>
           <input
             type="text"
             value={slackWebhook}
             onChange={(e) => setSlackWebhook(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
             placeholder="https://hooks.slack.com/services/..."
           />
-          <span className="form-hint">
-            Get your webhook URL from <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer">Slack's incoming webhooks page</a>
-          </span>
+          <p style={styles.hint}>
+            Get your webhook URL from{' '}
+            <a href="https://api.slack.com/messaging/webhooks" target="_blank" rel="noopener noreferrer" style={{ color: '#6366f1' }}>
+              Slack's incoming webhooks page
+            </a>
+          </p>
         </div>
 
-        <div className="form-group">
-          <label className="form-label">Minimum score for notifications</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Minimum score for notifications</label>
           <input
             type="number"
             value={minScore}
             onChange={(e) => setMinScore(parseInt(e.target.value))}
-            className="form-input"
+            style={{...sharedStyles.input, width: '150px'}}
             min="0"
             max="100"
           />
-          <span className="form-hint">Only notify for leads with ICP score above this threshold</span>
+          <p style={styles.hint}>Only notify for leads with ICP score above this threshold</p>
         </div>
 
-        <button onClick={handleSaveNotifications} className="btn-primary">
+        <button onClick={handleSaveNotifications} style={sharedStyles.btnPrimary}>
           Save Notification Settings
         </button>
       </div>
@@ -919,36 +1606,98 @@ function NotificationsTab() {
 }
 
 
+// ============================================================================
+// WORKSPACE TAB
+// ============================================================================
+
 function WorkspaceTab() {
   const [workspaceName, setWorkspaceName] = useState('Acme Corp Sales');
   const [teamSize, setTeamSize] = useState('5-10');
+
+  const styles = {
+    section: {
+      background: '#1e293b',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    dangerSection: {
+      background: 'rgba(239, 68, 68, 0.05)',
+      border: '1px solid rgba(239, 68, 68, 0.2)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      marginBottom: '1.5rem',
+    } as React.CSSProperties,
+
+    sectionTitle: {
+      fontSize: '1.25rem',
+      fontWeight: 700,
+      margin: '0 0 0.5rem 0',
+      color: '#f8fafc',
+    } as React.CSSProperties,
+
+    dangerTitle: {
+      fontSize: '1.25rem',
+      fontWeight: 700,
+      margin: '0 0 0.5rem 0',
+      color: '#ef4444',
+    } as React.CSSProperties,
+
+    sectionDesc: {
+      fontSize: '0.9rem',
+      color: '#94a3b8',
+      margin: '0 0 1.5rem 0',
+    } as React.CSSProperties,
+
+    formGroup: {
+      marginBottom: '1.25rem',
+    } as React.CSSProperties,
+
+    label: {
+      display: 'block',
+      fontSize: '0.9rem',
+      fontWeight: 600,
+      color: '#94a3b8',
+      marginBottom: '0.5rem',
+    } as React.CSSProperties,
+
+    infoBox: {
+      background: 'rgba(99, 102, 241, 0.05)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '10px',
+      padding: '1rem',
+      color: '#94a3b8',
+    } as React.CSSProperties,
+  };
 
   const handleSaveWorkspace = () => {
     alert('Workspace settings saved!');
   };
 
   return (
-    <div className="tab-content">
-      <div className="settings-section">
-        <h2>Workspace Settings</h2>
-        <p className="section-description">Manage your team workspace</p>
+    <div>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Workspace Settings</h2>
+        <p style={styles.sectionDesc}>Manage your team workspace</p>
 
-        <div className="form-group">
-          <label className="form-label">Workspace Name</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Workspace Name</label>
           <input
             type="text"
             value={workspaceName}
             onChange={(e) => setWorkspaceName(e.target.value)}
-            className="form-input"
+            style={sharedStyles.input}
           />
         </div>
 
-        <div className="form-group">
-          <label className="form-label">Team Size</label>
+        <div style={styles.formGroup}>
+          <label style={styles.label}>Team Size</label>
           <select
             value={teamSize}
             onChange={(e) => setTeamSize(e.target.value)}
-            className="form-input"
+            style={sharedStyles.select}
           >
             <option value="1">Just me</option>
             <option value="2-5">2-5 people</option>
@@ -958,25 +1707,25 @@ function WorkspaceTab() {
           </select>
         </div>
 
-        <button onClick={handleSaveWorkspace} className="btn-primary">
+        <button onClick={handleSaveWorkspace} style={sharedStyles.btnPrimary}>
           Save Workspace Settings
         </button>
       </div>
 
-      <div className="settings-section">
-        <h2>Team Members</h2>
-        <p className="section-description">Manage who has access to your workspace</p>
+      <div style={styles.section}>
+        <h2 style={styles.sectionTitle}>Team Members</h2>
+        <p style={styles.sectionDesc}>Manage who has access to your workspace</p>
 
-        <div className="info-box">
-          <strong>Coming Soon:</strong> Invite team members, manage roles and permissions
+        <div style={styles.infoBox}>
+          <strong style={{ color: '#f8fafc' }}>Coming Soon:</strong> Invite team members, manage roles and permissions
         </div>
       </div>
 
-      <div className="settings-section danger-zone">
-        <h2>Danger Zone</h2>
-        <p className="section-description">Irreversible actions</p>
+      <div style={styles.dangerSection}>
+        <h2 style={styles.dangerTitle}>Danger Zone</h2>
+        <p style={styles.sectionDesc}>Irreversible actions</p>
 
-        <button className="btn-danger">
+        <button style={sharedStyles.btnDanger}>
           Delete Workspace
         </button>
       </div>
