@@ -1,7 +1,7 @@
 // ============================================================================
 // FILE: frontend/src/pages/SettingsPage.tsx
 // PURPOSE: Settings page with Data Sources tab wired to real backend
-// VERSION: 2.0.0 - Connected HubSpot import to backend APIs
+// VERSION: 2.1.0 - Fixed HubSpot API key passing via header
 // ============================================================================
 
 import { useState, useEffect } from 'react';
@@ -388,7 +388,7 @@ function DataSourcesTab() {
   };
 
   // ============================================================================
-  // HUBSPOT PREVIEW IMPORT
+  // HUBSPOT PREVIEW IMPORT (FIXED - uses header)
   // ============================================================================
 
   const handlePreviewImport = async () => {
@@ -398,17 +398,24 @@ function DataSourcesTab() {
     try {
       const headers = await getAuthHeaders();
       
-      // If not connected but has token, pass it as query param
-      let url = `${API_URL}/api/v3/hubspot/preview`;
+      // Pass API key via header if not connected
       if (!isConnected && hubspotToken) {
-        url += `?api_key=${encodeURIComponent(hubspotToken)}`;
+        headers['X-HubSpot-API-Key'] = hubspotToken;
       }
 
-      const response = await fetch(url, { headers });
+      const response = await fetch(`${API_URL}/api/v3/hubspot/preview?sample_size=50`, { 
+        headers 
+      });
 
       if (response.ok) {
         const data = await response.json();
-        setImportPreview(data);
+        setImportPreview({
+          total_contacts: data.total_available || 0,
+          valid_contacts: data.valid_count || 0,
+          rejected_contacts: data.invalid_count || 0,
+          rejection_reasons: data.rejection_reasons || {},
+          sample_contacts: data.sample_contacts || []
+        });
       } else {
         const error = await response.json();
         alert(`❌ Preview failed: ${error.detail || 'Unknown error'}`);
@@ -421,7 +428,7 @@ function DataSourcesTab() {
   };
 
   // ============================================================================
-  // HUBSPOT IMPORT
+  // HUBSPOT IMPORT (FIXED - uses header)
   // ============================================================================
 
   const handleHubspotImport = async () => {
@@ -442,20 +449,18 @@ function DataSourcesTab() {
     try {
       const headers = await getAuthHeaders();
       
-      const body: any = {
+      // Pass API key via header if not connected
+      if (!isConnected && hubspotToken) {
+        headers['X-HubSpot-API-Key'] = hubspotToken;
+      }
+
+      const body = {
         filters: {
           require_email: true,
-          require_first_name: true,
-          require_last_name: true,
-          skip_existing: skipDuplicates
-        },
-        limit: batchSize
+          skip_existing: skipDuplicates,
+          limit: batchSize
+        }
       };
-
-      // If not connected, pass the API key
-      if (!isConnected && hubspotToken) {
-        body.api_key = hubspotToken;
-      }
 
       const response = await fetch(`${API_URL}/api/v3/hubspot/import`, {
         method: 'POST',
