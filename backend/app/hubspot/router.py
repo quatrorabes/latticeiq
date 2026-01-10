@@ -1,7 +1,7 @@
 # ============================================================================
 # FILE: backend/app/hubspot/router.py
 # PURPOSE: HubSpot import with validation, filtering, and stored credentials
-# VERSION: 2.0.0 - Complete rewrite with ImportService integration
+# VERSION: 2.1.0 - Fixed >100 contacts pagination and counting
 # ============================================================================
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Query
@@ -151,6 +151,12 @@ class HubSpotImportClient:
     
     BASE_URL = "https://api.hubapi.com"
     
+    # HubSpot API max per page
+    MAX_PAGE_SIZE = 100
+    
+    # Max pages to fetch (safety limit: 100 pages * 100 = 10,000 contacts)
+    MAX_PAGES = 100
+    
     # Standard properties to fetch
     DEFAULT_PROPERTIES = [
         "firstname", "lastname", "email", "phone", "mobilephone",
@@ -178,6 +184,7 @@ class HubSpotImportClient:
     ) -> Dict[str, Any]:
         """
         Fetch contacts from HubSpot with optional filtering.
+        Note: HubSpot API max is 100 per page, so limit here is per-page limit.
         """
         props = properties or self.DEFAULT_PROPERTIES
         
@@ -202,8 +209,11 @@ class HubSpotImportClient:
         filters: Optional[ImportFilters]
     ) -> Dict[str, Any]:
         """Get all contacts with optional date filtering."""
+        # HubSpot API max is 100 per page
+        page_limit = min(limit, self.MAX_PAGE_SIZE)
+        
         params = {
-            "limit": min(limit, 100),
+            "limit": page_limit,
             "properties": ",".join(properties)
         }
         
@@ -264,7 +274,7 @@ class HubSpotImportClient:
             body = {
                 "filterGroups": filter_groups,
                 "properties": properties,
-                "limit": min(limit, 100)
+                "limit": page_limit
             }
             if after:
                 body["after"] = after
@@ -303,7 +313,7 @@ class HubSpotImportClient:
         body = {
             "query": query,
             "properties": properties,
-            "limit": min(limit, 100)
+            "limit": min(limit, self.MAX_PAGE_SIZE)
         }
         if after:
             body["after"] = after
@@ -332,7 +342,7 @@ class HubSpotImportClient:
     ) -> Dict[str, Any]:
         """Get contacts from a specific list."""
         # First get list memberships
-        params = {"limit": min(limit, 100)}
+        params = {"limit": min(limit, self.MAX_PAGE_SIZE)}
         if after:
             params["after"] = after
         
@@ -405,25 +415,58 @@ class HubSpotImportClient:
                 return []
     
     async def get_total_count(self, filters: Optional[ImportFilters] = None) -> int:
-        """Get total contact count (with optional filters)."""
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        """
+        Get total contact count (with optional filters).
+        This paginates through all contacts to get an accurate count.
+        """
+        async with httpx.AsyncClient(timeout=60.0) as client:
             try:
-                if filters and (filters.created_after or filters.modified_after or 
-                               filters.lead_statuses or filters.lifecycle_stages):
-                    # Use search to get filtered count
-                    result = await self._get_all_contacts(client, 1, None, ["email"], filters)
-                    return result.get("total", 0)
-                else:
-                    # Simple count
-                    resp = await client.get(
-                        f"{self.BASE_URL}/crm/v3/objects/contacts",
-                        headers=self.headers,
-                        params={"limit": 1}
-                    )
-                    if resp.status_code == 200:
-                        return resp.json().get("total", 0)
-                    return 0
-            except:
+                total = 0
+                after = None
+                pages = 0
+                
+                while pages < self.MAX_PAGES:
+                    if filters and (filters.created_after or filters.modified_after or 
+                                   filters.lead_statuses or filters.lifecycle_stages):
+                        # Use search to get filtered count
+                        result = await self._get_all_contacts(
+                            client, self.MAX_PAGE_SIZE, after, ["email"], filters
+                        )
+                    else:
+                        # Simple list endpoint
+                        params = {"limit": self.MAX_PAGE_SIZE, "properties": "email"}
+                        if after:
+                            params["after"] = after
+                        
+                        resp = await client.get(
+                            f"{self.BASE_URL}/crm/v3/objects/contacts",
+                            headers=self.headers,
+                            params=params
+                        )
+                        if resp.status_code != 200:
+                            break
+                        result = resp.json()
+                    
+                    # Count this page
+                    page_count = len(result.get("results", []))
+                    total += page_count
+                    pages += 1
+                    
+                    # Check for more pages
+                    paging = result.get("paging", {})
+                    after = paging.get("next", {}).get("after")
+                    
+                    if not after or page_count < self.MAX_PAGE_SIZE:
+                        # No more pages
+                        break
+                    
+                    logger.debug(f"Counting contacts: page {pages}, running total {total}")
+                
+                logger.info(f"Total HubSpot contacts found: {total} (in {pages} pages)")
+                return total
+                
+            except Exception as e:
+                logger.error(f"Error counting contacts: {e}")
                 return 0
     
     @staticmethod
@@ -468,8 +511,8 @@ async def hubspot_health():
     return {
         "status": "operational",
         "service": "hubspot",
-        "version": "2.0.0",
-        "features": ["import", "preview", "filtering", "lists", "stored_credentials"]
+        "version": "2.1.0",
+        "features": ["import", "preview", "filtering", "lists", "stored_credentials", "pagination"]
     }
 
 
@@ -486,6 +529,7 @@ async def preview_hubspot_import(
 ):
     """
     Preview HubSpot import - see what contacts would be imported.
+    Shows sample contacts and total available count.
     """
     client = HubSpotImportClient(api_key)
     import_service = ImportService(supabase)
@@ -526,7 +570,7 @@ async def preview_hubspot_import(
     # Get lists
     lists = await client.get_lists()
     
-    # Get total count
+    # Get ACCURATE total count (paginate through all contacts)
     total = await client.get_total_count(filters)
     
     return HubSpotPreviewResponse(
@@ -555,6 +599,7 @@ async def import_from_hubspot(
     - At least one of: email, phone, company, linkedin_url
     
     Use filters to narrow down which contacts to import.
+    Supports importing >100 contacts via automatic pagination.
     """
     start_time = datetime.now(timezone.utc)
     import_id = str(uuid.uuid4())
@@ -564,6 +609,8 @@ async def import_from_hubspot(
     
     # Get filters (use defaults if not provided)
     filters = request.filters or ImportFilters()
+    
+    logger.info(f"Starting HubSpot import for user {user_id}, limit: {filters.limit}")
     
     # Get existing emails for deduplication
     existing_emails = await import_service.get_existing_emails(user_id)
@@ -591,13 +638,16 @@ async def import_from_hubspot(
     total_fetched = 0
     total_summary = ImportValidationSummary()
     after = None
+    page_count = 0
     
     try:
-        while len(all_valid_contacts) < filters.limit:
-            # Fetch batch
-            batch_limit = min(100, filters.limit - len(all_valid_contacts))
+        # Continue fetching until we have enough valid contacts OR run out of HubSpot contacts
+        while len(all_valid_contacts) < filters.limit and page_count < client.MAX_PAGES:
+            page_count += 1
+            
+            # Fetch batch (HubSpot max is 100 per page)
             result = await client.get_contacts(
-                limit=batch_limit,
+                limit=client.MAX_PAGE_SIZE,  # Always fetch full pages
                 after=after,
                 list_id=request.list_id,
                 search_query=request.search_query,
@@ -607,9 +657,11 @@ async def import_from_hubspot(
             
             contacts = result.get("results", [])
             if not contacts:
+                logger.info(f"No more contacts to fetch after page {page_count}")
                 break
             
             total_fetched += len(contacts)
+            logger.info(f"Page {page_count}: fetched {len(contacts)} contacts, total so far: {total_fetched}")
             
             # Normalize
             raw_contacts = [client.normalize_contact(c) for c in contacts]
@@ -622,7 +674,9 @@ async def import_from_hubspot(
                 existing_emails=existing_emails
             )
             
-            all_valid_contacts.extend(valid_contacts)
+            # Only add contacts up to the limit
+            remaining_slots = filters.limit - len(all_valid_contacts)
+            all_valid_contacts.extend(valid_contacts[:remaining_slots])
             
             # Aggregate summary
             total_summary.total_processed += batch_summary.total_processed
@@ -635,8 +689,17 @@ async def import_from_hubspot(
             # Check for more pages
             paging = result.get("paging", {})
             after = paging.get("next", {}).get("after")
+            
             if not after:
+                logger.info(f"No more pages available after page {page_count}")
                 break
+            
+            # Safety check - if we got less than a full page, we're done
+            if len(contacts) < client.MAX_PAGE_SIZE:
+                logger.info(f"Partial page received ({len(contacts)}), ending pagination")
+                break
+        
+        logger.info(f"Pagination complete: {page_count} pages, {total_fetched} fetched, {len(all_valid_contacts)} valid")
         
         # Insert valid contacts
         created_ids = []
@@ -692,6 +755,8 @@ async def import_from_hubspot(
             }).eq("user_id", user_id).eq("provider", "hubspot").execute()
         except Exception as e:
             logger.warning(f"Could not update integration stats: {e}")
+        
+        logger.info(f"HubSpot import complete: {len(created_ids)} imported, {failed_count} failed, {duration_ms}ms")
         
         return HubSpotImportResponse(
             success=True,
