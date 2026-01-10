@@ -1,9 +1,13 @@
 // frontend/src/pages/ContactsPage.tsx
-import { useState, useEffect } from 'react';
-import { Loader2, RefreshCw, Upload, Zap, Trash2, Users } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import { fetchContacts, deleteContact } from '../api/contacts';
 import { Contact } from '../types';
 import ContactDetailModal from '../components/ContactDetailModal';
+
+
+type SortField = 'name' | 'company' | 'title' | 'mdcp_score' | 'bant_score' | 'spice_score' | 'enrichment_status';
+type SortDirection = 'asc' | 'desc';
 
 
 export default function ContactsPage() {
@@ -13,11 +17,25 @@ export default function ContactsPage() {
   const [filter, setFilter] = useState<'all' | 'hot' | 'warm' | 'cold'>('all');
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  
+  // Sorting state
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
 
   useEffect(() => {
     loadContacts();
   }, []);
+
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filter, pageSize]);
 
 
   const loadContacts = async () => {
@@ -76,15 +94,82 @@ export default function ContactsPage() {
   };
 
 
-  const filteredContacts = contacts.filter(contact => {
-    const matchesSearch = 
-      getContactName(contact).toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    if (filter === 'all') return matchesSearch;
-    return matchesSearch && getTier(contact) === filter;
-  });
+  // Handle column header click for sorting
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+
+  // Filter and sort contacts
+  const filteredAndSortedContacts = useMemo(() => {
+    let result = contacts.filter(contact => {
+      const matchesSearch = 
+        getContactName(contact).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (filter === 'all') return matchesSearch;
+      return matchesSearch && getTier(contact) === filter;
+    });
+
+    // Sort
+    result.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'name':
+          aValue = getContactName(a).toLowerCase();
+          bValue = getContactName(b).toLowerCase();
+          break;
+        case 'company':
+          aValue = (a.company || '').toLowerCase();
+          bValue = (b.company || '').toLowerCase();
+          break;
+        case 'title':
+          aValue = (a.title || '').toLowerCase();
+          bValue = (b.title || '').toLowerCase();
+          break;
+        case 'mdcp_score':
+          aValue = a.mdcp_score || 0;
+          bValue = b.mdcp_score || 0;
+          break;
+        case 'bant_score':
+          aValue = a.bant_score || 0;
+          bValue = b.bant_score || 0;
+          break;
+        case 'spice_score':
+          aValue = a.spice_score || 0;
+          bValue = b.spice_score || 0;
+          break;
+        case 'enrichment_status':
+          aValue = (a.enrichment_status || 'pending').toLowerCase();
+          bValue = (b.enrichment_status || 'pending').toLowerCase();
+          break;
+        default:
+          aValue = '';
+          bValue = '';
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [contacts, searchTerm, filter, sortField, sortDirection]);
+
+
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredAndSortedContacts.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedContacts = filteredAndSortedContacts.slice(startIndex, endIndex);
 
 
   const counts = {
@@ -92,6 +177,17 @@ export default function ContactsPage() {
     hot: contacts.filter(c => getTier(c) === 'hot').length,
     warm: contacts.filter(c => getTier(c) === 'warm').length,
     cold: contacts.filter(c => getTier(c) === 'cold').length,
+  };
+
+
+  // Sort indicator component
+  const SortIndicator = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <span style={{ opacity: 0.3, marginLeft: '4px' }}><ChevronUp size={14} /></span>;
+    }
+    return sortDirection === 'asc' 
+      ? <ChevronUp size={14} style={{ marginLeft: '4px', color: '#6366f1' }} />
+      : <ChevronDown size={14} style={{ marginLeft: '4px', color: '#6366f1' }} />;
   };
 
 
@@ -162,6 +258,7 @@ export default function ContactsPage() {
       fontSize: '0.95rem',
       cursor: 'pointer',
       boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+      transition: 'all 0.2s ease',
     } as React.CSSProperties,
     
     btnSecondary: {
@@ -176,6 +273,7 @@ export default function ContactsPage() {
       fontWeight: 600,
       fontSize: '0.95rem',
       cursor: 'pointer',
+      transition: 'all 0.2s ease',
     } as React.CSSProperties,
     
     controlsCard: {
@@ -213,6 +311,7 @@ export default function ContactsPage() {
       fontWeight: 600,
       fontSize: '0.9rem',
       cursor: 'pointer',
+      transition: 'all 0.2s ease',
     } as React.CSSProperties,
     
     filterTabActive: {
@@ -249,6 +348,18 @@ export default function ContactsPage() {
       color: '#64748b',
       background: 'rgba(99, 102, 241, 0.05)',
       borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+      cursor: 'pointer',
+      userSelect: 'none' as const,
+      transition: 'background 0.2s ease',
+    } as React.CSSProperties,
+    
+    thHover: {
+      background: 'rgba(99, 102, 241, 0.1)',
+    } as React.CSSProperties,
+    
+    thContent: {
+      display: 'flex',
+      alignItems: 'center',
     } as React.CSSProperties,
     
     tr: {
@@ -323,6 +434,7 @@ export default function ContactsPage() {
       borderRadius: '8px',
       color: '#64748b',
       cursor: 'pointer',
+      transition: 'all 0.2s ease',
     } as React.CSSProperties,
     
     loading: {
@@ -340,6 +452,129 @@ export default function ContactsPage() {
       textAlign: 'center' as const,
       color: '#64748b',
     } as React.CSSProperties,
+
+    // Pagination styles
+    paginationContainer: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '1rem 1.5rem',
+      borderTop: '1px solid rgba(148, 163, 184, 0.1)',
+      background: 'rgba(99, 102, 241, 0.02)',
+    } as React.CSSProperties,
+
+    paginationInfo: {
+      fontSize: '0.9rem',
+      color: '#94a3b8',
+    } as React.CSSProperties,
+
+    paginationControls: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+    } as React.CSSProperties,
+
+    paginationBtn: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '36px',
+      height: '36px',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '8px',
+      color: '#f8fafc',
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
+    paginationBtnDisabled: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '36px',
+      height: '36px',
+      background: 'rgba(148, 163, 184, 0.05)',
+      border: '1px solid rgba(148, 163, 184, 0.1)',
+      borderRadius: '8px',
+      color: '#475569',
+      cursor: 'not-allowed',
+    } as React.CSSProperties,
+
+    paginationPageBtn: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '36px',
+      height: '36px',
+      padding: '0 0.75rem',
+      background: 'rgba(99, 102, 241, 0.1)',
+      border: '1px solid rgba(99, 102, 241, 0.2)',
+      borderRadius: '8px',
+      color: '#f8fafc',
+      fontSize: '0.9rem',
+      fontWeight: 500,
+      cursor: 'pointer',
+      transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
+    paginationPageBtnActive: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      minWidth: '36px',
+      height: '36px',
+      padding: '0 0.75rem',
+      background: '#6366f1',
+      border: '1px solid #6366f1',
+      borderRadius: '8px',
+      color: 'white',
+      fontSize: '0.9rem',
+      fontWeight: 600,
+      cursor: 'pointer',
+    } as React.CSSProperties,
+
+    pageSizeSelect: {
+      padding: '0.5rem 0.75rem',
+      background: '#0f172a',
+      border: '1px solid rgba(148, 163, 184, 0.15)',
+      borderRadius: '8px',
+      color: '#f8fafc',
+      fontSize: '0.9rem',
+      cursor: 'pointer',
+      outline: 'none',
+    } as React.CSSProperties,
+  };
+
+
+  // Generate page numbers to display
+  const getPageNumbers = () => {
+    const pages: (number | string)[] = [];
+    const maxVisible = 5;
+    
+    if (totalPages <= maxVisible) {
+      for (let i = 1; i <= totalPages; i++) pages.push(i);
+    } else {
+      if (currentPage <= 3) {
+        for (let i = 1; i <= 4; i++) pages.push(i);
+        pages.push('...');
+        pages.push(totalPages);
+      } else if (currentPage >= totalPages - 2) {
+        pages.push(1);
+        pages.push('...');
+        for (let i = totalPages - 3; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        pages.push('...');
+        pages.push(currentPage - 1);
+        pages.push(currentPage);
+        pages.push(currentPage + 1);
+        pages.push('...');
+        pages.push(totalPages);
+      }
+    }
+    
+    return pages;
   };
 
 
@@ -409,18 +644,81 @@ export default function ContactsPage() {
         <table style={styles.table}>
           <thead>
             <tr>
-              <th style={styles.th}>Contact</th>
-              <th style={styles.th}>Company</th>
-              <th style={styles.th}>Title</th>
-              <th style={styles.th}>MDCP</th>
-              <th style={styles.th}>BANT</th>
-              <th style={styles.th}>SPICE</th>
-              <th style={styles.th}>Status</th>
-              <th style={styles.th}>Actions</th>
+              <th 
+                style={styles.th} 
+                onClick={() => handleSort('name')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  Contact <SortIndicator field="name" />
+                </div>
+              </th>
+              <th 
+                style={styles.th}
+                onClick={() => handleSort('company')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  Company <SortIndicator field="company" />
+                </div>
+              </th>
+              <th 
+                style={styles.th}
+                onClick={() => handleSort('title')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  Title <SortIndicator field="title" />
+                </div>
+              </th>
+              <th 
+                style={styles.th}
+                onClick={() => handleSort('mdcp_score')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  MDCP <SortIndicator field="mdcp_score" />
+                </div>
+              </th>
+              <th 
+                style={styles.th}
+                onClick={() => handleSort('bant_score')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  BANT <SortIndicator field="bant_score" />
+                </div>
+              </th>
+              <th 
+                style={styles.th}
+                onClick={() => handleSort('spice_score')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  SPICE <SortIndicator field="spice_score" />
+                </div>
+              </th>
+              <th 
+                style={styles.th}
+                onClick={() => handleSort('enrichment_status')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  Status <SortIndicator field="enrichment_status" />
+                </div>
+              </th>
+              <th style={{...styles.th, cursor: 'default'}}>Actions</th>
             </tr>
           </thead>
           <tbody>
-            {filteredContacts.map((contact) => (
+            {paginatedContacts.map((contact) => (
               <tr
                 key={contact.id}
                 style={styles.tr}
@@ -469,9 +767,83 @@ export default function ContactsPage() {
         </table>
 
 
-        {filteredContacts.length === 0 && (
+        {filteredAndSortedContacts.length === 0 && (
           <div style={styles.emptyState}>
             <p>No contacts found matching your criteria.</p>
+          </div>
+        )}
+
+        {/* Pagination */}
+        {filteredAndSortedContacts.length > 0 && (
+          <div style={styles.paginationContainer}>
+            <div style={styles.paginationInfo}>
+              Showing {startIndex + 1} - {Math.min(endIndex, filteredAndSortedContacts.length)} of {filteredAndSortedContacts.length} contacts
+            </div>
+            
+            <div style={styles.paginationControls}>
+              <select 
+                value={pageSize} 
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                style={styles.pageSizeSelect}
+              >
+                <option value={10}>10 / page</option>
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
+
+              <button
+                style={currentPage === 1 ? styles.paginationBtnDisabled : styles.paginationBtn}
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                title="First page"
+              >
+                <ChevronLeft size={16} />
+                <ChevronLeft size={16} style={{ marginLeft: '-10px' }} />
+              </button>
+
+              <button
+                style={currentPage === 1 ? styles.paginationBtnDisabled : styles.paginationBtn}
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                title="Previous page"
+              >
+                <ChevronLeft size={16} />
+              </button>
+
+              {getPageNumbers().map((page, idx) => (
+                typeof page === 'number' ? (
+                  <button
+                    key={idx}
+                    style={currentPage === page ? styles.paginationPageBtnActive : styles.paginationPageBtn}
+                    onClick={() => setCurrentPage(page)}
+                  >
+                    {page}
+                  </button>
+                ) : (
+                  <span key={idx} style={{ color: '#64748b', padding: '0 0.25rem' }}>...</span>
+                )
+              ))}
+
+              <button
+                style={currentPage === totalPages ? styles.paginationBtnDisabled : styles.paginationBtn}
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage === totalPages}
+                title="Next page"
+              >
+                <ChevronRight size={16} />
+              </button>
+
+              <button
+                style={currentPage === totalPages ? styles.paginationBtnDisabled : styles.paginationBtn}
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                title="Last page"
+              >
+                <ChevronRight size={16} />
+                <ChevronRight size={16} style={{ marginLeft: '-10px' }} />
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -479,7 +851,7 @@ export default function ContactsPage() {
 
       {isModalOpen && selectedContact && (
         <ContactDetailModal
-        contact={selectedContact}
+          contact={selectedContact}
           isOpen={isModalOpen}
           onClose={handleCloseModal}
         />
