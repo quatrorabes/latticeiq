@@ -997,6 +997,45 @@ try:
 except Exception as e:
     print(f"⚠️ Import router not loaded: {e}")
 
+# ============================================================================
+# INTEGRATIONS ROUTER - Connect/Disconnect CRMs
+# ============================================================================
+
+try:
+    from app.routers.integrations_router import router as integrations_router
+    app.include_router(integrations_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "integrations", "endpoints": [
+        "GET /api/v3/integrations",
+        "GET /api/v3/integrations/{provider}",
+        "POST /api/v3/integrations/hubspot/connect",
+        "POST /api/v3/integrations/pipedrive/connect",
+        "DELETE /api/v3/integrations/{provider}",
+        "GET /api/v3/integrations/{provider}/status"
+    ]})
+    print("✅ Integrations router loaded (connect/disconnect CRMs)")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "integrations", "error": str(e)})
+    print(f"⚠️ Integrations router not loaded: {e}")
+
+
+# ============================================================================
+# UNIFIED IMPORT ROUTER - CSV with validation + filters
+# ============================================================================
+
+try:
+    from app.routers.import_router import router as unified_import_router
+    app.include_router(unified_import_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "import", "endpoints": [
+        "POST /api/v3/import/csv/preview",
+        "POST /api/v3/import/csv",
+        "GET /api/v3/import/filters/presets",
+        "GET /api/v3/import/history"
+    ]})
+    print("✅ Unified Import router loaded (CSV with validation + filters)")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "import", "error": str(e)})
+    print(f"⚠️ Import router not loaded: {e}")
+
 
 # ============================================================================
 # UVICORN ENTRY POINT (for local development)
