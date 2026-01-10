@@ -1,7 +1,7 @@
 # ============================================================================
 # FILE: backend/app/routers/integrations_router.py
 # PURPOSE: Manage CRM integrations (connect, test, disconnect, settings)
-# VERSION: 1.0.0
+# VERSION: 1.1.0 - Fixed .single() crash when no integration exists
 # ============================================================================
 
 from fastapi import APIRouter, HTTPException, Depends, Header
@@ -302,7 +302,7 @@ async def integrations_health():
     return {
         "status": "operational",
         "service": "integrations",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "supported_providers": [p.value for p in IntegrationProvider],
         "features": ["connect", "test", "disconnect", "settings"]
     }
@@ -354,17 +354,22 @@ async def get_integration(
 ):
     """Get a specific integration."""
     try:
+        # FIX: Don't use .single() - it crashes when no rows exist
+        # Instead, fetch without .single() and check manually
         result = supabase.table("user_integrations")\
             .select("*")\
             .eq("user_id", user_id)\
             .eq("provider", provider.value)\
-            .single()\
             .execute()
         
-        if not result.data:
-            raise HTTPException(status_code=404, detail=f"{provider.value} integration not found")
+        # Check if we got any results
+        if not result.data or len(result.data) == 0:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"{provider.value} integration not found. Please connect it first."
+            )
         
-        row = result.data
+        row = result.data[0]  # Get first (and should be only) result
         return IntegrationResponse(
             id=row["id"],
             provider=row["provider"],
@@ -415,7 +420,7 @@ async def connect_hubspot(
     try:
         now = datetime.now(timezone.utc).isoformat()
         
-        # Check if exists
+        # Check if exists (without .single())
         existing = supabase.table("user_integrations")\
             .select("id")\
             .eq("user_id", user_id)\
@@ -432,25 +437,26 @@ async def connect_hubspot(
             "updated_at": now
         }
         
-        if existing.data:
+        if existing.data and len(existing.data) > 0:
             # Update existing
             supabase.table("user_integrations")\
                 .update(integration_data)\
                 .eq("user_id", user_id)\
                 .eq("provider", "hubspot")\
                 .execute()
+            logger.info(f"HubSpot updated for user {user_id}")
         else:
             # Create new
             integration_data["id"] = str(uuid.uuid4())
             integration_data["created_at"] = now
             supabase.table("user_integrations").insert(integration_data).execute()
+            logger.info(f"HubSpot connected for user {user_id}")
         
-        logger.info(f"HubSpot connected for user {user_id}")
         return test_result
         
     except Exception as e:
         logger.error(f"Failed to save HubSpot integration: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save integration")
+        raise HTTPException(status_code=500, detail=f"Failed to save integration: {str(e)}")
 
 
 @router.post("/hubspot/test", response_model=IntegrationTestResult)
@@ -503,7 +509,7 @@ async def connect_pipedrive(
             "updated_at": now
         }
         
-        if existing.data:
+        if existing.data and len(existing.data) > 0:
             supabase.table("user_integrations")\
                 .update(integration_data)\
                 .eq("user_id", user_id)\
@@ -519,7 +525,7 @@ async def connect_pipedrive(
         
     except Exception as e:
         logger.error(f"Failed to save Pipedrive integration: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save integration")
+        raise HTTPException(status_code=500, detail=f"Failed to save integration: {str(e)}")
 
 
 @router.post("/pipedrive/test", response_model=IntegrationTestResult)
@@ -545,7 +551,7 @@ async def disconnect_integration(
             .eq("provider", provider.value)\
             .execute()
         
-        if not result.data:
+        if not result.data or len(result.data) == 0:
             raise HTTPException(status_code=404, detail="Integration not found")
         
         logger.info(f"{provider.value} disconnected for user {user_id}")
@@ -585,7 +591,7 @@ async def update_integration_settings(
             .eq("provider", provider.value)\
             .execute()
         
-        if not result.data:
+        if not result.data or len(result.data) == 0:
             raise HTTPException(status_code=404, detail="Integration not found")
         
         return {
@@ -612,15 +618,14 @@ async def check_integration_status(
 ):
     """Check current status of an integration (test saved credentials)."""
     try:
-        # Get saved integration
+        # FIX: Don't use .single() - handle empty results gracefully
         result = supabase.table("user_integrations")\
             .select("*")\
             .eq("user_id", user_id)\
             .eq("provider", provider.value)\
-            .single()\
             .execute()
         
-        if not result.data:
+        if not result.data or len(result.data) == 0:
             return {
                 "provider": provider.value,
                 "connected": False,
@@ -628,7 +633,7 @@ async def check_integration_status(
                 "message": "Integration not set up"
             }
         
-        row = result.data
+        row = result.data[0]
         api_key = row.get("api_key")
         
         if not api_key:
