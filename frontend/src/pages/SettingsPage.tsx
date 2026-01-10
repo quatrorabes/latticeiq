@@ -1,7 +1,7 @@
 // ============================================================================
 // FILE: frontend/src/pages/SettingsPage.tsx
 // PURPOSE: Settings page with Data Sources tab - FIXED buttons, filters, limits
-// VERSION: 2.2.0 - Added import filters, fixed pagination, consistent styling
+// VERSION: 2.2.1 - Fixed HubSpot status endpoint and status check
 // ============================================================================
 
 import { useState, useEffect } from 'react';
@@ -760,11 +760,13 @@ function DataSourcesTab() {
   const checkExistingConnection = async () => {
     try {
       const headers = await getAuthHeaders();
-      const response = await fetch(`${API_URL}/api/v3/integrations/hubspot/status`, { headers });
+      // FIXED: Changed from /hubspot/status to /hubspot (the actual backend endpoint)
+      const response = await fetch(`${API_URL}/api/v3/integrations/hubspot`, { headers });
       
       if (response.ok) {
         const data = await response.json();
-        if (data && data.status === 'active') {
+        // FIXED: Changed from 'active' to 'connected' (matching IntegrationStatus enum)
+        if (data && data.status === 'connected') {
           setIsConnected(true);
           setConnectionInfo(data);
         }
