@@ -33,7 +33,7 @@ export interface ContactsResponse {
   offset: number;
 }
 
-export async function fetchContacts(limit = 100, offset = 0): Promise<ContactsResponse> {
+export async function fetchContacts(limit = 10000, offset = 0): Promise<ContactsResponse> {
   const { data, error, count } = await supabase
     .from('contacts')
     .select('*', { count: 'exact' })

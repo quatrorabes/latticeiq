@@ -111,7 +111,7 @@ export const icpApi = {
         icp_id: icpId,
         contact_ids: contactIds,
         min_score: minScore,
-        limit: 100,
+        limit: 10000,
       }),
     });
 
@@ -123,7 +123,7 @@ export const icpApi = {
   async getMatches(
     icpId: string,
     minScore: number = 60,
-    limit: number = 100
+    limit: number = 10000
   ): Promise<any> {
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token;
