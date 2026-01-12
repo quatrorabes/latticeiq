@@ -29,6 +29,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
+from app.routers.integrationsrouter import router as integrations_router
+
 
 
 # ============================================================================
@@ -542,6 +544,35 @@ except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "csv_export", "error": str(e)})
     print(f"⚠️ CSV Export router not loaded: {e}")
 
+# ============================================================================
+# Integrations Router (HubSpot connect/test/status)
+# ============================================================================
+try:
+    from app.routers.integrationsrouter import router as integrations_router
+    app.include_router(integrations_router, prefix="/api/v3")
+    logger.info({"event": "router_registered", "router": "integrations", "endpoints": [
+        "POST /api/v3/integrations/hubspot/test",
+        "POST /api/v3/integrations/hubspot/connect", 
+        "GET /api/v3/integrations/hubspot/status",
+        "DELETE /api/v3/integrations/hubspot/disconnect"
+    ]})
+    print("✅ Integrations router loaded (HubSpot connect/save)")
+except Exception as e:
+    logger.warning({"event": "router_import_failed", "router": "integrations", "error": str(e)})
+    print(f"⚠️ Integrations router not loaded: {e}")
+
+# ============================================================================
+# IMPORT & REGISTER HUBSPOT ROUTER (SIMPLIFIED & SAFE)
+# ============================================================================
+logger.info({"event": "attempting_hubspot_import"})
+try:
+    from app.hubspot.router import router as hubspot_router
+    app.include_router(hubspot_router, prefix="/api/v3")
+    logger.info({"event": "hubspot_router_registered", "prefix": "/api/v3/hubspot"})
+except Exception as e:
+    logger.error({"event": "hubspot_import_failed", "error": str(e), "error_type": type(e).__name__})
+    import traceback
+    logger.error({"event": "hubspot_traceback", "traceback": traceback.format_exc()})
 
 # ============================================================================
 # ICP CONFIG ENDPOINT

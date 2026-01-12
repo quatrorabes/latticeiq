@@ -749,14 +749,15 @@ function DataSourcesTab() {
     };
   };
 
-  // ============================================================================
-  // CHECK EXISTING CONNECTION ON MOUNT
-  // ============================================================================
+// ============================================================================
+// CHECK EXISTING CONNECTION ON MOUNT
+// ============================================================================
 
-  useEffect(() => {
-    checkExistingConnection();
-  }, []);
+useEffect(() => {
+  checkExistingConnection();
+}, []);
 
+<<<<<<< Updated upstream
   const checkExistingConnection = async () => {
     try {
       const headers = await getAuthHeaders();
@@ -773,8 +774,27 @@ function DataSourcesTab() {
       }
     } catch (err) {
       console.log('No existing HubSpot connection');
+=======
+const checkExistingConnection = async () => {
+  try {
+    const headers = await getAuthHeaders();
+    // FIXED: Changed from /hubspot/status to /hubspot (the actual endpoint)
+    const response = await fetch(`${API_URL}/api/v3/integrations/hubspot`, { headers });
+    
+    if (response.ok) {
+      const data = await response.json();
+      // Check if the integration exists and is connected
+      if (data && data.status === 'connected') {
+        setIsConnected(true);
+        setConnectionInfo(data);
+      }
+>>>>>>> Stashed changes
     }
-  };
+  } catch (err) {
+    console.log('No existing HubSpot connection');
+  }
+};
+
 
   // ============================================================================
   // CSV UPLOAD
@@ -895,6 +915,7 @@ function DataSourcesTab() {
     }
   };
 
+<<<<<<< Updated upstream
   // ============================================================================
   // BUILD FILTERS OBJECT
   // ============================================================================
@@ -925,11 +946,17 @@ function DataSourcesTab() {
   // ============================================================================
   // HUBSPOT PREVIEW IMPORT
   // ============================================================================
+=======
+// ============================================================================
+// HUBSPOT PREVIEW IMPORT (FIXED)
+// ============================================================================
+>>>>>>> Stashed changes
 
-  const handlePreviewImport = async () => {
-    setPreviewing(true);
-    setImportPreview(null);
+const handlePreviewImport = async () => {
+  setPreviewing(true);
+  setImportPreview(null);
 
+<<<<<<< Updated upstream
     try {
       const headers = await getAuthHeaders();
       
@@ -1010,8 +1037,108 @@ function DataSourcesTab() {
       alert(`❌ Error: ${err instanceof Error ? err.message : 'Import failed'}`);
     } finally {
       setImporting(false);
+=======
+  try {
+    const headers = await getAuthHeaders();
+    
+    // If not connected but has token from input, pass it as header
+    if (!isConnected && hubspotToken) {
+      headers['X-HubSpot-API-Key'] = hubspotToken;
+>>>>>>> Stashed changes
     }
-  };
+
+    const response = await fetch(`${API_URL}/api/v3/hubspot/preview?sample_size=50`, { 
+      headers 
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      setImportPreview({
+        total_contacts: data.total_available || 0,
+        valid_contacts: data.valid_count || 0,
+        rejected_contacts: data.invalid_count || 0,
+        rejection_reasons: data.rejection_reasons || {},
+        sample_contacts: data.sample_contacts || []
+      });
+    } else {
+      const error = await response.json();
+      alert(`❌ Preview failed: ${error.detail || 'Unknown error'}`);
+    }
+  } catch (err) {
+    alert(`❌ Error: ${err instanceof Error ? err.message : 'Preview failed'}`);
+  } finally {
+    setPreviewing(false);
+  }
+};
+
+
+// ============================================================================
+// HUBSPOT IMPORT (FIXED)
+// ============================================================================
+
+const handleHubspotImport = async () => {
+  if (!isConnected && !hubspotToken) {
+    alert('Please enter your HubSpot API token or connect your account first');
+    return;
+  }
+
+  const confirmMsg = importPreview 
+    ? `Import ${importPreview.valid_contacts} contacts from HubSpot?`
+    : `Import up to ${batchSize} contacts from HubSpot?`;
+  
+  if (!confirm(confirmMsg)) return;
+
+  setImporting(true);
+  setImportResult(null);
+
+  try {
+    const headers = await getAuthHeaders();
+    
+    // Pass API key in header if not connected
+    if (!isConnected && hubspotToken) {
+      headers['X-HubSpot-API-Key'] = hubspotToken;
+    }
+
+    const body = {
+      filters: {
+        require_email: true,
+        skip_existing: skipDuplicates,
+        limit: batchSize
+      }
+    };
+
+    const response = await fetch(`${API_URL}/api/v3/hubspot/import`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(body)
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      setImportResult({
+        success: result.success,
+        import_id: result.import_id,
+        total_processed: result.total_processed,
+        imported_count: result.imported_count,
+        skipped_count: result.skipped_count,
+        failed_count: result.failed_count,
+        rejection_reasons: result.rejection_reasons
+      });
+      setImportPreview(null);
+      
+      // Refresh connection info
+      checkExistingConnection();
+    } else {
+      const error = await response.json();
+      alert(`❌ Import failed: ${error.detail || 'Unknown error'}`);
+    }
+  } catch (err) {
+    alert(`❌ Error: ${err instanceof Error ? err.message : 'Import failed'}`);
+  } finally {
+    setImporting(false);
+  }
+};
+
 
   // ============================================================================
   // RENDER
