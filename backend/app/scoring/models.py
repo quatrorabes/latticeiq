@@ -1,4 +1,3 @@
-# backend/app/scoring/models.py
 """
 LatticeIQ Scoring Framework Models
 MDCP, BANT, SPICE configuration models for lead qualification
@@ -6,7 +5,33 @@ MDCP, BANT, SPICE configuration models for lead qualification
 
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
+
+
+# ============================================================
+# REQUEST MODELS
+# ============================================================
+
+class BatchScoreRequest(BaseModel):
+    """Request to batch score selected contacts"""
+    contact_ids: List[str]  # Array of contact UUIDs
+    frameworks: Optional[List[str]] = None  # ["mdcp", "bant", "spice"]
+    
+    @field_validator("contact_ids")
+    @classmethod
+    def validate_contact_ids(cls, v):
+        """Validate contact IDs list"""
+        if not v:
+            raise ValueError("contact_ids cannot be empty")
+        if len(v) > 1000:
+            raise ValueError("Max 1000 contacts per batch")
+        return v
+    
+    @field_validator("frameworks", mode="before")
+    @classmethod
+    def set_default_frameworks(cls, v):
+        """Set default frameworks if not provided"""
+        return v or ["mdcp", "bant", "spice"]
 
 
 # ============================================================
@@ -32,7 +57,7 @@ class MDCPCriteria(BaseModel):
     """MDCP scoring criteria"""
     money_min_revenue: Optional[float] = None
     money_max_revenue: Optional[float] = None
-    decision_maker_titles: List[str] = ["CEO", "CTO", "VP Sales", "VP Marketing"]
+    decision_maker_titles: List[str] = ["CEO", "CTO", "VP Sales", "VP Marketing", "VP", "Director", "President", "Owner", "CFO"]
     champion_engagement_days: int = 30
     process_cycle_days: int = 90
 
@@ -70,8 +95,8 @@ class BANTCriteria(BaseModel):
     """BANT scoring criteria"""
     budget_min: Optional[float] = None
     budget_max: Optional[float] = None
-    authority_titles: List[str] = ["CEO", "CTO", "VP Sales", "Director", "Manager"]
-    need_keywords: List[str] = ["need", "want", "problem", "challenge", "require"]
+    authority_titles: List[str] = ["CEO", "CTO", "VP Sales", "VP Marketing", "Director", "Manager", "President", "Owner", "CFO"]
+    need_keywords: List[str] = ["need", "want", "problem", "challenge", "require", "issue"]
     timeline_urgency: Optional[str] = None
 
 
@@ -107,9 +132,9 @@ class SPICEThresholds(BaseModel):
 
 class SPICECriteria(BaseModel):
     """SPICE scoring criteria"""
-    problem_keywords: List[str] = ["challenge", "issue", "problem", "difficulty", "pain"]
-    implication_keywords: List[str] = ["impact", "affect", "consequence", "result", "lead to"]
-    consequence_keywords: List[str] = ["risk", "critical", "urgent", "important", "severe"]
+    problem_keywords: List[str] = ["challenge", "issue", "problem", "difficulty", "pain", "obstacle"]
+    implication_keywords: List[str] = ["impact", "affect", "consequence", "result", "lead to", "cause"]
+    consequence_keywords: List[str] = ["risk", "critical", "urgent", "important", "severe", "loss"]
 
 
 class SPICEConfig(BaseModel):
@@ -123,7 +148,7 @@ class SPICEConfig(BaseModel):
 
 
 # ============================================================
-# Scoring Response Models
+# RESPONSE MODELS
 # ============================================================
 
 class ScoreResponse(BaseModel):
@@ -148,4 +173,33 @@ class BatchScoringResponse(BaseModel):
     scored_count: int
     total_contacts: int
     message: str
-    errors: Optional[list] = None
+    errors: Optional[List[Dict[str, str]]] = None
+
+
+# ============================================================
+# UTILITY MODELS (for future expansions)
+# ============================================================
+
+class ScoreComparisonRequest(BaseModel):
+    """Request to compare scoring frameworks for a contact"""
+    contact_id: str
+    frameworks: Optional[List[str]] = ["mdcp", "bant", "spice"]
+
+
+class ScoreComparisonResponse(BaseModel):
+    """Response comparing multiple frameworks for same contact"""
+    contact_id: str
+    mdcp: Optional[Dict[str, Any]] = None
+    bant: Optional[Dict[str, Any]] = None
+    spice: Optional[Dict[str, Any]] = None
+    overall_score: float
+    recommendation: str  # "hot", "warm", "cold"
+    created_at: datetime
+
+
+class ScoringConfigUpdateRequest(BaseModel):
+    """Request to update custom scoring configuration"""
+    framework: str  # "mdcp", "bant", or "spice"
+    weights: Optional[Dict[str, int]] = None
+    thresholds: Optional[Dict[str, int]] = None
+    criteria: Optional[Dict[str, Any]] = None

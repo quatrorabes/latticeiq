@@ -29,9 +29,6 @@ from fastapi.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel, Field
 from supabase import create_client, Client
 from pythonjsonlogger import jsonlogger
-from app.routers.integrationsrouter import router as integrations_router
-
-
 
 # ============================================================================
 # CRITICAL: FIX PYTHON PATH FIRST
@@ -262,6 +259,7 @@ except Exception as e:
 # IMPORT OTHER ROUTERS
 # ============================================================================
 
+
 # Contacts Router
 try:
     from app.contacts_router import router as contacts_router
@@ -270,6 +268,7 @@ try:
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "contacts", "error": str(e)})
 
+
 # CRM Router
 try:
     from app.crm.crm_import_router import router as crm_router
@@ -277,6 +276,7 @@ try:
     logger.info({"event": "router_registered", "router": "crm"})
 except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "crm", "error": str(e)})
+
 
 # Quick Enrichment Router (enrich_simple.py)
 try:
@@ -291,12 +291,13 @@ except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
     print(f"⚠️ Quick Enrichment router not loaded: {e}")
 
+
 # Deep Enrichment Router (NEW - unified schema with boxes) - DEBUG VERSION
 print("=" * 60, flush=True)
 print("ATTEMPTING TO LOAD DEEP ENRICHMENT ROUTER...", flush=True)
 try:
     from app.routers.enrichment_v3_deep import router as deepenrichrouter
-    app.include_router(deepenrichrouter, prefix="/api/v3/enrichment")
+    app.include_router(deepenrichrouter, prefix="/api/v3")
     logger.info({"event": "router_registered", "router": "enrichment_deep", "endpoints": [
         "POST /api/v3/enrichment/deep-enrich/{contact_id}",
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/status",
@@ -312,13 +313,16 @@ except Exception as e:
     logger.error({"event": "router_import_failed", "router": "enrichment_deep", "error": str(e), "traceback": full_traceback})
     ENRICHMENT_V3_DEEP_AVAILABLE = False
     deepenrichrouter = None
-print("=" * 60, flush=True)
+    print("=" * 60, flush=True)
+
 
 # ============================================================================
-# Scoring Router - WITH SUPABASE INJECTION FIX
+# Scoring Router - WITH SUPABASE INJECTION
 # ============================================================================
 try:
-    from app.scoring.router import router as scoring_router, set_supabase_client as set_scoring_supabase
+    from app.scoring.router import router as scoring_router
+    from app.scoring.router import set_supabase_client as set_scoring_supabase
+    
     app.include_router(scoring_router, prefix="/api/v3")
     
     # CRITICAL FIX: Inject Supabase client into scoring router
@@ -334,12 +338,14 @@ try:
     logger.info({"event": "router_registered", "router": "scoring", "endpoints": [
         "GET /api/v3/scoring/config/{framework}",
         "POST /api/v3/scoring/calculate-all/{contact_id}",
+        "POST /api/v3/scoring/batch-score",
         "POST /api/v3/scoring/score-all"
     ]})
 except Exception as e:
+    import traceback
     logger.warning({"event": "router_import_failed", "router": "scoring", "error": str(e)})
     print(f"⚠️ Scoring router not loaded: {e}")
-
+    traceback.print_exc()
 # ============================================================================
 # OUTREACH ROUTER - Email Generation + DISC Call Scripts
 # ============================================================================

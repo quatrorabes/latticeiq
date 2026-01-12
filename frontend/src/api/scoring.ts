@@ -60,6 +60,29 @@ export async function calculateScores(contactId: string): Promise<ScoringResult>
   }
 }
 
+// frontend/src/api/scoring.ts
+
+export async function batchScoreContacts(
+  contactIds: string[],
+  frameworks: string[] = ["mdcp", "bant", "spice"]
+): Promise<BatchScoringResponse> {
+  const response = await fetch(`${API_URL}/api/v3/scoring/batch-score`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${getToken()}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      contact_ids: contactIds,
+      frameworks
+    })
+  });
+  
+  if (!response.ok) throw new Error("Batch scoring failed");
+  return response.json();
+}
+
+
 // Local fallback scoring when backend is unavailable
 export async function calculateScoresLocally(contactId: string): Promise<ScoringResult> {
   const { data: contact } = await supabase

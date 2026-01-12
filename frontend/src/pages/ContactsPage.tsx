@@ -547,6 +547,24 @@ export default function ContactsPage() {
   };
 
 
+  // Get selected checkboxes, score them
+const handleBatchScore = async () => {
+  const selected = contacts.filter(c => checkedIds.has(c.id)).map(c => c.id);
+  if (selected.length === 0) {
+    alert("Select contacts first");
+    return;
+  }
+  
+  setLoading(true);
+  try {
+    await batchScoreContacts(selected);
+    await loadContacts(); // Refresh
+  } finally {
+    setLoading(false);
+  }
+};
+
+
   // Generate page numbers to display
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
