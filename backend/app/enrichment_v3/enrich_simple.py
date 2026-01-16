@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict
 
@@ -10,8 +12,8 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Path, status
 from supabase import Client
 
-from app.database import get_supabase  # existing helper
-from app.auth import get_current_user  # returns CurrentUser
+from app.database import get_supabase
+from app.auth import get_current_user
 from app.enrichment_v3.models import (
     UnifiedEnrichmentResult,
     EnrichmentMeta,
@@ -29,19 +31,69 @@ router = APIRouter(prefix="/enrichment", tags=["enrichment-quick"])
 
 PERPLEXITY_API_URL = "https://api.perplexity.ai/chat/completions"
 
+# Retry configuration
+MAX_RETRIES = 3
+INITIAL_BACKOFF_SECONDS = 2.0
+MAX_BACKOFF_SECONDS = 10.0
+REQUEST_TIMEOUT_SECONDS = 45.0
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-async def call_perplexity_quick_profile(
+
+def repair_truncated_json(content: str) -> str:
+    """
+    Attempt to repair truncated JSON by closing open brackets/braces.
+    Handles cases where Perplexity response gets cut off.
+    """
+    content = content.strip()
+    
+    # Remove markdown code fences if present
+    if content.startswith("```json"):
+        content = content[7:]
+    elif content.startswith("```"):
+        content = content[3:]
+    if content.endswith("```"):
+        content = content[:-3]
+    content = content.strip()
+    
+    if not content:
+        return "{}"
+    
+    # Try parsing as-is first
+    try:
+        json.loads(content)
+        return content
+    except json.JSONDecodeError:
+        pass
+    
+    # Count unmatched brackets/braces
+    open_braces = content.count("{") - content.count("}")
+    open_brackets = content.count("[") - content.count("]")
+    
+    # Check if we're inside a string (odd number of unescaped quotes)
+    in_string = content.count('"') % 2 == 1
+    if in_string:
+        content += '"'
+    
+    # Close arrays then objects
+    content += "]" * max(0, open_brackets)
+    content += "}" * max(0, open_braces)
+    
+    return content
+
+
+async def call_perplexity_with_retry(
     api_key: str,
     contact: Dict[str, Any],
 ) -> Dict[str, Any]:
     """
-    Call Perplexity (or your chosen provider) to get a compact profile.
-    The prompt is designed to return JSON in the UnifiedEnrichmentResult shape.
+    Call Perplexity API with automatic retry on timeout/connection errors.
+    Uses exponential backoff: 2s -> 4s -> 8s (capped at 10s)
     """
+    import asyncio
 
     name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
     company = contact.get("company") or ""
@@ -52,7 +104,7 @@ async def call_perplexity_quick_profile(
     system_prompt = (
         "You are an SDR assistant that produces ultra-compact research on a prospect. "
         "Return ONLY valid JSON matching the provided schema. Do not include any "
-        "natural language outside the JSON."
+        "natural language outside the JSON. Do not include markdown code fences."
     )
 
     user_prompt = (
@@ -66,23 +118,23 @@ async def call_perplexity_quick_profile(
         f"Website: {website}\n\n"
         "Return JSON with this shape:\n"
         "{\n"
-        '  \"contact_profile\": {\n'
-        '    \"headline\": \"...\",\n'
-        '    \"role_summary\": \"...\",\n'
-        '    \"seniority\": \"...\",\n'
-        '    \"background_bullets\": [{\"text\": \"...\"}, ...]\n'
+        '  "contact_profile": {\n'
+        '    "headline": "...",\n'
+        '    "role_summary": "...",\n'
+        '    "seniority": "...",\n'
+        '    "background_bullets": [{"text": "..."}, ...]\n'
         "  },\n"
-        '  \"company_profile\": {\n'
-        '    \"one_liner\": \"...\",\n'
-        '    \"industry\": \"...\",\n'
-        '    \"size_segment\": \"...\",\n'
-        '    \"region\": \"...\",\n'
-        '    \"key_products_or_services\": [{\"text\": \"...\"}, ...]\n'
+        '  "company_profile": {\n'
+        '    "one_liner": "...",\n'
+        '    "industry": "...",\n'
+        '    "size_segment": "...",\n'
+        '    "region": "...",\n'
+        '    "key_products_or_services": [{"text": "..."}, ...]\n'
         "  },\n"
-        '  \"messaging\": {\n'
-        '    \"cold_openers\": [{\"text\": \"...\"}, ...],\n'
-        '    \"value_props\": [{\"text\": \"...\"}, ...],\n'
-        '    \"call_to_action_ideas\": [{\"text\": \"...\"}, ...]\n'
+        '  "messaging": {\n'
+        '    "cold_openers": [{"text": "..."}, ...],\n'
+        '    "value_props": [{"text": "..."}, ...],\n'
+        '    "call_to_action_ideas": [{"text": "..."}, ...]\n'
         "  }\n"
         "}\n"
     )
@@ -98,38 +150,144 @@ async def call_perplexity_quick_profile(
             {"role": "user", "content": user_prompt},
         ],
         "temperature": 0.4,
+        "max_tokens": 2000,
     }
 
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(PERPLEXITY_API_URL, json=payload, headers=headers)
+    last_error = None
+    
+    for attempt in range(1, MAX_RETRIES + 1):
+        backoff = min(INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)), MAX_BACKOFF_SECONDS)
+        
+        try:
+            logger.info({
+                "event": "perplexity_request_attempt",
+                "attempt": attempt,
+                "max_retries": MAX_RETRIES,
+                "contact_name": name,
+            })
+            
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
+                resp = await client.post(PERPLEXITY_API_URL, json=payload, headers=headers)
 
-    if resp.status_code != 200:
-        logger.error("Perplexity quick-enrich error: %s - %s", resp.status_code, resp.text)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Quick enrichment provider error",
-        )
+            # Handle rate limiting specifically
+            if resp.status_code == 429:
+                logger.warning({
+                    "event": "perplexity_rate_limited",
+                    "attempt": attempt,
+                    "retry_after": backoff,
+                })
+                if attempt < MAX_RETRIES:
+                    await asyncio.sleep(backoff)
+                    continue
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        detail="Enrichment service rate limited. Please try again in a few seconds.",
+                    )
 
-    data = resp.json()
-    # Expect standard OpenAI-style shape
-    content = data["choices"][0]["message"]["content"]
-    # content SHOULD be JSON string; parse it defensively
-    import json
+            # Handle other errors
+            if resp.status_code != 200:
+                logger.error({
+                    "event": "perplexity_error",
+                    "status_code": resp.status_code,
+                    "response": resp.text[:500],
+                    "attempt": attempt,
+                })
+                if attempt < MAX_RETRIES:
+                    await asyncio.sleep(backoff)
+                    continue
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail=f"Quick enrichment provider error (status {resp.status_code})",
+                    )
 
-    try:
-        parsed = json.loads(content)
-    except Exception as e:
-        logger.error("Failed to parse quick-enrich JSON: %s", e)
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Quick enrichment returned invalid JSON",
-        )
+            # Success - parse response
+            data = resp.json()
+            content = data["choices"]["message"]["content"]
+            
+            # Try to repair truncated JSON
+            repaired_content = repair_truncated_json(content)
+            
+            try:
+                parsed = json.loads(repaired_content)
+            except json.JSONDecodeError as e:
+                logger.error({
+                    "event": "json_parse_failed",
+                    "error": str(e),
+                    "content_preview": repaired_content[:500],
+                    "attempt": attempt,
+                })
+                if attempt < MAX_RETRIES:
+                    await asyncio.sleep(backoff)
+                    continue
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_502_BAD_GATEWAY,
+                        detail="Quick enrichment returned invalid JSON after retries",
+                    )
 
-    return {
-        "raw_provider_response": data,
-        "parsed_payload": parsed,
-        "model": data.get("model") or "sonar-pro",
-    }
+            logger.info({
+                "event": "perplexity_success",
+                "attempt": attempt,
+                "contact_name": name,
+            })
+
+            return {
+                "raw_provider_response": data,
+                "parsed_payload": parsed,
+                "model": data.get("model") or "sonar-pro",
+            }
+
+        except httpx.TimeoutException as e:
+            last_error = e
+            logger.warning({
+                "event": "perplexity_timeout",
+                "attempt": attempt,
+                "timeout_seconds": REQUEST_TIMEOUT_SECONDS,
+                "error": str(e),
+            })
+            if attempt < MAX_RETRIES:
+                await asyncio.sleep(backoff)
+                continue
+                
+        except httpx.ConnectError as e:
+            last_error = e
+            logger.warning({
+                "event": "perplexity_connection_error",
+                "attempt": attempt,
+                "error": str(e),
+            })
+            if attempt < MAX_RETRIES:
+                await asyncio.sleep(backoff)
+                continue
+
+        except HTTPException:
+            # Re-raise HTTP exceptions as-is
+            raise
+
+        except Exception as e:
+            last_error = e
+            logger.error({
+                "event": "perplexity_unexpected_error",
+                "attempt": attempt,
+                "error": str(e),
+                "error_type": type(e).__name__,
+            })
+            if attempt < MAX_RETRIES:
+                await asyncio.sleep(backoff)
+                continue
+
+    # All retries exhausted
+    logger.error({
+        "event": "perplexity_all_retries_failed",
+        "max_retries": MAX_RETRIES,
+        "last_error": str(last_error),
+    })
+    raise HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Quick enrichment failed after multiple retries. Please try again.",
+    )
 
 
 def build_unified_from_quick(
@@ -181,7 +339,7 @@ def build_legacy_from_unified(
 
     opening_line = None
     if unified.messaging.cold_openers:
-        opening_line = unified.messaging.cold_openers[0].text
+        opening_line = unified.messaging.cold_openers.text
 
     talking_points = None
     if unified.contact_profile.background_bullets:
@@ -208,6 +366,7 @@ def build_legacy_from_unified(
 # Endpoints
 # ---------------------------------------------------------------------------
 
+
 @router.post(
     "/quick-enrich/{contact_id}",
     response_model=QuickEnrichResponse,
@@ -223,11 +382,8 @@ async def quick_enrich_contact(
     if not contact_res.data:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    contact = contact_res.data[0]
+    contact = contact_res.data
 
-    perplexity_key = supabase  # just to keep type hints quiet
-    # In practice, pull from environment
-    import os
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
         raise HTTPException(
@@ -235,8 +391,8 @@ async def quick_enrich_contact(
             detail="Perplexity API key not configured",
         )
 
-    # Call provider
-    provider_result = await call_perplexity_quick_profile(api_key, contact)
+    # Call provider with retry logic
+    provider_result = await call_perplexity_with_retry(api_key, contact)
 
     unified = build_unified_from_quick(
         contact_id=contact_id,
@@ -245,7 +401,7 @@ async def quick_enrich_contact(
     )
     legacy = build_legacy_from_unified(unified)
 
-    # Persist to contacts.enrichmentdata JSONB
+    # Persist to contacts.enrichment_data JSONB
     enrichment_data = {
         "mode": "quick",
         "version": unified.meta.version,
@@ -284,7 +440,7 @@ async def quick_enrich_debug(
     if not contact_res.data:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    row = contact_res.data[0]
+    row = contact_res.data
     data = row.get("enrichment_data") or {}
 
     if not data or data.get("mode") != "quick":
@@ -309,7 +465,7 @@ async def quick_enrich_debug(
 
     return DebugQuickEnrichResponse(
         contact_id=contact_id,
-        request_payload={},  # fill if you store prompts later
+        request_payload={},
         raw_prompt=None,
         raw_response=data.get("raw_provider_response"),
         parsed=quick_resp,
