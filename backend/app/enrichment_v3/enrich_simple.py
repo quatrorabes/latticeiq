@@ -339,7 +339,7 @@ def build_legacy_from_unified(
 
     opening_line = None
     if unified.messaging.cold_openers:
-        opening_line = unified.messaging.cold_openers.text
+        opening_line = unified.messaging.cold_openers[0].text
 
     talking_points = None
     if unified.contact_profile.background_bullets:
