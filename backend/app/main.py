@@ -291,21 +291,14 @@ except Exception as e:
     logger.warning({"event": "router_import_failed", "router": "enrich_simple", "error": str(e)})
     print(f"⚠️ Quick Enrichment router not loaded: {e}")
 
-<<<<<<< HEAD
 
 # Deep Enrichment Router (NEW - unified schema with boxes) - DEBUG VERSION
-=======
 # Deep Enrichment Router (NEW - unified schema with boxes) - FIXED PREFIX
->>>>>>> c3a63996dd5376a935478be45d93adf2f11450ff
 print("=" * 60, flush=True)
 print("ATTEMPTING TO LOAD DEEP ENRICHMENT ROUTER...", flush=True)
 try:
     from app.routers.enrichment_v3_deep import router as deepenrichrouter
-<<<<<<< HEAD
-    app.include_router(deepenrichrouter, prefix="/api/v3")
-=======
     app.include_router(deepenrichrouter, prefix="/api/v3")  # ✅ FIXED: removed duplicate /enrichment
->>>>>>> c3a63996dd5376a935478be45d93adf2f11450ff
     logger.info({"event": "router_registered", "router": "enrichment_deep", "endpoints": [
         "POST /api/v3/enrichment/deep-enrich/{contact_id}",
         "GET /api/v3/enrichment/deep-enrich/{contact_id}/status",
