@@ -204,7 +204,7 @@ async def call_perplexity_with_retry(
 
             # Success - parse response
             data = resp.json()
-            content = data["choices"]["message"]["content"]
+            content = data["choices"][0]["message"]["content"]
             
             # Try to repair truncated JSON
             repaired_content = repair_truncated_json(content)
