@@ -379,10 +379,10 @@ async def quick_enrich_contact(
 ):
     # Load contact from Supabase
     contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
-    if not contact_res.data:
+    if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
 
-    contact = contact_res.data
+    contact = contact_res.data[0]
 
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
