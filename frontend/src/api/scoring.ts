@@ -1,6 +1,13 @@
+// frontend/src/api/scoring.ts
 import { supabase } from '../supabaseClient';
 
+
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+
+
+// ============================================================
+// Types
+// ============================================================
 
 export interface ScoringResult {
   contact_id: string;
@@ -14,6 +21,34 @@ export interface ScoringResult {
   overall_tier: string;
 }
 
+// NEW: Add missing interface
+export interface BatchScoringResponse {
+  success: boolean;
+  scored_count: number;
+  total_contacts?: number;
+  errors?: Array<{ contact_id: string; error: string }>;
+  message?: string;
+}
+
+
+// ============================================================
+// Helper Functions
+// ============================================================
+
+// NEW: Add missing getToken function
+async function getToken(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('Not authenticated');
+  }
+  return session.access_token;
+}
+
+
+// ============================================================
+// API Functions
+// ============================================================
+
 // Calculate all scores for a contact via backend
 export async function calculateScores(contactId: string): Promise<ScoringResult> {
   try {
@@ -23,6 +58,7 @@ export async function calculateScores(contactId: string): Promise<ScoringResult>
       throw new Error('Not authenticated');
     }
 
+
     const response = await fetch(`${API_URL}/api/v3/scoring/calculate-all/${contactId}`, {
       method: 'POST',
       headers: {
@@ -31,9 +67,11 @@ export async function calculateScores(contactId: string): Promise<ScoringResult>
       },
     });
 
+
     if (!response.ok) {
       throw new Error(`Scoring API error: ${response.statusText}`);
     }
+
 
     const result = await response.json();
     
@@ -53,6 +91,7 @@ export async function calculateScores(contactId: string): Promise<ScoringResult>
       })
       .eq('id', contactId);
 
+
     return result;
   } catch (error) {
     console.warn('Backend scoring failed, using local calculation:', error);
@@ -60,16 +99,18 @@ export async function calculateScores(contactId: string): Promise<ScoringResult>
   }
 }
 
-// frontend/src/api/scoring.ts
 
+// Batch score multiple contacts
 export async function batchScoreContacts(
   contactIds: string[],
   frameworks: string[] = ["mdcp", "bant", "spice"]
 ): Promise<BatchScoringResponse> {
+  const token = await getToken();  // FIXED: await the async function
+  
   const response = await fetch(`${API_URL}/api/v3/scoring/batch-score`, {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${getToken()}`,
+      "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
@@ -83,6 +124,27 @@ export async function batchScoreContacts(
 }
 
 
+// NEW: Score ALL contacts in workspace
+export async function scoreAllContacts(): Promise<BatchScoringResponse> {
+  const token = await getToken();
+  
+  const response = await fetch(`${API_URL}/api/v3/scoring/score-all`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+
 // Local fallback scoring when backend is unavailable
 export async function calculateScoresLocally(contactId: string): Promise<ScoringResult> {
   const { data: contact } = await supabase
@@ -91,9 +153,12 @@ export async function calculateScoresLocally(contactId: string): Promise<Scoring
     .eq('id', contactId)
     .single();
 
+
   if (!contact) throw new Error('Contact not found');
 
+
   const enrichment = contact.enrichment_data || {};
+
 
   // MDCP Score calculation
   let mdcp = 50;
@@ -105,6 +170,7 @@ export async function calculateScoresLocally(contactId: string): Promise<Scoring
   if (enrichment.industry) mdcp += 10;
   mdcp = Math.min(100, mdcp);
 
+
   // BANT Score calculation  
   let bant = 45;
   if (contact.title?.toLowerCase().includes('ceo') || 
@@ -114,6 +180,7 @@ export async function calculateScoresLocally(contactId: string): Promise<Scoring
   if (contact.email?.includes('.com')) bant += 10;
   bant = Math.min(100, bant);
 
+
   // SPICE Score calculation
   let spice = 40;
   if (enrichment.recent_news) spice += 20;
@@ -122,13 +189,16 @@ export async function calculateScoresLocally(contactId: string): Promise<Scoring
   if (enrichment.persona_type) spice += 15;
   spice = Math.min(100, spice);
 
+
   const overall = Math.round((mdcp + bant + spice) / 3);
+
 
   const getTier = (score: number) => {
     if (score >= 75) return 'hot';
     if (score >= 50) return 'warm';
     return 'cold';
   };
+
 
   const result: ScoringResult = {
     contact_id: contactId,
@@ -141,6 +211,7 @@ export async function calculateScoresLocally(contactId: string): Promise<Scoring
     overall_score: overall,
     overall_tier: getTier(overall)
   };
+
 
   // Save to Supabase
   await supabase
@@ -157,6 +228,7 @@ export async function calculateScoresLocally(contactId: string): Promise<Scoring
       updated_at: new Date().toISOString()
     })
     .eq('id', contactId);
+
 
   return result;
 }

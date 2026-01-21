@@ -1,6 +1,7 @@
 // frontend/src/api/contacts.ts
 import { supabase } from '../supabaseClient';
 import { Contact } from '../types';  // CHANGED: Import from types instead of redefining
+export type { Contact };
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
