@@ -1,6 +1,7 @@
 // frontend/src/types/index.ts
 
 
+
 export interface EnrichmentData {
   summary?: string;
   opening_line?: string;
@@ -14,7 +15,47 @@ export interface EnrichmentData {
   provider?: string;
   generated_at?: string;
   data?: any;  // ADD THIS for nested deep enrichment data
+  
+  // Deep enrichment structure (when available)
+  contact_profile?: {
+    headline?: string;
+    role_summary?: string;
+    seniority?: string;
+    background_bullets?: string[];
+  };
+  company_profile?: {
+    one_liner?: string;
+    industry?: string;
+    size_segment?: string;
+    key_products_or_services?: string[];
+  };
+  current_focus?: {
+    strategic_initiatives?: string[];
+    recent_projects?: string[];
+    kpis?: string[];
+  };
+  buying_signals?: {
+    recent_news?: string[];
+    timing_triggers?: string[];
+    hiring_signals?: string[];
+  };
+  risks_and_objections?: {
+    risk_bullets?: string[];
+    objection_bullets?: string[];
+    landmines?: string[];
+  };
+  messaging?: {
+    cold_openers?: string[];
+    value_props?: string[];
+    ctas?: string[];
+  };
+  meta?: {
+    generated_at?: string;
+    model?: string;
+    provider?: string;
+  };
 }
+
 
 
 export interface Contact {
@@ -62,6 +103,7 @@ export interface Contact {
   hubspot_metadata?: Record<string, any>;
   source?: string;
 
+
   // Engagement
   engagement_status?: 'hot' | 'warm' | 'cold';
   engagement_score?: number;
@@ -72,12 +114,14 @@ export interface Contact {
 }
 
 
+
 export interface ContactFilters {
   search?: string;
   tier?: 'hot' | 'warm' | 'cold';
   enrichmentStatus?: 'pending' | 'processing' | 'completed' | 'failed';
   minScore?: number;
 }
+
 
 
 export interface ScoreResponse {
@@ -89,7 +133,9 @@ export interface ScoreResponse {
   spice_score: number;
   spice_tier: 'hot' | 'warm' | 'cold';
   overall_score: number;
+  overall_tier?: 'hot' | 'warm' | 'cold';
 }
+
 
 
 export interface ScoringConfig {
@@ -99,4 +145,42 @@ export interface ScoringConfig {
     hot: number;
     warm: number;
   };
+}
+
+
+// NEW: Batch scoring request/response types
+export interface BatchScoreRequest {
+  contact_ids: string[];
+}
+
+
+export interface BatchScoreResponse {
+  contact_id: string;
+  mdcp_score: number;
+  mdcp_tier: 'hot' | 'warm' | 'cold';
+  bant_score: number;
+  bant_tier: 'hot' | 'warm' | 'cold';
+  spice_score: number;
+  spice_tier: 'hot' | 'warm' | 'cold';
+  overall_score: number;
+  overall_tier: 'hot' | 'warm' | 'cold';
+}
+
+
+export interface ScoreAllResponse {
+  success: boolean;
+  scored_count: number;
+  failures?: Array<{
+    contact_id: string;
+    error: string;
+  }>;
+}
+
+
+// NEW: Import response type
+export interface ImportResponse {
+  success: boolean;
+  imported: number;
+  failed?: number;
+  errors?: string[];
 }

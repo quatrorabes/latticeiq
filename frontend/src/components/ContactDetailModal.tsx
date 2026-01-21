@@ -117,8 +117,8 @@ interface ContactDetailModalProps {
   isOpen: boolean
   onClose: () => void
   onUpdate?: (contact: Contact) => void
+  initialTab?: 'overview' | 'enrichment' | 'outreach' | 'scores'  // NEW
 }
-
 
 // Styles object
 const styles = {
@@ -637,9 +637,10 @@ export default function ContactDetailModal({
   contact, 
   isOpen, 
   onClose, 
-  onUpdate 
+  onUpdate,
+  initialTab = 'overview'  // NEW: with default
 }: ContactDetailModalProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview')
+  const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>(initialTab)
   
   // Deep Enrichment state
   const [enrichmentData, setEnrichmentData] = useState<UnifiedEnrichmentResult | null>(null)
@@ -674,6 +675,9 @@ export default function ContactDetailModal({
   useEffect(() => {
     // Update local contact when prop changes
     setLocalContact(contact)
+
+     // NEW: Reset to initial tab when contact changes
+    setActiveTab(initialTab)
     
     if (contact?.enrichment_data) {
       const rawData = contact.enrichment_data as any

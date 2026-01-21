@@ -1,13 +1,15 @@
 // frontend/src/pages/ContactsPage.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Calculator, CheckCircle, AlertCircle } from 'lucide-react';
 import { fetchContacts, deleteContact } from '../api/contacts';
 import { Contact } from '../types';
 import ContactDetailModal from '../components/ContactDetailModal';
 
+const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
 type SortField = 'name' | 'company' | 'title' | 'mdcp_score' | 'bant_score' | 'spice_score' | 'enrichment_status';
 type SortDirection = 'asc' | 'desc';
+
 
 
 export default function ContactsPage() {
@@ -26,16 +28,49 @@ export default function ContactsPage() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
+  // NEW: Scoring state
+  const [isScoring, setIsScoring] = useState(false);
+  const [scoreSuccess, setScoreSuccess] = useState<string | null>(null);
+  const [scoreError, setScoreError] = useState<string | null>(null);
+  
+  // NEW: Selection state for batch operations
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  
+  // NEW: Import state
+  const [isImporting, setIsImporting] = useState(false);
+  
+  // NEW: Modal initial tab
+  const [initialTab, setInitialTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview');
+
+
 
   useEffect(() => {
     loadContacts();
   }, []);
 
 
+
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [searchTerm, filter, pageSize]);
+
+
+  // NEW: Clear toast messages after 5 seconds
+  useEffect(() => {
+    if (scoreSuccess) {
+      const timer = setTimeout(() => setScoreSuccess(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [scoreSuccess]);
+
+  useEffect(() => {
+    if (scoreError) {
+      const timer = setTimeout(() => setScoreError(null), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [scoreError]);
+
 
 
   const loadContacts = async () => {
@@ -51,6 +86,7 @@ export default function ContactsPage() {
   };
 
 
+
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm('Are you sure you want to delete this contact?')) return;
@@ -63,16 +99,29 @@ export default function ContactsPage() {
   };
 
 
+
   const handleRowClick = (contact: Contact) => {
     setSelectedContact(contact);
+    setInitialTab('overview');
     setIsModalOpen(true);
   };
+
 
 
   const handleCloseModal = () => {
     setIsModalOpen(false);
     setSelectedContact(null);
   };
+
+
+  // NEW: Handle Enrich button click - opens modal to enrichment tab
+  const handleEnrichClick = (contact: Contact, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedContact(contact);
+    setInitialTab('enrichment');
+    setIsModalOpen(true);
+  };
+
 
 
   const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
@@ -83,15 +132,18 @@ export default function ContactsPage() {
   };
 
 
+
   const getContactName = (contact: Contact): string => {
     return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
   };
+
 
 
   const getInitials = (contact: Contact): string => {
     const name = getContactName(contact);
     return name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '??';
   };
+
 
 
   // Handle column header click for sorting
@@ -103,6 +155,7 @@ export default function ContactsPage() {
       setSortDirection('asc');
     }
   };
+
 
 
   // Filter and sort contacts
@@ -117,10 +170,12 @@ export default function ContactsPage() {
       return matchesSearch && getTier(contact) === filter;
     });
 
+
     // Sort
     result.sort((a, b) => {
       let aValue: any;
       let bValue: any;
+
 
       switch (sortField) {
         case 'name':
@@ -156,13 +211,16 @@ export default function ContactsPage() {
           bValue = '';
       }
 
+
       if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
 
+
     return result;
   }, [contacts, searchTerm, filter, sortField, sortDirection]);
+
 
 
   // Pagination calculations
@@ -172,12 +230,14 @@ export default function ContactsPage() {
   const paginatedContacts = filteredAndSortedContacts.slice(startIndex, endIndex);
 
 
+
   const counts = {
     all: contacts.length,
     hot: contacts.filter(c => getTier(c) === 'hot').length,
     warm: contacts.filter(c => getTier(c) === 'warm').length,
     cold: contacts.filter(c => getTier(c) === 'cold').length,
   };
+
 
 
   // Sort indicator component
@@ -189,6 +249,7 @@ export default function ContactsPage() {
       ? <ChevronUp size={14} style={{ marginLeft: '4px', color: '#6366f1' }} />
       : <ChevronDown size={14} style={{ marginLeft: '4px', color: '#6366f1' }} />;
   };
+
 
 
   const styles = {
@@ -274,6 +335,29 @@ export default function ContactsPage() {
       fontSize: '0.95rem',
       cursor: 'pointer',
       transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
+    // NEW: Success button style for Score All
+    btnSuccess: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.75rem 1.5rem',
+      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+      border: 'none',
+      borderRadius: '10px',
+      color: 'white',
+      fontWeight: 600,
+      fontSize: '0.95rem',
+      cursor: 'pointer',
+      boxShadow: '0 4px 12px rgba(5, 150, 105, 0.3)',
+      transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
+    // NEW: Disabled button style
+    btnDisabled: {
+      opacity: 0.6,
+      cursor: 'not-allowed',
     } as React.CSSProperties,
     
     controlsCard: {
@@ -453,6 +537,7 @@ export default function ContactsPage() {
       color: '#64748b',
     } as React.CSSProperties,
 
+
     // Pagination styles
     paginationContainer: {
       display: 'flex',
@@ -463,16 +548,19 @@ export default function ContactsPage() {
       background: 'rgba(99, 102, 241, 0.02)',
     } as React.CSSProperties,
 
+
     paginationInfo: {
       fontSize: '0.9rem',
       color: '#94a3b8',
     } as React.CSSProperties,
+
 
     paginationControls: {
       display: 'flex',
       alignItems: 'center',
       gap: '0.5rem',
     } as React.CSSProperties,
+
 
     paginationBtn: {
       display: 'flex',
@@ -488,6 +576,7 @@ export default function ContactsPage() {
       transition: 'all 0.2s ease',
     } as React.CSSProperties,
 
+
     paginationBtnDisabled: {
       display: 'flex',
       alignItems: 'center',
@@ -500,6 +589,7 @@ export default function ContactsPage() {
       color: '#475569',
       cursor: 'not-allowed',
     } as React.CSSProperties,
+
 
     paginationPageBtn: {
       display: 'flex',
@@ -518,6 +608,7 @@ export default function ContactsPage() {
       transition: 'all 0.2s ease',
     } as React.CSSProperties,
 
+
     paginationPageBtnActive: {
       display: 'flex',
       alignItems: 'center',
@@ -534,6 +625,7 @@ export default function ContactsPage() {
       cursor: 'pointer',
     } as React.CSSProperties,
 
+
     pageSizeSelect: {
       padding: '0.5rem 0.75rem',
       background: '#0f172a',
@@ -544,25 +636,141 @@ export default function ContactsPage() {
       cursor: 'pointer',
       outline: 'none',
     } as React.CSSProperties,
+
+    // NEW: Toast styles
+    toast: {
+      position: 'fixed' as const,
+      bottom: '1.5rem',
+      right: '1.5rem',
+      padding: '1rem 1.5rem',
+      borderRadius: '10px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.75rem',
+      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.3)',
+      zIndex: 9999,
+      animation: 'slideIn 0.3s ease-out',
+      fontWeight: 600,
+    } as React.CSSProperties,
+
+    successToast: {
+      background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
+      color: 'white',
+    } as React.CSSProperties,
+
+    errorToast: {
+      background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
+      color: 'white',
+    } as React.CSSProperties,
   };
 
 
-  // Get selected checkboxes, score them
-const handleBatchScore = async () => {
-  const selected = contacts.filter(c => checkedIds.has(c.id)).map(c => c.id);
-  if (selected.length === 0) {
-    alert("Select contacts first");
-    return;
-  }
-  
-  setLoading(true);
-  try {
-    await batchScoreContacts(selected);
-    await loadContacts(); // Refresh
-  } finally {
-    setLoading(false);
-  }
-};
+  // NEW: Score ALL contacts - calls real backend API
+  const handleScoreAll = async () => {
+    setIsScoring(true);
+    setScoreError(null);
+    setScoreSuccess(null);
+
+    try {
+      const response = await fetch(`${API_URL}/api/v3/scoring/score-all`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+
+      // Refresh contacts to show updated scores
+      await loadContacts();
+
+      // Show success message
+      const scoredCount = data.scored_count || data.scoredCount || contacts.length;
+      const failedCount = data.failures?.length || data.failed_count || 0;
+      
+      if (failedCount > 0) {
+        setScoreSuccess(`✅ Scored ${scoredCount} contacts (${failedCount} failed)`);
+      } else {
+        setScoreSuccess(`✅ Successfully scored ${scoredCount} contacts!`);
+      }
+
+    } catch (error: any) {
+      console.error('Scoring failed:', error);
+      setScoreError(`Failed to score contacts: ${error.message}`);
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
+
+  // UPDATED: Batch score selected contacts - now properly implemented
+  const handleBatchScore = async () => {
+    const selected = contacts.filter(c => checkedIds.has(c.id)).map(c => c.id);
+    if (selected.length === 0) {
+      setScoreError("Select contacts first to batch score");
+      return;
+    }
+    
+    setIsScoring(true);
+    setScoreError(null);
+    
+    try {
+      const response = await fetch(`${API_URL}/api/v3/scoring/batch-score`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contact_ids: selected }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Batch scoring failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      await loadContacts(); // Refresh
+      setScoreSuccess(`✅ Scored ${data.length || selected.length} selected contacts`);
+      setCheckedIds(new Set()); // Clear selection
+    } catch (error: any) {
+      setScoreError(`Failed: ${error.message}`);
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
+
+  // NEW: Handle HubSpot import
+  const handleImport = async () => {
+    setIsImporting(true);
+    setScoreError(null);
+    
+    try {
+      const response = await fetch(`${API_URL}/api/v3/integrations/hubspot/import`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setScoreSuccess(`✅ Imported ${data.imported || 0} contacts from HubSpot`);
+        await loadContacts();
+      } else {
+        setScoreError('HubSpot import failed. Check your API credentials.');
+      }
+    } catch (error: any) {
+      setScoreError(`Import error: ${error.message}`);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
 
 
   // Generate page numbers to display
@@ -596,16 +804,24 @@ const handleBatchScore = async () => {
   };
 
 
-  if (loading) {
+
+  if (loading && !isScoring) {
     return (
       <div style={styles.page}>
         <div style={styles.loading}>
           <Loader2 size={48} style={{ animation: 'spin 1s linear infinite', color: '#6366f1' }} />
           <p>Loading contacts...</p>
         </div>
+        <style>{`
+          @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+        `}</style>
       </div>
     );
   }
+
 
 
   return (
@@ -621,16 +837,47 @@ const handleBatchScore = async () => {
           </div>
         </div>
         <div style={styles.headerActions}>
+          {/* NEW: Score All Button */}
+          <button 
+            style={{
+              ...styles.btnSuccess,
+              ...(isScoring ? styles.btnDisabled : {}),
+            }}
+            onClick={handleScoreAll}
+            disabled={isScoring}
+            title="Calculate MDCP, BANT, and SPICE scores for all contacts"
+          >
+            {isScoring ? (
+              <>
+                <Loader2 size={18} style={{ animation: 'spin 1s linear infinite' }} />
+                Scoring...
+              </>
+            ) : (
+              <>
+                <Calculator size={18} />
+                Score All
+              </>
+            )}
+          </button>
           <button style={styles.btnSecondary} onClick={loadContacts}>
             <RefreshCw size={18} />
             Refresh
           </button>
-          <button style={styles.btnPrimary}>
+          {/* UPDATED: Import button now has onClick */}
+          <button 
+            style={{
+              ...styles.btnPrimary,
+              ...(isImporting ? styles.btnDisabled : {}),
+            }}
+            onClick={handleImport}
+            disabled={isImporting}
+          >
             <Upload size={18} />
-            Import
+            {isImporting ? 'Importing...' : 'Import'}
           </button>
         </div>
       </div>
+
 
 
       <div style={styles.controlsCard}>
@@ -656,6 +903,7 @@ const handleBatchScore = async () => {
           ))}
         </div>
       </div>
+
 
 
       <div style={styles.tableCard}>
@@ -767,7 +1015,12 @@ const handleBatchScore = async () => {
                 </td>
                 <td style={styles.td}>
                   <div style={styles.actionButtons} onClick={(e) => e.stopPropagation()}>
-                    <button style={styles.actionBtn} title="Enrich">
+                    {/* UPDATED: Enrich button now has onClick */}
+                    <button 
+                      style={styles.actionBtn} 
+                      title="Enrich"
+                      onClick={(e) => handleEnrichClick(contact, e)}
+                    >
                       <Zap size={16} />
                     </button>
                     <button 
@@ -785,11 +1038,13 @@ const handleBatchScore = async () => {
         </table>
 
 
+
         {filteredAndSortedContacts.length === 0 && (
           <div style={styles.emptyState}>
             <p>No contacts found matching your criteria.</p>
           </div>
         )}
+
 
         {/* Pagination */}
         {filteredAndSortedContacts.length > 0 && (
@@ -810,6 +1065,7 @@ const handleBatchScore = async () => {
                 <option value={100}>100 / page</option>
               </select>
 
+
               <button
                 style={currentPage === 1 ? styles.paginationBtnDisabled : styles.paginationBtn}
                 onClick={() => setCurrentPage(1)}
@@ -820,6 +1076,7 @@ const handleBatchScore = async () => {
                 <ChevronLeft size={16} style={{ marginLeft: '-10px' }} />
               </button>
 
+
               <button
                 style={currentPage === 1 ? styles.paginationBtnDisabled : styles.paginationBtn}
                 onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
@@ -828,6 +1085,7 @@ const handleBatchScore = async () => {
               >
                 <ChevronLeft size={16} />
               </button>
+
 
               {getPageNumbers().map((page, idx) => (
                 typeof page === 'number' ? (
@@ -843,6 +1101,7 @@ const handleBatchScore = async () => {
                 )
               ))}
 
+
               <button
                 style={currentPage === totalPages ? styles.paginationBtnDisabled : styles.paginationBtn}
                 onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
@@ -851,6 +1110,7 @@ const handleBatchScore = async () => {
               >
                 <ChevronRight size={16} />
               </button>
+
 
               <button
                 style={currentPage === totalPages ? styles.paginationBtnDisabled : styles.paginationBtn}
@@ -867,13 +1127,44 @@ const handleBatchScore = async () => {
       </div>
 
 
+      {/* NEW: Success Toast */}
+      {scoreSuccess && (
+        <div style={{ ...styles.toast, ...styles.successToast }}>
+          <CheckCircle size={20} />
+          {scoreSuccess}
+        </div>
+      )}
+
+      {/* NEW: Error Toast */}
+      {scoreError && (
+        <div style={{ ...styles.toast, ...styles.errorToast }}>
+          <AlertCircle size={20} />
+          {scoreError}
+        </div>
+      )}
+
+
+      {/* UPDATED: Modal now passes initialTab */}
       {isModalOpen && selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
           isOpen={isModalOpen}
           onClose={handleCloseModal}
+          initialTab={initialTab}
         />
-      )}  
+      )}
+
+      {/* CSS Animations */}
+      <style>{`
+        @keyframes spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+        @keyframes slideIn {
+          from { transform: translateX(100%); opacity: 0; }
+          to { transform: translateX(0); opacity: 1; }
+        }
+      `}</style>
     </div>
   );
 }

@@ -1,30 +1,9 @@
+// frontend/src/api/contacts.ts
 import { supabase } from '../supabaseClient';
+import { Contact } from '../types';  // CHANGED: Import from types instead of redefining
 
-export interface Contact {
-  id: string;
-  first_name: string;
-  last_name: string;
-  email: string;
-  company?: string;
-  title?: string;
-  phone?: string;
-  linkedin_url?: string;
-  website?: string;
-  mdcp_score?: number;
-  mdcp_tier?: 'hot' | 'warm' | 'cold';
-  bant_score?: number;
-  bant_tier?: 'hot' | 'warm' | 'cold';
-  spice_score?: number;
-  spice_tier?: 'hot' | 'warm' | 'cold';
-  overall_score?: number;
-  overall_tier?: 'hot' | 'warm' | 'cold';
-  enrichment_status?: 'pending' | 'processing' | 'completed' | 'failed';
-  enrichment_data?: Record<string, any>;
-  pipeline_stage?: string;
-  deal_value?: number;
-  created_at: string;
-  updated_at?: string;
-}
+const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
+
 
 export interface ContactsResponse {
   contacts: Contact[];
@@ -33,6 +12,7 @@ export interface ContactsResponse {
   offset: number;
 }
 
+
 export async function fetchContacts(limit = 10000, offset = 0): Promise<ContactsResponse> {
   const { data, error, count } = await supabase
     .from('contacts')
@@ -40,7 +20,9 @@ export async function fetchContacts(limit = 10000, offset = 0): Promise<Contacts
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1);
 
+
   if (error) throw new Error(error.message);
+
 
   return {
     contacts: data || [],
@@ -50,6 +32,7 @@ export async function fetchContacts(limit = 10000, offset = 0): Promise<Contacts
   };
 }
 
+
 export async function fetchContact(id: string): Promise<Contact> {
   const { data, error } = await supabase
     .from('contacts')
@@ -57,9 +40,11 @@ export async function fetchContact(id: string): Promise<Contact> {
     .eq('id', id)
     .single();
 
+
   if (error) throw new Error(error.message);
   return data;
 }
+
 
 export async function createContact(contact: Partial<Contact>): Promise<Contact> {
   const { data: { user } } = await supabase.auth.getUser();
@@ -70,9 +55,11 @@ export async function createContact(contact: Partial<Contact>): Promise<Contact>
     .select()
     .single();
 
+
   if (error) throw new Error(error.message);
   return data;
 }
+
 
 export async function updateContact(id: string, updates: Partial<Contact>): Promise<Contact> {
   const { data, error } = await supabase
@@ -82,9 +69,11 @@ export async function updateContact(id: string, updates: Partial<Contact>): Prom
     .select()
     .single();
 
+
   if (error) throw new Error(error.message);
   return data;
 }
+
 
 export async function deleteContact(id: string): Promise<void> {
   const { error } = await supabase
@@ -92,8 +81,10 @@ export async function deleteContact(id: string): Promise<void> {
     .delete()
     .eq('id', id);
 
+
   if (error) throw new Error(error.message);
 }
+
 
 export async function deleteContacts(ids: string[]): Promise<void> {
   const { error } = await supabase
@@ -101,5 +92,116 @@ export async function deleteContacts(ids: string[]): Promise<void> {
     .delete()
     .in('id', ids);
 
+
   if (error) throw new Error(error.message);
+}
+
+
+// ============================================================
+// NEW: Batch Scoring API Functions (calls FastAPI backend)
+// ============================================================
+
+/**
+ * Helper to get auth token for API calls
+ */
+async function getAuthToken(): Promise<string | null> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  return sessionData?.session?.access_token || null;
+}
+
+
+/**
+ * Score ALL contacts in the workspace
+ * Calls POST /api/v3/scoring/score-all
+ */
+export async function scoreAllContacts(): Promise<{
+  success: boolean;
+  scored_count: number;
+  failures?: Array<{ contact_id: string; error: string }>;
+}> {
+  const token = await getAuthToken();
+  
+  const response = await fetch(`${API_URL}/api/v3/scoring/score-all`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+
+/**
+ * Score specific contacts by ID
+ * Calls POST /api/v3/scoring/batch-score
+ */
+export async function batchScoreContacts(contactIds: string[]): Promise<Array<{
+  contact_id: string;
+  mdcp_score: number;
+  mdcp_tier: string;
+  bant_score: number;
+  bant_tier: string;
+  spice_score: number;
+  spice_tier: string;
+  overall_score: number;
+  overall_tier: string;
+}>> {
+  const token = await getAuthToken();
+  
+  const response = await fetch(`${API_URL}/api/v3/scoring/batch-score`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+    body: JSON.stringify({ contact_ids: contactIds }),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Batch scoring failed: ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+
+/**
+ * Score a single contact
+ * Calls POST /api/v3/scoring/calculate-all/{contact_id}
+ */
+export async function scoreContact(contactId: string): Promise<{
+  contact_id: string;
+  mdcp_score: number;
+  mdcp_tier: string;
+  bant_score: number;
+  bant_tier: string;
+  spice_score: number;
+  spice_tier: string;
+  overall_score: number;
+  overall_tier: string;
+}> {
+  const token = await getAuthToken();
+  
+  const response = await fetch(`${API_URL}/api/v3/scoring/calculate-all/${contactId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token && { Authorization: `Bearer ${token}` }),
+    },
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
+  }
+
+  return response.json();
 }
