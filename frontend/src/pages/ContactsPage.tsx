@@ -707,6 +707,49 @@ export default function ContactsPage() {
     }
   };
 
+  // NEW: Score only contacts that don't have scores yet
+  const handleScoreUnscored = async () => {
+    setIsScoring(true);
+    setScoreError(null);
+    setScoreSuccess(null);
+
+    try {
+      // Filter contacts without scores
+      const unscoredContacts = contacts.filter(c => 
+        c.mdcp_score === null || c.mdcp_score === undefined
+      );
+
+      if (unscoredContacts.length === 0) {
+        setScoreSuccess('All contacts already have scores!');
+        setIsScoring(false);
+        return;
+      }
+
+      const unscoredIds = unscoredContacts.map(c => c.id);
+
+      const response = await fetch(`${API_URL}/api/v3/scoring/batch-score`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ contact_ids: unscoredIds }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Scoring failed: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      await loadContacts();
+      setScoreSuccess(`✅ Scored ${data.scored_count} new contacts!`);
+
+    } catch (error: any) {
+      setScoreError(`Failed: ${error.message}`);
+    } finally {
+      setIsScoring(false);
+    }
+  };
+
 
   // UPDATED: Batch score selected contacts - now properly implemented
   const handleBatchScore = async () => {
@@ -824,7 +867,7 @@ export default function ContactsPage() {
 
 
 
-  return (
+ return (
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerLeft}>
@@ -837,7 +880,7 @@ export default function ContactsPage() {
           </div>
         </div>
         <div style={styles.headerActions}>
-          {/* NEW: Score All Button */}
+          {/* Score All Button */}
           <button 
             style={{
               ...styles.btnSuccess,
@@ -859,11 +902,28 @@ export default function ContactsPage() {
               </>
             )}
           </button>
+
+          {/* Score Unscored Button */}
+          <button 
+            style={{
+              ...styles.btnSecondary,
+              ...(isScoring ? styles.btnDisabled : {}),
+            }}
+            onClick={handleScoreUnscored}
+            disabled={isScoring}
+            title="Only score contacts without existing scores"
+          >
+            <Calculator size={18} />
+            Score New
+          </button>
+
+          {/* Refresh Button */}
           <button style={styles.btnSecondary} onClick={loadContacts}>
             <RefreshCw size={18} />
             Refresh
           </button>
-          {/* UPDATED: Import button now has onClick */}
+
+          {/* Import Button */}
           <button 
             style={{
               ...styles.btnPrimary,
@@ -877,6 +937,7 @@ export default function ContactsPage() {
           </button>
         </div>
       </div>
+
 
 
 

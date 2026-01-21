@@ -286,9 +286,13 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
                     "error": str(e)
                 })
         
-        # 4. BATCH UPDATE DATABASE (much faster than sequential)
-        if updates:
-            supabase.table("contacts").upsert(updates).execute()
+        # 4. UPDATE DATABASE (sequential for reliability)
+        for update_obj in updates:
+            contact_id = update_obj.pop("id")  # Remove id from payload
+            try:
+                supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
+            except Exception as e:
+                errors.append({"contact_id": contact_id, "error": str(e)})
         
         # 5. RETURN RESPONSE
         return BatchScoringResponse(
