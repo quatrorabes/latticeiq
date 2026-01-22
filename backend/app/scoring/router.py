@@ -151,6 +151,7 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         spice_tier = get_tier(spice_score)
 
         # 6. PERSIST TO DATABASE
+        # NOTE: last_scored_at removed - column doesn't exist in contacts table
         now = datetime.utcnow()
         update_payload = {
             "mdcp_score": float(mdcp_score),
@@ -160,7 +161,6 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
             "spice_score": float(spice_score),
             "spice_tier": spice_tier,
             "overall_score": overall_score,
-            "last_scored_at": now.isoformat(),
             "updated_at": now.isoformat()
         }
         
@@ -191,11 +191,9 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error calculating scores: {str(e)}")
 
-# backend/app/scoring/router.py - REPLACE THE BATCH SCORING SECTION
-
 
 # ==========================================
-# BATCH SCORE SELECTED CONTACTS (NEW)
+# BATCH SCORE SELECTED CONTACTS
 # ==========================================
 
 @router.post("/batch-score")
@@ -251,17 +249,17 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
                 scores = {}
                 
                 # Calculate only requested frameworks
-                if "mdcp" in frameworks:
+                if "mdcp" in frameworks and mdcp_config:
                     mdcp_result = calculate_mdcp_score(contact, mdcp_config)
                     scores["mdcp_score"] = round(float(mdcp_result.get("score", 0)), 2)
                     scores["mdcp_tier"] = get_tier(scores["mdcp_score"])
                 
-                if "bant" in frameworks:
+                if "bant" in frameworks and bant_config:
                     bant_result = calculate_bant_score(contact, bant_config)
                     scores["bant_score"] = round(float(bant_result.get("score", 0)), 2)
                     scores["bant_tier"] = get_tier(scores["bant_score"])
                 
-                if "spice" in frameworks:
+                if "spice" in frameworks and spice_config:
                     spice_result = calculate_spice_score(contact, spice_config)
                     scores["spice_score"] = round(float(spice_result.get("score", 0)), 2)
                     scores["spice_tier"] = get_tier(scores["spice_score"])
@@ -270,11 +268,10 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
                 score_values = [v for k, v in scores.items() if "_score" in k]
                 overall_score = round(sum(score_values) / len(score_values), 2) if score_values else 0
                 
-                # Prepare batch update
+                # Prepare update - NOTE: last_scored_at removed (column doesn't exist)
                 update_obj = {
                     "id": contact["id"],
                     "overall_score": overall_score,
-                    "last_scored_at": now.isoformat(),
                     "updated_at": now.isoformat(),
                     **scores  # Unpack mdcp_score, bant_score, spice_score, etc.
                 }
@@ -287,20 +284,23 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
                 })
         
         # 4. UPDATE DATABASE (sequential for reliability)
+        successful_updates = 0
         for update_obj in updates:
             contact_id = update_obj.pop("id")  # Remove id from payload
             try:
-                supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
+                result = supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
+                if result.data:
+                    successful_updates += 1
             except Exception as e:
                 errors.append({"contact_id": contact_id, "error": str(e)})
         
         # 5. RETURN RESPONSE
         return BatchScoringResponse(
             success=len(errors) == 0,
-            scored_count=len(updates),
+            scored_count=successful_updates,
             total_contacts=len(contacts),
             errors=errors if errors else None,
-            message=f"Successfully scored {len(updates)}/{len(contacts)} contacts"
+            message=f"Successfully scored {successful_updates}/{len(contacts)} contacts"
         )
         
     except HTTPException:
@@ -312,7 +312,7 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
 
 
 # ==========================================
-# SCORE ALL CONTACTS (EXISTING - KEEP AS IS)
+# SCORE ALL CONTACTS
 # ==========================================
 
 @router.post("/score-all")
@@ -338,22 +338,30 @@ async def score_all_contacts() -> BatchScoringResponse:
         # Delegate to batch_score_contacts (reuse logic)
         # Break into chunks of 1000 if needed
         results = []
+        all_errors = []
+        
         for i in range(0, len(all_contact_ids), 1000):
             chunk = all_contact_ids[i:i+1000]
             request = BatchScoreRequest(contact_ids=chunk)
             result = await batch_score_contacts(request)
             results.append(result)
+            if result.errors:
+                all_errors.extend(result.errors)
         
         # Aggregate results
         total_scored = sum(r.scored_count for r in results)
-        total_errors = sum(len(r.errors) if r.errors else 0 for r in results)
         
         return BatchScoringResponse(
-            success=total_errors == 0,
+            success=len(all_errors) == 0,
             scored_count=total_scored,
             total_contacts=len(all_contact_ids),
+            errors=all_errors if all_errors else None,
             message=f"Batch scoring complete: {total_scored}/{len(all_contact_ids)} contacts scored"
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error scoring all contacts: {str(e)}")
