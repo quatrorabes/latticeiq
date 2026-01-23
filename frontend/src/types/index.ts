@@ -86,6 +86,9 @@ export interface Contact {
   overall_score?: number;
   overall_tier?: 'hot' | 'warm' | 'cold';
   
+  // Quick Score (client-side keyword matching)
+  quick_score?: number;
+  
   // Enrichment
   enrichment_status?: 'pending' | 'processing' | 'completed' | 'failed';
   enrichment_data?: EnrichmentData | any;  // CHANGED: Allow any for flexibility
