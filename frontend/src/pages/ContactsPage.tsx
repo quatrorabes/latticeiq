@@ -44,11 +44,110 @@ export default function ContactsPage() {
   const [initialTab, setInitialTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview');
 
 
+  // Helper functions (defined early so they can be used in useMemo)
+  const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
+    const score = contact.mdcp_score || 0;
+    if (score >= 70) return 'hot';
+    if (score >= 40) return 'warm';
+    return 'cold';
+  };
+
+  const getContactName = (contact: Contact): string => {
+    return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
+  };
+
+  const getInitials = (contact: Contact): string => {
+    const name = getContactName(contact);
+    return name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '??';
+  };
+
+
+  // Filter and sort contacts (MUST be before pagination calculations)
+  const filteredAndSortedContacts = useMemo(() => {
+    let result = contacts.filter(contact => {
+      const matchesSearch = 
+        getContactName(contact).toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      if (filter === 'all') return matchesSearch;
+      return matchesSearch && getTier(contact) === filter;
+    });
+
+    // Sort
+    result.sort((a, b) => {
+      let aValue: any;
+      let bValue: any;
+
+      switch (sortField) {
+        case 'name':
+          aValue = getContactName(a).toLowerCase();
+          bValue = getContactName(b).toLowerCase();
+          break;
+        case 'company':
+          aValue = (a.company || '').toLowerCase();
+          bValue = (b.company || '').toLowerCase();
+          break;
+        case 'title':
+          aValue = (a.title || '').toLowerCase();
+          bValue = (b.title || '').toLowerCase();
+          break;
+        case 'mdcp_score':
+          aValue = a.mdcp_score || 0;
+          bValue = b.mdcp_score || 0;
+          break;
+        case 'bant_score':
+          aValue = a.bant_score || 0;
+          bValue = b.bant_score || 0;
+          break;
+        case 'spice_score':
+          aValue = a.spice_score || 0;
+          bValue = b.spice_score || 0;
+          break;
+        case 'enrichment_status':
+          aValue = (a.enrichment_status || 'pending').toLowerCase();
+          bValue = (b.enrichment_status || 'pending').toLowerCase();
+          break;
+        default:
+          aValue = '';
+          bValue = '';
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return result;
+  }, [contacts, searchTerm, filter, sortField, sortDirection]);
+
+
+  // Pagination calculations (MUST be before any functions that use paginatedContacts)
+  const totalPages = Math.ceil(filteredAndSortedContacts.length / pageSize);
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = startIndex + pageSize;
+  const paginatedContacts = filteredAndSortedContacts.slice(startIndex, endIndex);
+
+
+  // Counts for filter tabs
+  const counts = {
+    all: contacts.length,
+    hot: contacts.filter(c => getTier(c) === 'hot').length,
+    warm: contacts.filter(c => getTier(c) === 'warm').length,
+    cold: contacts.filter(c => getTier(c) === 'cold').length,
+  };
+
+
+  // Check if all on current page are selected
+  const allPageSelected = paginatedContacts.length > 0 && 
+    paginatedContacts.every(c => checkedIds.has(c.id));
+
+  const somePageSelected = paginatedContacts.some(c => checkedIds.has(c.id)) && !allPageSelected;
+
 
   useEffect(() => {
     loadContacts();
   }, []);
-
 
 
   // Reset to page 1 when filters change
@@ -130,29 +229,6 @@ export default function ContactsPage() {
   };
 
 
-
-  const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
-    const score = contact.mdcp_score || 0;
-    if (score >= 70) return 'hot';
-    if (score >= 40) return 'warm';
-    return 'cold';
-  };
-
-
-
-  const getContactName = (contact: Contact): string => {
-    return `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || 'Unknown';
-  };
-
-
-
-  const getInitials = (contact: Contact): string => {
-    const name = getContactName(contact);
-    return name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || '??';
-  };
-
-
-
   // Handle column header click for sorting
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -179,7 +255,7 @@ export default function ContactsPage() {
 
   // Handle select all checkbox
   const handleSelectAll = () => {
-    if (checkedIds.size === paginatedContacts.length) {
+    if (checkedIds.size === paginatedContacts.length && paginatedContacts.every(c => checkedIds.has(c.id))) {
       // Deselect all on current page
       const newChecked = new Set(checkedIds);
       paginatedContacts.forEach(c => newChecked.delete(c.id));
@@ -191,95 +267,6 @@ export default function ContactsPage() {
       setCheckedIds(newChecked);
     }
   };
-
-
-  // Check if all on current page are selected
-  const allPageSelected = paginatedContacts.length > 0 && 
-    paginatedContacts.every(c => checkedIds.has(c.id));
-
-  const somePageSelected = paginatedContacts.some(c => checkedIds.has(c.id)) && !allPageSelected;
-
-
-  // Filter and sort contacts
-  const filteredAndSortedContacts = useMemo(() => {
-    let result = contacts.filter(contact => {
-      const matchesSearch = 
-        getContactName(contact).toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        contact.company?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      if (filter === 'all') return matchesSearch;
-      return matchesSearch && getTier(contact) === filter;
-    });
-
-
-    // Sort
-    result.sort((a, b) => {
-      let aValue: any;
-      let bValue: any;
-
-
-      switch (sortField) {
-        case 'name':
-          aValue = getContactName(a).toLowerCase();
-          bValue = getContactName(b).toLowerCase();
-          break;
-        case 'company':
-          aValue = (a.company || '').toLowerCase();
-          bValue = (b.company || '').toLowerCase();
-          break;
-        case 'title':
-          aValue = (a.title || '').toLowerCase();
-          bValue = (b.title || '').toLowerCase();
-          break;
-        case 'mdcp_score':
-          aValue = a.mdcp_score || 0;
-          bValue = b.mdcp_score || 0;
-          break;
-        case 'bant_score':
-          aValue = a.bant_score || 0;
-          bValue = b.bant_score || 0;
-          break;
-        case 'spice_score':
-          aValue = a.spice_score || 0;
-          bValue = b.spice_score || 0;
-          break;
-        case 'enrichment_status':
-          aValue = (a.enrichment_status || 'pending').toLowerCase();
-          bValue = (b.enrichment_status || 'pending').toLowerCase();
-          break;
-        default:
-          aValue = '';
-          bValue = '';
-      }
-
-
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-
-    return result;
-  }, [contacts, searchTerm, filter, sortField, sortDirection]);
-
-
-
-  // Pagination calculations
-  const totalPages = Math.ceil(filteredAndSortedContacts.length / pageSize);
-  const startIndex = (currentPage - 1) * pageSize;
-  const endIndex = startIndex + pageSize;
-  const paginatedContacts = filteredAndSortedContacts.slice(startIndex, endIndex);
-
-
-
-  const counts = {
-    all: contacts.length,
-    hot: contacts.filter(c => getTier(c) === 'hot').length,
-    warm: contacts.filter(c => getTier(c) === 'warm').length,
-    cold: contacts.filter(c => getTier(c) === 'cold').length,
-  };
-
 
 
   // Sort indicator component
@@ -773,8 +760,6 @@ export default function ContactsPage() {
         throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
       }
 
-      const data = await response.json();
-      
       // Start polling for status
       pollScoringStatus();
 
