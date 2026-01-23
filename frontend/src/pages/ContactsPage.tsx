@@ -1,6 +1,6 @@
 // frontend/src/pages/ContactsPage.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Calculator, CheckCircle, AlertCircle } from 'lucide-react';
+import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Calculator, CheckCircle, AlertCircle, Square, CheckSquare } from 'lucide-react';
 import { fetchContacts, deleteContact } from '../api/contacts';
 import { Contact } from '../types';
 import ContactDetailModal from '../components/ContactDetailModal';
@@ -28,18 +28,19 @@ export default function ContactsPage() {
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
-  // NEW: Scoring state
+  // Scoring state
   const [isScoring, setIsScoring] = useState(false);
   const [scoreSuccess, setScoreSuccess] = useState<string | null>(null);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  const [scoreProgress, setScoreProgress] = useState<string | null>(null);
   
-  // NEW: Selection state for batch operations
+  // Selection state for batch operations
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   
-  // NEW: Import state
+  // Import state
   const [isImporting, setIsImporting] = useState(false);
   
-  // NEW: Modal initial tab
+  // Modal initial tab
   const [initialTab, setInitialTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview');
 
 
@@ -56,7 +57,7 @@ export default function ContactsPage() {
   }, [searchTerm, filter, pageSize]);
 
 
-  // NEW: Clear toast messages after 5 seconds
+  // Clear toast messages after 5 seconds
   useEffect(() => {
     if (scoreSuccess) {
       const timer = setTimeout(() => setScoreSuccess(null), 5000);
@@ -93,6 +94,12 @@ export default function ContactsPage() {
     try {
       await deleteContact(id);
       setContacts(contacts.filter(c => c.id !== id));
+      // Also remove from checked if selected
+      if (checkedIds.has(id)) {
+        const newChecked = new Set(checkedIds);
+        newChecked.delete(id);
+        setCheckedIds(newChecked);
+      }
     } catch (error) {
       console.error('Failed to delete contact:', error);
     }
@@ -114,7 +121,7 @@ export default function ContactsPage() {
   };
 
 
-  // NEW: Handle Enrich button click - opens modal to enrichment tab
+  // Handle Enrich button click - opens modal to enrichment tab
   const handleEnrichClick = (contact: Contact, e: React.MouseEvent) => {
     e.stopPropagation();
     setSelectedContact(contact);
@@ -156,6 +163,41 @@ export default function ContactsPage() {
     }
   };
 
+
+  // Handle checkbox toggle
+  const handleCheckboxToggle = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newChecked = new Set(checkedIds);
+    if (newChecked.has(id)) {
+      newChecked.delete(id);
+    } else {
+      newChecked.add(id);
+    }
+    setCheckedIds(newChecked);
+  };
+
+
+  // Handle select all checkbox
+  const handleSelectAll = () => {
+    if (checkedIds.size === paginatedContacts.length) {
+      // Deselect all on current page
+      const newChecked = new Set(checkedIds);
+      paginatedContacts.forEach(c => newChecked.delete(c.id));
+      setCheckedIds(newChecked);
+    } else {
+      // Select all on current page
+      const newChecked = new Set(checkedIds);
+      paginatedContacts.forEach(c => newChecked.add(c.id));
+      setCheckedIds(newChecked);
+    }
+  };
+
+
+  // Check if all on current page are selected
+  const allPageSelected = paginatedContacts.length > 0 && 
+    paginatedContacts.every(c => checkedIds.has(c.id));
+
+  const somePageSelected = paginatedContacts.some(c => checkedIds.has(c.id)) && !allPageSelected;
 
 
   // Filter and sort contacts
@@ -303,20 +345,21 @@ export default function ContactsPage() {
     
     headerActions: {
       display: 'flex',
-      gap: '1rem',
+      gap: '0.75rem',
+      flexWrap: 'wrap' as const,
     } as React.CSSProperties,
     
     btnPrimary: {
       display: 'flex',
       alignItems: 'center',
       gap: '0.5rem',
-      padding: '0.75rem 1.5rem',
+      padding: '0.75rem 1.25rem',
       background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
       border: 'none',
       borderRadius: '10px',
       color: 'white',
       fontWeight: 600,
-      fontSize: '0.95rem',
+      fontSize: '0.9rem',
       cursor: 'pointer',
       boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
       transition: 'all 0.2s ease',
@@ -326,35 +369,49 @@ export default function ContactsPage() {
       display: 'flex',
       alignItems: 'center',
       gap: '0.5rem',
-      padding: '0.75rem 1.5rem',
+      padding: '0.75rem 1.25rem',
       background: 'rgba(99, 102, 241, 0.1)',
       border: '1px solid rgba(99, 102, 241, 0.3)',
       borderRadius: '10px',
       color: '#f8fafc',
       fontWeight: 600,
-      fontSize: '0.95rem',
+      fontSize: '0.9rem',
       cursor: 'pointer',
       transition: 'all 0.2s ease',
     } as React.CSSProperties,
 
-    // NEW: Success button style for Score All
     btnSuccess: {
       display: 'flex',
       alignItems: 'center',
       gap: '0.5rem',
-      padding: '0.75rem 1.5rem',
+      padding: '0.75rem 1.25rem',
       background: 'linear-gradient(135deg, #059669 0%, #10b981 100%)',
       border: 'none',
       borderRadius: '10px',
       color: 'white',
       fontWeight: 600,
-      fontSize: '0.95rem',
+      fontSize: '0.9rem',
       cursor: 'pointer',
       boxShadow: '0 4px 12px rgba(5, 150, 105, 0.3)',
       transition: 'all 0.2s ease',
     } as React.CSSProperties,
 
-    // NEW: Disabled button style
+    btnWarning: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      padding: '0.75rem 1.25rem',
+      background: 'linear-gradient(135deg, #d97706 0%, #f59e0b 100%)',
+      border: 'none',
+      borderRadius: '10px',
+      color: 'white',
+      fontWeight: 600,
+      fontSize: '0.9rem',
+      cursor: 'pointer',
+      boxShadow: '0 4px 12px rgba(217, 119, 6, 0.3)',
+      transition: 'all 0.2s ease',
+    } as React.CSSProperties,
+
     btnDisabled: {
       opacity: 0.6,
       cursor: 'not-allowed',
@@ -437,8 +494,16 @@ export default function ContactsPage() {
       transition: 'background 0.2s ease',
     } as React.CSSProperties,
     
-    thHover: {
-      background: 'rgba(99, 102, 241, 0.1)',
+    thCheckbox: {
+      padding: '1.25rem 0.75rem',
+      textAlign: 'center' as const,
+      fontWeight: 700,
+      fontSize: '0.7rem',
+      color: '#64748b',
+      background: 'rgba(99, 102, 241, 0.05)',
+      borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+      cursor: 'pointer',
+      width: '50px',
     } as React.CSSProperties,
     
     thContent: {
@@ -456,6 +521,12 @@ export default function ContactsPage() {
       padding: '1rem',
       color: '#e2e8f0',
       fontSize: '0.95rem',
+    } as React.CSSProperties,
+
+    tdCheckbox: {
+      padding: '1rem 0.75rem',
+      textAlign: 'center' as const,
+      width: '50px',
     } as React.CSSProperties,
     
     contactInfo: {
@@ -520,6 +591,11 @@ export default function ContactsPage() {
       cursor: 'pointer',
       transition: 'all 0.2s ease',
     } as React.CSSProperties,
+
+    checkbox: {
+      cursor: 'pointer',
+      color: '#6366f1',
+    } as React.CSSProperties,
     
     loading: {
       display: 'flex',
@@ -538,7 +614,6 @@ export default function ContactsPage() {
     } as React.CSSProperties,
 
 
-    // Pagination styles
     paginationContainer: {
       display: 'flex',
       alignItems: 'center',
@@ -637,7 +712,6 @@ export default function ContactsPage() {
       outline: 'none',
     } as React.CSSProperties,
 
-    // NEW: Toast styles
     toast: {
       position: 'fixed' as const,
       bottom: '1.5rem',
@@ -662,14 +736,29 @@ export default function ContactsPage() {
       background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)',
       color: 'white',
     } as React.CSSProperties,
+
+    progressToast: {
+      background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+      color: 'white',
+    } as React.CSSProperties,
+
+    selectionBanner: {
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      padding: '0.75rem 1.5rem',
+      background: 'rgba(99, 102, 241, 0.15)',
+      borderBottom: '1px solid rgba(99, 102, 241, 0.3)',
+    } as React.CSSProperties,
   };
 
 
-  // NEW: Score ALL contacts - calls real backend API
+  // Score ALL contacts with background processing
   const handleScoreAll = async () => {
     setIsScoring(true);
     setScoreError(null);
     setScoreSuccess(null);
+    setScoreProgress('Starting...');
 
     try {
       const response = await fetch(`${API_URL}/api/v3/scoring/score-all`, {
@@ -685,29 +774,60 @@ export default function ContactsPage() {
       }
 
       const data = await response.json();
-
-      // Refresh contacts to show updated scores
-      await loadContacts();
-
-      // Show success message
-      const scoredCount = data.scored_count || data.scoredCount || contacts.length;
-      const failedCount = data.failures?.length || data.failed_count || 0;
       
-      if (failedCount > 0) {
-        setScoreSuccess(`✅ Scored ${scoredCount} contacts (${failedCount} failed)`);
-      } else {
-        setScoreSuccess(`✅ Successfully scored ${scoredCount} contacts!`);
-      }
+      // Start polling for status
+      pollScoringStatus();
 
     } catch (error: any) {
       console.error('Scoring failed:', error);
-      setScoreError(`Failed to score contacts: ${error.message}`);
-    } finally {
+      setScoreError(`Failed to start scoring: ${error.message}`);
       setIsScoring(false);
+      setScoreProgress(null);
     }
   };
 
-  // NEW: Score only contacts that don't have scores yet
+
+  // Poll scoring status
+  const pollScoringStatus = async () => {
+    const checkStatus = async () => {
+      try {
+        const response = await fetch(`${API_URL}/api/v3/scoring/status`);
+        const status = await response.json();
+        
+        setScoreProgress(status.message);
+        
+        if (!status.is_running) {
+          // Scoring complete
+          setIsScoring(false);
+          setScoreProgress(null);
+          
+          if (status.errors > 0) {
+            setScoreSuccess(`✅ Scored ${status.scored} contacts (${status.errors} errors)`);
+          } else {
+            setScoreSuccess(`✅ ${status.message}`);
+          }
+          
+          // Refresh contacts
+          await loadContacts();
+          return;
+        }
+        
+        // Continue polling
+        setTimeout(checkStatus, 2000);
+        
+      } catch (error) {
+        console.error('Status check failed:', error);
+        setIsScoring(false);
+        setScoreProgress(null);
+      }
+    };
+    
+    // Start polling after a short delay
+    setTimeout(checkStatus, 1000);
+  };
+
+
+  // Score only contacts that don't have scores yet
   const handleScoreUnscored = async () => {
     setIsScoring(true);
     setScoreError(null);
@@ -726,22 +846,32 @@ export default function ContactsPage() {
       }
 
       const unscoredIds = unscoredContacts.map(c => c.id);
+      
+      // Limit to 100 at a time
+      const batchIds = unscoredIds.slice(0, 100);
 
       const response = await fetch(`${API_URL}/api/v3/scoring/batch-score`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ contact_ids: unscoredIds }),
+        body: JSON.stringify({ contact_ids: batchIds }),
       });
 
       if (!response.ok) {
-        throw new Error(`Scoring failed: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
       }
 
       const data = await response.json();
       await loadContacts();
-      setScoreSuccess(`✅ Scored ${data.scored_count} new contacts!`);
+      
+      const remaining = unscoredIds.length - batchIds.length;
+      if (remaining > 0) {
+        setScoreSuccess(`✅ Scored ${data.scored_count} contacts! (${remaining} more unscored)`);
+      } else {
+        setScoreSuccess(`✅ Scored ${data.scored_count} new contacts!`);
+      }
 
     } catch (error: any) {
       setScoreError(`Failed: ${error.message}`);
@@ -751,11 +881,17 @@ export default function ContactsPage() {
   };
 
 
-  // UPDATED: Batch score selected contacts - now properly implemented
-  const handleBatchScore = async () => {
-    const selected = contacts.filter(c => checkedIds.has(c.id)).map(c => c.id);
-    if (selected.length === 0) {
-      setScoreError("Select contacts first to batch score");
+  // Batch score selected contacts
+  const handleScoreSelected = async () => {
+    const selectedIds = Array.from(checkedIds);
+    
+    if (selectedIds.length === 0) {
+      setScoreError('Select contacts first to score');
+      return;
+    }
+    
+    if (selectedIds.length > 100) {
+      setScoreError('Max 100 contacts at a time. Please select fewer.');
       return;
     }
     
@@ -768,16 +904,17 @@ export default function ContactsPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ contact_ids: selected }),
+        body: JSON.stringify({ contact_ids: selectedIds }),
       });
 
       if (!response.ok) {
-        throw new Error(`Batch scoring failed: ${response.statusText}`);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Scoring failed: ${response.statusText}`);
       }
 
       const data = await response.json();
-      await loadContacts(); // Refresh
-      setScoreSuccess(`✅ Scored ${data.length || selected.length} selected contacts`);
+      await loadContacts();
+      setScoreSuccess(`✅ Scored ${data.scored_count} selected contacts`);
       setCheckedIds(new Set()); // Clear selection
     } catch (error: any) {
       setScoreError(`Failed: ${error.message}`);
@@ -787,7 +924,7 @@ export default function ContactsPage() {
   };
 
 
-  // NEW: Handle HubSpot import
+  // Handle HubSpot import
   const handleImport = async () => {
     setIsImporting(true);
     setScoreError(null);
@@ -876,10 +1013,29 @@ export default function ContactsPage() {
           </div>
           <div>
             <h1 style={styles.title}>Contacts</h1>
-            <p style={styles.subtitle}>{contacts.length} contacts • {counts.hot} hot • {counts.warm} warm</p>
+            <p style={styles.subtitle}>
+              {contacts.length} contacts • {counts.hot} hot • {counts.warm} warm
+              {checkedIds.size > 0 && ` • ${checkedIds.size} selected`}
+            </p>
           </div>
         </div>
         <div style={styles.headerActions}>
+          {/* Score Selected Button - only show when contacts are selected */}
+          {checkedIds.size > 0 && (
+            <button 
+              style={{
+                ...styles.btnWarning,
+                ...(isScoring ? styles.btnDisabled : {}),
+              }}
+              onClick={handleScoreSelected}
+              disabled={isScoring}
+              title={`Score ${checkedIds.size} selected contacts`}
+            >
+              <Calculator size={18} />
+              Score Selected ({checkedIds.size})
+            </button>
+          )}
+
           {/* Score All Button */}
           <button 
             style={{
@@ -888,7 +1044,7 @@ export default function ContactsPage() {
             }}
             onClick={handleScoreAll}
             disabled={isScoring}
-            title="Calculate MDCP, BANT, and SPICE scores for all contacts"
+            title="Calculate scores for all contacts (runs in background)"
           >
             {isScoring ? (
               <>
@@ -968,9 +1124,33 @@ export default function ContactsPage() {
 
 
       <div style={styles.tableCard}>
+        {/* Selection banner */}
+        {checkedIds.size > 0 && (
+          <div style={styles.selectionBanner}>
+            <span style={{ color: '#f8fafc', fontWeight: 600 }}>
+              {checkedIds.size} contact{checkedIds.size !== 1 ? 's' : ''} selected
+            </span>
+            <button 
+              style={{ ...styles.btnSecondary, padding: '0.5rem 1rem', fontSize: '0.85rem' }}
+              onClick={() => setCheckedIds(new Set())}
+            >
+              Clear Selection
+            </button>
+          </div>
+        )}
+
         <table style={styles.table}>
           <thead>
             <tr>
+              <th style={styles.thCheckbox} onClick={handleSelectAll}>
+                {allPageSelected ? (
+                  <CheckSquare size={18} style={styles.checkbox} />
+                ) : somePageSelected ? (
+                  <Square size={18} style={{ ...styles.checkbox, opacity: 0.5 }} />
+                ) : (
+                  <Square size={18} style={styles.checkbox} />
+                )}
+              </th>
               <th 
                 style={styles.th} 
                 onClick={() => handleSort('name')}
@@ -1048,11 +1228,29 @@ export default function ContactsPage() {
             {paginatedContacts.map((contact) => (
               <tr
                 key={contact.id}
-                style={styles.tr}
+                style={{
+                  ...styles.tr,
+                  background: checkedIds.has(contact.id) ? 'rgba(99, 102, 241, 0.1)' : 'transparent',
+                }}
                 onClick={() => handleRowClick(contact)}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                onMouseEnter={(e) => {
+                  if (!checkedIds.has(contact.id)) {
+                    e.currentTarget.style.background = 'rgba(99, 102, 241, 0.08)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = checkedIds.has(contact.id) 
+                    ? 'rgba(99, 102, 241, 0.1)' 
+                    : 'transparent';
+                }}
               >
+                <td style={styles.tdCheckbox} onClick={(e) => handleCheckboxToggle(contact.id, e)}>
+                  {checkedIds.has(contact.id) ? (
+                    <CheckSquare size={18} style={styles.checkbox} />
+                  ) : (
+                    <Square size={18} style={styles.checkbox} />
+                  )}
+                </td>
                 <td style={styles.td}>
                   <div style={styles.contactInfo}>
                     <div style={styles.avatar}>
@@ -1066,9 +1264,9 @@ export default function ContactsPage() {
                 </td>
                 <td style={styles.td}>{contact.company || '—'}</td>
                 <td style={styles.td}>{contact.title || '—'}</td>
-                <td style={styles.td}>{contact.mdcp_score || '—'}</td>
-                <td style={styles.td}>{contact.bant_score || '—'}</td>
-                <td style={styles.td}>{contact.spice_score || '—'}</td>
+                <td style={styles.td}>{contact.mdcp_score ?? '—'}</td>
+                <td style={styles.td}>{contact.bant_score ?? '—'}</td>
+                <td style={styles.td}>{contact.spice_score ?? '—'}</td>
                 <td style={styles.td}>
                   <span style={styles.statusBadge(contact.enrichment_status || 'pending')}>
                     {contact.enrichment_status || 'pending'}
@@ -1076,7 +1274,6 @@ export default function ContactsPage() {
                 </td>
                 <td style={styles.td}>
                   <div style={styles.actionButtons} onClick={(e) => e.stopPropagation()}>
-                    {/* UPDATED: Enrich button now has onClick */}
                     <button 
                       style={styles.actionBtn} 
                       title="Enrich"
@@ -1188,7 +1385,15 @@ export default function ContactsPage() {
       </div>
 
 
-      {/* NEW: Success Toast */}
+      {/* Progress Toast */}
+      {scoreProgress && (
+        <div style={{ ...styles.toast, ...styles.progressToast }}>
+          <Loader2 size={20} style={{ animation: 'spin 1s linear infinite' }} />
+          {scoreProgress}
+        </div>
+      )}
+
+      {/* Success Toast */}
       {scoreSuccess && (
         <div style={{ ...styles.toast, ...styles.successToast }}>
           <CheckCircle size={20} />
@@ -1196,7 +1401,7 @@ export default function ContactsPage() {
         </div>
       )}
 
-      {/* NEW: Error Toast */}
+      {/* Error Toast */}
       {scoreError && (
         <div style={{ ...styles.toast, ...styles.errorToast }}>
           <AlertCircle size={20} />
@@ -1205,7 +1410,7 @@ export default function ContactsPage() {
       )}
 
 
-      {/* UPDATED: Modal now passes initialTab */}
+      {/* Modal */}
       {isModalOpen && selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
