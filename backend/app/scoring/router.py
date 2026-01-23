@@ -4,10 +4,11 @@ LatticeIQ Scoring Router
 API endpoints for MDCP, BANT, SPICE lead scoring with real database integration
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from supabase import Client
+import asyncio
 
 from .models import ScoreResponse, BatchScoringResponse, BatchScoreRequest
 from .calculators import (
@@ -21,6 +22,18 @@ router = APIRouter(prefix="/scoring", tags=["scoring"])
 
 # Global supabase client (imported from main)
 supabase: Optional[Client] = None
+
+# Track scoring job status
+scoring_status: Dict[str, Any] = {
+    "is_running": False,
+    "progress": 0,
+    "total": 0,
+    "scored": 0,
+    "errors": 0,
+    "started_at": None,
+    "completed_at": None,
+    "message": "Idle"
+}
 
 
 def set_supabase_client(client: Client):
@@ -41,6 +54,16 @@ def get_tier(score: float) -> str:
         return "warm"
     else:
         return "cold"
+
+
+# ==========================================
+# GET SCORING STATUS
+# ==========================================
+
+@router.get("/status")
+async def get_scoring_status() -> Dict[str, Any]:
+    """Get the current status of scoring operations"""
+    return scoring_status
 
 
 # ==========================================
@@ -110,6 +133,38 @@ async def get_scoring_config(framework: str) -> Dict[str, Any]:
 
 
 # ==========================================
+# HELPER: Score a single contact (sync)
+# ==========================================
+
+def _score_single_contact_sync(contact: Dict, mdcp_config: Dict, bant_config: Dict, spice_config: Dict) -> Dict:
+    """
+    Score a single contact synchronously.
+    Returns the update payload or raises exception.
+    """
+    scores = {}
+    
+    mdcp_result = calculate_mdcp_score(contact, mdcp_config)
+    scores["mdcpscore"] = round(float(mdcp_result.get("score", 0)), 2)
+    
+    bant_result = calculate_bant_score(contact, bant_config)
+    scores["bantscore"] = round(float(bant_result.get("score", 0)), 2)
+    
+    spice_result = calculate_spice_score(contact, spice_config)
+    scores["spicescore"] = round(float(spice_result.get("score", 0)), 2)
+    
+    # Calculate overall
+    overall_score = round((scores["mdcpscore"] + scores["bantscore"] + scores["spicescore"]) / 3, 2)
+    
+    return {
+        "mdcpscore": scores["mdcpscore"],
+        "bantscore": scores["bantscore"],
+        "spicescore": scores["spicescore"],
+        "overallscore": overall_score,
+        "updatedat": datetime.utcnow().isoformat()
+    }
+
+
+# ==========================================
 # CALCULATE SCORES FOR SINGLE CONTACT
 # ==========================================
 
@@ -118,7 +173,6 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
     """Calculate all three scoring frameworks (MDCP, BANT, SPICE) for a contact"""
     
     try:
-        # 1. FETCH CONTACT FROM SUPABASE DATABASE
         if not supabase:
             raise HTTPException(status_code=500, detail="Database not initialized")
         
@@ -128,57 +182,32 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         if not contact:
             raise HTTPException(status_code=404, detail=f"Contact {contact_id} not found")
 
-        # 2. GET CONFIGS
+        # Get configs
         mdcp_config = await get_scoring_config("mdcp")
         bant_config = await get_scoring_config("bant")
         spice_config = await get_scoring_config("spice")
 
-        # 3. CALCULATE SCORES
-        mdcp_result = calculate_mdcp_score(contact, mdcp_config)
-        bant_result = calculate_bant_score(contact, bant_config)
-        spice_result = calculate_spice_score(contact, spice_config)
-
-        mdcp_score = mdcp_result.get("score", 0)
-        bant_score = bant_result.get("score", 0)
-        spice_score = spice_result.get("score", 0)
-
-        # 4. CALCULATE OVERALL SCORE (average of three frameworks)
-        overall_score = round((mdcp_score + bant_score + spice_score) / 3, 2)
-
-        # 5. DETERMINE TIERS (computed, not stored - tier columns don't exist in DB)
-        mdcp_tier = get_tier(mdcp_score)
-        bant_tier = get_tier(bant_score)
-        spice_tier = get_tier(spice_score)
-
-        # 6. PERSIST TO DATABASE
-        now = datetime.utcnow()
-        update_payload = {
-            "mdcpscore": float(mdcp_score),
-            "bantscore": float(bant_score),
-            "spicescore": float(spice_score),
-            "overallscore": overall_score,
-            "updatedat": now.isoformat()
-        }
+        # Calculate scores
+        update_payload = _score_single_contact_sync(contact, mdcp_config, bant_config, spice_config)
         
+        # Persist to database
         update_response = supabase.table("contacts").update(update_payload).eq("id", contact_id).execute()
         
         if not update_response.data:
             raise HTTPException(status_code=500, detail="Failed to persist scores to database")
 
-        # 7. RETURN RESPONSE (tiers are computed, not from DB)
-        response = ScoreResponse(
+        # Return response
+        return ScoreResponse(
             contact_id=contact_id,
-            mdcp_score=round(float(mdcp_score), 2),
-            mdcp_tier=mdcp_tier,
-            bant_score=round(float(bant_score), 2),
-            bant_tier=bant_tier,
-            spice_score=round(float(spice_score), 2),
-            spice_tier=spice_tier,
-            overall_score=overall_score,
-            last_scored_at=now
+            mdcp_score=update_payload["mdcpscore"],
+            mdcp_tier=get_tier(update_payload["mdcpscore"]),
+            bant_score=update_payload["bantscore"],
+            bant_tier=get_tier(update_payload["bantscore"]),
+            spice_score=update_payload["spicescore"],
+            spice_tier=get_tier(update_payload["spicescore"]),
+            overall_score=update_payload["overallscore"],
+            last_scored_at=datetime.utcnow()
         )
-
-        return response
 
     except HTTPException:
         raise
@@ -189,63 +218,6 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
 
 
 # ==========================================
-# HELPER: Score a list of contacts (internal)
-# ==========================================
-
-async def _score_contacts_batch(contacts: List[Dict], frameworks: List[str]) -> tuple:
-    """
-    Internal helper to score a list of contacts.
-    Returns (updates_list, errors_list)
-    """
-    # Get configs once
-    mdcp_config = await get_scoring_config("mdcp") if "mdcp" in frameworks else None
-    bant_config = await get_scoring_config("bant") if "bant" in frameworks else None
-    spice_config = await get_scoring_config("spice") if "spice" in frameworks else None
-    
-    updates = []
-    errors = []
-    now = datetime.utcnow()
-    
-    for contact in contacts:
-        try:
-            scores = {}
-            
-            # Calculate only requested frameworks
-            if "mdcp" in frameworks and mdcp_config:
-                mdcp_result = calculate_mdcp_score(contact, mdcp_config)
-                scores["mdcpscore"] = round(float(mdcp_result.get("score", 0)), 2)
-            
-            if "bant" in frameworks and bant_config:
-                bant_result = calculate_bant_score(contact, bant_config)
-                scores["bantscore"] = round(float(bant_result.get("score", 0)), 2)
-            
-            if "spice" in frameworks and spice_config:
-                spice_result = calculate_spice_score(contact, spice_config)
-                scores["spicescore"] = round(float(spice_result.get("score", 0)), 2)
-            
-            # Calculate overall (average of requested frameworks)
-            score_values = [v for k, v in scores.items() if "score" in k]
-            overall_score = round(sum(score_values) / len(score_values), 2) if score_values else 0
-            
-            # Prepare update
-            update_obj = {
-                "id": contact["id"],
-                "overallscore": overall_score,
-                "updatedat": now.isoformat(),
-                **scores
-            }
-            updates.append(update_obj)
-            
-        except Exception as e:
-            errors.append({
-                "contact_id": contact.get("id"),
-                "error": str(e)
-            })
-    
-    return updates, errors
-
-
-# ==========================================
 # BATCH SCORE SELECTED CONTACTS
 # ==========================================
 
@@ -253,17 +225,7 @@ async def _score_contacts_batch(contacts: List[Dict], frameworks: List[str]) -> 
 async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringResponse:
     """
     Score selected contacts efficiently.
-    
-    Supports:
-    - Max 1000 contacts per request
-    - Chunked database queries to avoid URL limits
-    - Error tracking per contact
-    
-    Request body:
-    {
-        "contact_ids": ["uuid1", "uuid2", ...],
-        "frameworks": ["mdcp", "bant", "spice"]  # optional
-    }
+    Max 100 contacts per request for reliability.
     """
     
     try:
@@ -271,18 +233,20 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
             raise HTTPException(status_code=500, detail="Database not initialized")
         
         contact_ids = request.contact_ids
-        frameworks = request.frameworks or ["mdcp", "bant", "spice"]
         
-        # Validate input
         if not contact_ids:
             raise HTTPException(status_code=400, detail="No contact IDs provided")
         
-        if len(contact_ids) > 1000:
-            raise HTTPException(status_code=400, detail="Max 1000 contacts per batch")
+        if len(contact_ids) > 100:
+            raise HTTPException(status_code=400, detail="Max 100 contacts per batch. Use Score All for larger sets.")
         
-        # 1. FETCH CONTACTS IN CHUNKS (avoid .in_() URL limit)
-        # Supabase/PostgREST has limits on .in_() with many IDs
-        CHUNK_SIZE = 50  # Safe chunk size for .in_() queries
+        # Get configs once
+        mdcp_config = await get_scoring_config("mdcp")
+        bant_config = await get_scoring_config("bant")
+        spice_config = await get_scoring_config("spice")
+        
+        # Fetch contacts in small chunks
+        CHUNK_SIZE = 25
         all_contacts = []
         
         for i in range(0, len(contact_ids), CHUNK_SIZE):
@@ -293,26 +257,23 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
                     all_contacts.extend(chunk_response.data)
             except Exception as e:
                 print(f"Error fetching chunk {i}: {e}")
-                # Continue with other chunks
         
         if not all_contacts:
             raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
         
-        # 2. SCORE ALL CONTACTS
-        updates, errors = await _score_contacts_batch(all_contacts, frameworks)
-        
-        # 3. UPDATE DATABASE (sequential for reliability)
+        # Score and update each contact
         successful_updates = 0
-        for update_obj in updates:
-            contact_id = update_obj.pop("id")
+        errors = []
+        
+        for contact in all_contacts:
             try:
-                result = supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
+                update_payload = _score_single_contact_sync(contact, mdcp_config, bant_config, spice_config)
+                result = supabase.table("contacts").update(update_payload).eq("id", contact["id"]).execute()
                 if result.data:
                     successful_updates += 1
             except Exception as e:
-                errors.append({"contact_id": contact_id, "error": str(e)})
+                errors.append({"contact_id": contact.get("id"), "error": str(e)})
         
-        # 4. RETURN RESPONSE
         return BatchScoringResponse(
             success=len(errors) == 0,
             scored_count=successful_updates,
@@ -330,32 +291,73 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
 
 
 # ==========================================
-# SCORE ALL CONTACTS (FIXED)
+# BACKGROUND TASK: Score all contacts
 # ==========================================
 
-@router.post("/score-all")
-async def score_all_contacts() -> BatchScoringResponse:
+def _run_score_all_background():
     """
-    Score ALL contacts in workspace.
-    Uses pagination to handle large datasets without hitting query limits.
+    Background task to score all contacts.
+    Updates global scoring_status for progress tracking.
     """
+    global scoring_status
     
     try:
         if not supabase:
-            raise HTTPException(status_code=500, detail="Database not initialized")
+            scoring_status["message"] = "Database not initialized"
+            scoring_status["is_running"] = False
+            return
         
-        frameworks = ["mdcp", "bant", "spice"]
-        all_errors = []
-        total_scored = 0
-        total_contacts = 0
+        # Get configs (sync version)
+        configs = {
+            "mdcp": {
+                "framework": "mdcp",
+                "weights": {"money": 25, "decisionmaker": 25, "champion": 25, "process": 25},
+                "thresholds": {"hotMin": 71, "warmMin": 40},
+                "config": {
+                    "moneyMinRevenue": 1000000,
+                    "moneyMaxRevenue": 100000000,
+                    "decisionmakerTitles": ["CEO", "VP", "Director", "President", "Owner", "CTO", "CFO"],
+                    "championEngagementDays": 30
+                }
+            },
+            "bant": {
+                "framework": "bant",
+                "weights": {"budget": 25, "authority": 25, "need": 25, "timeline": 25},
+                "thresholds": {"hotMin": 71, "warmMin": 40},
+                "config": {}
+            },
+            "spice": {
+                "framework": "spice",
+                "weights": {"situation": 20, "problem": 20, "implication": 20, "criticalEvent": 20, "decision": 20},
+                "thresholds": {"hotMin": 71, "warmMin": 40},
+                "config": {}
+            }
+        }
         
-        # PAGINATION: Fetch and score contacts in batches
-        # This avoids the .in_() URL limit issue entirely
-        PAGE_SIZE = 100
+        mdcp_config = configs["mdcp"]
+        bant_config = configs["bant"]
+        spice_config = configs["spice"]
+        
+        # First, count total contacts
+        count_response = supabase.table("contacts").select("id", count="exact").execute()
+        total_contacts = count_response.count or 0
+        
+        scoring_status["total"] = total_contacts
+        scoring_status["message"] = f"Scoring {total_contacts} contacts..."
+        
+        if total_contacts == 0:
+            scoring_status["message"] = "No contacts to score"
+            scoring_status["is_running"] = False
+            scoring_status["completed_at"] = datetime.utcnow().isoformat()
+            return
+        
+        # Process in pages
+        PAGE_SIZE = 50
         offset = 0
+        scored = 0
+        errors = 0
         
         while True:
-            # Fetch a page of contacts directly (no .in_() needed)
             try:
                 page_response = supabase.table("contacts") \
                     .select("*") \
@@ -363,57 +365,88 @@ async def score_all_contacts() -> BatchScoringResponse:
                     .execute()
             except Exception as e:
                 print(f"Error fetching page at offset {offset}: {e}")
-                all_errors.append({"contact_id": "pagination", "error": str(e)})
+                errors += 1
                 break
             
             contacts = page_response.data
             
             if not contacts:
-                # No more contacts
                 break
             
-            total_contacts += len(contacts)
-            
-            # Score this batch
-            updates, batch_errors = await _score_contacts_batch(contacts, frameworks)
-            all_errors.extend(batch_errors)
-            
-            # Update database
-            for update_obj in updates:
-                contact_id = update_obj.pop("id")
+            # Score each contact in this page
+            for contact in contacts:
                 try:
-                    result = supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
+                    update_payload = _score_single_contact_sync(contact, mdcp_config, bant_config, spice_config)
+                    result = supabase.table("contacts").update(update_payload).eq("id", contact["id"]).execute()
                     if result.data:
-                        total_scored += 1
+                        scored += 1
                 except Exception as e:
-                    all_errors.append({"contact_id": contact_id, "error": str(e)})
+                    print(f"Error scoring contact {contact.get('id')}: {e}")
+                    errors += 1
+                
+                # Update progress
+                scoring_status["scored"] = scored
+                scoring_status["errors"] = errors
+                scoring_status["progress"] = round((scored + errors) / total_contacts * 100, 1)
+                scoring_status["message"] = f"Scored {scored}/{total_contacts} contacts..."
             
-            # Move to next page
             offset += PAGE_SIZE
             
-            # Safety: If we got less than PAGE_SIZE, we're at the end
             if len(contacts) < PAGE_SIZE:
                 break
         
-        if total_contacts == 0:
-            return BatchScoringResponse(
-                success=True,
-                scored_count=0,
-                total_contacts=0,
-                message="No contacts to score"
-            )
+        # Complete
+        scoring_status["is_running"] = False
+        scoring_status["completed_at"] = datetime.utcnow().isoformat()
+        scoring_status["progress"] = 100
+        scoring_status["message"] = f"Complete! Scored {scored} contacts ({errors} errors)"
         
-        return BatchScoringResponse(
-            success=len(all_errors) == 0,
-            scored_count=total_scored,
-            total_contacts=total_contacts,
-            errors=all_errors if all_errors else None,
-            message=f"Batch scoring complete: {total_scored}/{total_contacts} contacts scored"
-        )
-        
-    except HTTPException:
-        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error scoring all contacts: {str(e)}")
+        scoring_status["is_running"] = False
+        scoring_status["message"] = f"Error: {str(e)}"
+        scoring_status["completed_at"] = datetime.utcnow().isoformat()
+
+
+# ==========================================
+# SCORE ALL CONTACTS (WITH BACKGROUND TASK)
+# ==========================================
+
+@router.post("/score-all")
+async def score_all_contacts(background_tasks: BackgroundTasks) -> Dict[str, Any]:
+    """
+    Score ALL contacts in workspace.
+    Returns immediately and processes in background.
+    Check /scoring/status for progress.
+    """
+    global scoring_status
+    
+    # Check if already running
+    if scoring_status["is_running"]:
+        return {
+            "success": False,
+            "message": "Scoring already in progress",
+            "status": scoring_status
+        }
+    
+    # Reset status
+    scoring_status = {
+        "is_running": True,
+        "progress": 0,
+        "total": 0,
+        "scored": 0,
+        "errors": 0,
+        "started_at": datetime.utcnow().isoformat(),
+        "completed_at": None,
+        "message": "Starting..."
+    }
+    
+    # Add background task
+    background_tasks.add_task(_run_score_all_background)
+    
+    return {
+        "success": True,
+        "message": "Scoring started in background. Check /api/v3/scoring/status for progress.",
+        "status": scoring_status
+    }
