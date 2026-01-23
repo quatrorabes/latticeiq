@@ -1,13 +1,14 @@
 // frontend/src/pages/ContactsPage.tsx
 import { useState, useEffect, useMemo } from 'react';
-import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Calculator, CheckCircle, AlertCircle, Square, CheckSquare } from 'lucide-react';
+import { Loader2, RefreshCw, Upload, Zap, Trash2, Users, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Calculator, CheckCircle, AlertCircle, Square, CheckSquare, Target } from 'lucide-react';
 import { fetchContacts, deleteContact } from '../api/contacts';
 import { Contact } from '../types';
 import ContactDetailModal from '../components/ContactDetailModal';
+import QuickScoreModal from '../components/QuickScoreModal';
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://latticeiq-backend.onrender.com';
 
-type SortField = 'name' | 'company' | 'title' | 'mdcp_score' | 'bant_score' | 'spice_score' | 'enrichment_status';
+type SortField = 'name' | 'company' | 'title' | 'quick_score' | 'mdcp_score' | 'bant_score' | 'spice_score' | 'enrichment_status';
 type SortDirection = 'asc' | 'desc';
 
 
@@ -43,10 +44,15 @@ export default function ContactsPage() {
   // Modal initial tab
   const [initialTab, setInitialTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>('overview');
 
+  // Quick Score modal state
+  const [isQuickScoreModalOpen, setIsQuickScoreModalOpen] = useState(false);
+  const [hasQuickScores, setHasQuickScores] = useState(false);
+
 
   // Helper functions (defined early so they can be used in useMemo)
   const getTier = (contact: Contact): 'hot' | 'warm' | 'cold' => {
-    const score = contact.mdcp_score || 0;
+    // Use quick_score if available, otherwise mdcp_score
+    const score = contact.quick_score ?? contact.mdcp_score ?? 0;
     if (score >= 70) return 'hot';
     if (score >= 40) return 'warm';
     return 'cold';
@@ -92,6 +98,10 @@ export default function ContactsPage() {
           aValue = (a.title || '').toLowerCase();
           bValue = (b.title || '').toLowerCase();
           break;
+        case 'quick_score':
+          aValue = a.quick_score ?? -1;
+          bValue = b.quick_score ?? -1;
+          break;
         case 'mdcp_score':
           aValue = a.mdcp_score || 0;
           bValue = b.mdcp_score || 0;
@@ -129,13 +139,13 @@ export default function ContactsPage() {
   const paginatedContacts = filteredAndSortedContacts.slice(startIndex, endIndex);
 
 
-  // Counts for filter tabs
-  const counts = {
+  // Counts for filter tabs (using quick_score when available)
+  const counts = useMemo(() => ({
     all: contacts.length,
     hot: contacts.filter(c => getTier(c) === 'hot').length,
     warm: contacts.filter(c => getTier(c) === 'warm').length,
     cold: contacts.filter(c => getTier(c) === 'cold').length,
-  };
+  }), [contacts, hasQuickScores]);
 
 
   // Check if all on current page are selected
@@ -178,6 +188,7 @@ export default function ContactsPage() {
     try {
       const data = await fetchContacts();
       setContacts(data.contacts || data);
+      setHasQuickScores(false); // Reset quick scores on reload
     } catch (error) {
       console.error('Failed to load contacts:', error);
     } finally {
@@ -235,7 +246,7 @@ export default function ContactsPage() {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortField(field);
-      setSortDirection('asc');
+      setSortDirection('desc'); // Default to desc for scores
     }
   };
 
@@ -269,6 +280,16 @@ export default function ContactsPage() {
   };
 
 
+  // Handle Quick Score completion
+  const handleQuickScoreComplete = (scoredContacts: Contact[]) => {
+    setContacts(scoredContacts);
+    setHasQuickScores(true);
+    setSortField('quick_score');
+    setSortDirection('desc');
+    setScoreSuccess(`⚡ Quick scored ${scoredContacts.length} contacts!`);
+  };
+
+
   // Sort indicator component
   const SortIndicator = ({ field }: { field: SortField }) => {
     if (sortField !== field) {
@@ -277,6 +298,37 @@ export default function ContactsPage() {
     return sortDirection === 'asc' 
       ? <ChevronUp size={14} style={{ marginLeft: '4px', color: '#6366f1' }} />
       : <ChevronDown size={14} style={{ marginLeft: '4px', color: '#6366f1' }} />;
+  };
+
+
+  // Get score badge color based on score value
+  const getScoreBadgeStyle = (score: number | undefined) => {
+    if (score === undefined || score === null) {
+      return {
+        background: 'rgba(148, 163, 184, 0.1)',
+        color: '#64748b',
+        border: '1px solid rgba(148, 163, 184, 0.2)',
+      };
+    }
+    if (score >= 70) {
+      return {
+        background: 'rgba(239, 68, 68, 0.15)',
+        color: '#ef4444',
+        border: '1px solid rgba(239, 68, 68, 0.3)',
+      };
+    }
+    if (score >= 40) {
+      return {
+        background: 'rgba(245, 158, 11, 0.15)',
+        color: '#f59e0b',
+        border: '1px solid rgba(245, 158, 11, 0.3)',
+      };
+    }
+    return {
+      background: 'rgba(59, 130, 246, 0.15)',
+      color: '#3b82f6',
+      border: '1px solid rgba(59, 130, 246, 0.3)',
+    };
   };
 
 
@@ -559,6 +611,14 @@ export default function ContactsPage() {
       color: status === 'completed' ? '#22c55e' : '#f59e0b',
       border: `1px solid ${status === 'completed' ? 'rgba(34, 197, 94, 0.3)' : 'rgba(245, 158, 11, 0.3)'}`,
     }) as React.CSSProperties,
+
+    scoreBadge: {
+      display: 'inline-flex',
+      padding: '0.3rem 0.7rem',
+      borderRadius: '6px',
+      fontSize: '0.85rem',
+      fontWeight: 700,
+    } as React.CSSProperties,
     
     actionButtons: {
       display: 'flex',
@@ -1001,15 +1061,26 @@ export default function ContactsPage() {
             <p style={styles.subtitle}>
               {contacts.length} contacts • {counts.hot} hot • {counts.warm} warm
               {checkedIds.size > 0 && ` • ${checkedIds.size} selected`}
+              {hasQuickScores && ' • ⚡ Quick Scored'}
             </p>
           </div>
         </div>
         <div style={styles.headerActions}>
+          {/* Quick Score Button - Primary action */}
+          <button 
+            style={styles.btnWarning}
+            onClick={() => setIsQuickScoreModalOpen(true)}
+            title="Fast client-side scoring with custom criteria"
+          >
+            <Target size={18} />
+            Quick Score
+          </button>
+
           {/* Score Selected Button - only show when contacts are selected */}
           {checkedIds.size > 0 && (
             <button 
               style={{
-                ...styles.btnWarning,
+                ...styles.btnSecondary,
                 ...(isScoring ? styles.btnDisabled : {}),
               }}
               onClick={handleScoreSelected}
@@ -1029,7 +1100,7 @@ export default function ContactsPage() {
             }}
             onClick={handleScoreAll}
             disabled={isScoring}
-            title="Calculate scores for all contacts (runs in background)"
+            title="Calculate MDCP/BANT/SPICE scores for all contacts (runs in background)"
           >
             {isScoring ? (
               <>
@@ -1039,23 +1110,9 @@ export default function ContactsPage() {
             ) : (
               <>
                 <Calculator size={18} />
-                Score All
+                Full Score
               </>
             )}
-          </button>
-
-          {/* Score Unscored Button */}
-          <button 
-            style={{
-              ...styles.btnSecondary,
-              ...(isScoring ? styles.btnDisabled : {}),
-            }}
-            onClick={handleScoreUnscored}
-            disabled={isScoring}
-            title="Only score contacts without existing scores"
-          >
-            <Calculator size={18} />
-            Score New
           </button>
 
           {/* Refresh Button */}
@@ -1166,6 +1223,18 @@ export default function ContactsPage() {
                   Title <SortIndicator field="title" />
                 </div>
               </th>
+              {/* Quick Score Column - Show when quick scores exist */}
+              <th 
+                style={{...styles.th, background: hasQuickScores ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.05)'}}
+                onClick={() => handleSort('quick_score')}
+                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(245, 158, 11, 0.15)'}
+                onMouseLeave={(e) => e.currentTarget.style.background = hasQuickScores ? 'rgba(245, 158, 11, 0.1)' : 'rgba(99, 102, 241, 0.05)'}
+              >
+                <div style={styles.thContent}>
+                  <Target size={14} style={{ marginRight: '4px', color: '#f59e0b' }} />
+                  Quick <SortIndicator field="quick_score" />
+                </div>
+              </th>
               <th 
                 style={styles.th}
                 onClick={() => handleSort('mdcp_score')}
@@ -1174,26 +1243,6 @@ export default function ContactsPage() {
               >
                 <div style={styles.thContent}>
                   MDCP <SortIndicator field="mdcp_score" />
-                </div>
-              </th>
-              <th 
-                style={styles.th}
-                onClick={() => handleSort('bant_score')}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
-              >
-                <div style={styles.thContent}>
-                  BANT <SortIndicator field="bant_score" />
-                </div>
-              </th>
-              <th 
-                style={styles.th}
-                onClick={() => handleSort('spice_score')}
-                onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.05)'}
-              >
-                <div style={styles.thContent}>
-                  SPICE <SortIndicator field="spice_score" />
                 </div>
               </th>
               <th 
@@ -1249,9 +1298,24 @@ export default function ContactsPage() {
                 </td>
                 <td style={styles.td}>{contact.company || '—'}</td>
                 <td style={styles.td}>{contact.title || '—'}</td>
-                <td style={styles.td}>{contact.mdcp_score ?? '—'}</td>
-                <td style={styles.td}>{contact.bant_score ?? '—'}</td>
-                <td style={styles.td}>{contact.spice_score ?? '—'}</td>
+                <td style={styles.td}>
+                  {contact.quick_score !== undefined ? (
+                    <span style={{ ...styles.scoreBadge, ...getScoreBadgeStyle(contact.quick_score) }}>
+                      {contact.quick_score}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#475569' }}>—</span>
+                  )}
+                </td>
+                <td style={styles.td}>
+                  {contact.mdcp_score !== undefined && contact.mdcp_score !== null ? (
+                    <span style={{ ...styles.scoreBadge, ...getScoreBadgeStyle(contact.mdcp_score) }}>
+                      {contact.mdcp_score}
+                    </span>
+                  ) : (
+                    <span style={{ color: '#475569' }}>—</span>
+                  )}
+                </td>
                 <td style={styles.td}>
                   <span style={styles.statusBadge(contact.enrichment_status || 'pending')}>
                     {contact.enrichment_status || 'pending'}
@@ -1395,7 +1459,7 @@ export default function ContactsPage() {
       )}
 
 
-      {/* Modal */}
+      {/* Contact Detail Modal */}
       {isModalOpen && selectedContact && (
         <ContactDetailModal
           contact={selectedContact}
@@ -1404,6 +1468,14 @@ export default function ContactsPage() {
           initialTab={initialTab}
         />
       )}
+
+      {/* Quick Score Modal */}
+      <QuickScoreModal
+        isOpen={isQuickScoreModalOpen}
+        onClose={() => setIsQuickScoreModalOpen(false)}
+        contacts={contacts}
+        onScoreComplete={handleQuickScoreComplete}
+      />
 
       {/* CSS Animations */}
       <style>{`
