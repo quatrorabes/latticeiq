@@ -151,8 +151,6 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         spice_tier = get_tier(spice_score)
 
         # 6. PERSIST TO DATABASE
-        # NOTE: Column names have NO underscores (mdcpscore not mdcp_score)
-        # NOTE: Tier columns don't exist in DB - tiers are computed from scores
         now = datetime.utcnow()
         update_payload = {
             "mdcpscore": float(mdcp_score),
@@ -191,6 +189,63 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
 
 
 # ==========================================
+# HELPER: Score a list of contacts (internal)
+# ==========================================
+
+async def _score_contacts_batch(contacts: List[Dict], frameworks: List[str]) -> tuple:
+    """
+    Internal helper to score a list of contacts.
+    Returns (updates_list, errors_list)
+    """
+    # Get configs once
+    mdcp_config = await get_scoring_config("mdcp") if "mdcp" in frameworks else None
+    bant_config = await get_scoring_config("bant") if "bant" in frameworks else None
+    spice_config = await get_scoring_config("spice") if "spice" in frameworks else None
+    
+    updates = []
+    errors = []
+    now = datetime.utcnow()
+    
+    for contact in contacts:
+        try:
+            scores = {}
+            
+            # Calculate only requested frameworks
+            if "mdcp" in frameworks and mdcp_config:
+                mdcp_result = calculate_mdcp_score(contact, mdcp_config)
+                scores["mdcpscore"] = round(float(mdcp_result.get("score", 0)), 2)
+            
+            if "bant" in frameworks and bant_config:
+                bant_result = calculate_bant_score(contact, bant_config)
+                scores["bantscore"] = round(float(bant_result.get("score", 0)), 2)
+            
+            if "spice" in frameworks and spice_config:
+                spice_result = calculate_spice_score(contact, spice_config)
+                scores["spicescore"] = round(float(spice_result.get("score", 0)), 2)
+            
+            # Calculate overall (average of requested frameworks)
+            score_values = [v for k, v in scores.items() if "score" in k]
+            overall_score = round(sum(score_values) / len(score_values), 2) if score_values else 0
+            
+            # Prepare update
+            update_obj = {
+                "id": contact["id"],
+                "overallscore": overall_score,
+                "updatedat": now.isoformat(),
+                **scores
+            }
+            updates.append(update_obj)
+            
+        except Exception as e:
+            errors.append({
+                "contact_id": contact.get("id"),
+                "error": str(e)
+            })
+    
+    return updates, errors
+
+
+# ==========================================
 # BATCH SCORE SELECTED CONTACTS
 # ==========================================
 
@@ -201,7 +256,7 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
     
     Supports:
     - Max 1000 contacts per request
-    - Batch database updates (faster than sequential)
+    - Chunked database queries to avoid URL limits
     - Error tracking per contact
     
     Request body:
@@ -225,65 +280,31 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
         if len(contact_ids) > 1000:
             raise HTTPException(status_code=400, detail="Max 1000 contacts per batch")
         
-        # 1. FETCH ALL CONTACTS IN ONE QUERY (not one-by-one)
-        contacts_response = supabase.table("contacts").select("*").in_("id", contact_ids).execute()
-        contacts = contacts_response.data
+        # 1. FETCH CONTACTS IN CHUNKS (avoid .in_() URL limit)
+        # Supabase/PostgREST has limits on .in_() with many IDs
+        CHUNK_SIZE = 50  # Safe chunk size for .in_() queries
+        all_contacts = []
         
-        if not contacts:
+        for i in range(0, len(contact_ids), CHUNK_SIZE):
+            chunk_ids = contact_ids[i:i + CHUNK_SIZE]
+            try:
+                chunk_response = supabase.table("contacts").select("*").in_("id", chunk_ids).execute()
+                if chunk_response.data:
+                    all_contacts.extend(chunk_response.data)
+            except Exception as e:
+                print(f"Error fetching chunk {i}: {e}")
+                # Continue with other chunks
+        
+        if not all_contacts:
             raise HTTPException(status_code=404, detail="No contacts found with provided IDs")
         
-        # 2. GET CONFIGS ONCE
-        mdcp_config = await get_scoring_config("mdcp") if "mdcp" in frameworks else None
-        bant_config = await get_scoring_config("bant") if "bant" in frameworks else None
-        spice_config = await get_scoring_config("spice") if "spice" in frameworks else None
+        # 2. SCORE ALL CONTACTS
+        updates, errors = await _score_contacts_batch(all_contacts, frameworks)
         
-        # 3. SCORE ALL CONTACTS
-        updates = []  # Batch updates
-        errors = []
-        now = datetime.utcnow()
-        
-        for contact in contacts:
-            try:
-                scores = {}
-                
-                # Calculate only requested frameworks
-                # NOTE: Column names have NO underscores (mdcpscore not mdcp_score)
-                # NOTE: Tier columns don't exist in DB - don't include them
-                if "mdcp" in frameworks and mdcp_config:
-                    mdcp_result = calculate_mdcp_score(contact, mdcp_config)
-                    scores["mdcpscore"] = round(float(mdcp_result.get("score", 0)), 2)
-                
-                if "bant" in frameworks and bant_config:
-                    bant_result = calculate_bant_score(contact, bant_config)
-                    scores["bantscore"] = round(float(bant_result.get("score", 0)), 2)
-                
-                if "spice" in frameworks and spice_config:
-                    spice_result = calculate_spice_score(contact, spice_config)
-                    scores["spicescore"] = round(float(spice_result.get("score", 0)), 2)
-                
-                # Calculate overall (average of requested frameworks)
-                score_values = [v for k, v in scores.items() if "score" in k]
-                overall_score = round(sum(score_values) / len(score_values), 2) if score_values else 0
-                
-                # Prepare update - using correct column names (no underscores)
-                update_obj = {
-                    "id": contact["id"],
-                    "overallscore": overall_score,
-                    "updatedat": now.isoformat(),
-                    **scores  # Unpack mdcpscore, bantscore, spicescore
-                }
-                updates.append(update_obj)
-                
-            except Exception as e:
-                errors.append({
-                    "contact_id": contact.get("id"),
-                    "error": str(e)
-                })
-        
-        # 4. UPDATE DATABASE (sequential for reliability)
+        # 3. UPDATE DATABASE (sequential for reliability)
         successful_updates = 0
         for update_obj in updates:
-            contact_id = update_obj.pop("id")  # Remove id from payload
+            contact_id = update_obj.pop("id")
             try:
                 result = supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
                 if result.data:
@@ -291,13 +312,13 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
             except Exception as e:
                 errors.append({"contact_id": contact_id, "error": str(e)})
         
-        # 5. RETURN RESPONSE
+        # 4. RETURN RESPONSE
         return BatchScoringResponse(
             success=len(errors) == 0,
             scored_count=successful_updates,
-            total_contacts=len(contacts),
+            total_contacts=len(all_contacts),
             errors=errors if errors else None,
-            message=f"Successfully scored {successful_updates}/{len(contacts)} contacts"
+            message=f"Successfully scored {successful_updates}/{len(all_contacts)} contacts"
         )
         
     except HTTPException:
@@ -309,22 +330,72 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
 
 
 # ==========================================
-# SCORE ALL CONTACTS
+# SCORE ALL CONTACTS (FIXED)
 # ==========================================
 
 @router.post("/score-all")
 async def score_all_contacts() -> BatchScoringResponse:
-    """Score ALL contacts in workspace - delegates to batch_score with all contact IDs"""
+    """
+    Score ALL contacts in workspace.
+    Uses pagination to handle large datasets without hitting query limits.
+    """
     
     try:
         if not supabase:
             raise HTTPException(status_code=500, detail="Database not initialized")
         
-        # Get all contact IDs
-        contacts_response = supabase.table("contacts").select("id").execute()
-        all_contact_ids = [c["id"] for c in contacts_response.data]
+        frameworks = ["mdcp", "bant", "spice"]
+        all_errors = []
+        total_scored = 0
+        total_contacts = 0
         
-        if not all_contact_ids:
+        # PAGINATION: Fetch and score contacts in batches
+        # This avoids the .in_() URL limit issue entirely
+        PAGE_SIZE = 100
+        offset = 0
+        
+        while True:
+            # Fetch a page of contacts directly (no .in_() needed)
+            try:
+                page_response = supabase.table("contacts") \
+                    .select("*") \
+                    .range(offset, offset + PAGE_SIZE - 1) \
+                    .execute()
+            except Exception as e:
+                print(f"Error fetching page at offset {offset}: {e}")
+                all_errors.append({"contact_id": "pagination", "error": str(e)})
+                break
+            
+            contacts = page_response.data
+            
+            if not contacts:
+                # No more contacts
+                break
+            
+            total_contacts += len(contacts)
+            
+            # Score this batch
+            updates, batch_errors = await _score_contacts_batch(contacts, frameworks)
+            all_errors.extend(batch_errors)
+            
+            # Update database
+            for update_obj in updates:
+                contact_id = update_obj.pop("id")
+                try:
+                    result = supabase.table("contacts").update(update_obj).eq("id", contact_id).execute()
+                    if result.data:
+                        total_scored += 1
+                except Exception as e:
+                    all_errors.append({"contact_id": contact_id, "error": str(e)})
+            
+            # Move to next page
+            offset += PAGE_SIZE
+            
+            # Safety: If we got less than PAGE_SIZE, we're at the end
+            if len(contacts) < PAGE_SIZE:
+                break
+        
+        if total_contacts == 0:
             return BatchScoringResponse(
                 success=True,
                 scored_count=0,
@@ -332,28 +403,12 @@ async def score_all_contacts() -> BatchScoringResponse:
                 message="No contacts to score"
             )
         
-        # Delegate to batch_score_contacts (reuse logic)
-        # Break into chunks of 1000 if needed
-        results = []
-        all_errors = []
-        
-        for i in range(0, len(all_contact_ids), 1000):
-            chunk = all_contact_ids[i:i+1000]
-            request = BatchScoreRequest(contact_ids=chunk)
-            result = await batch_score_contacts(request)
-            results.append(result)
-            if result.errors:
-                all_errors.extend(result.errors)
-        
-        # Aggregate results
-        total_scored = sum(r.scored_count for r in results)
-        
         return BatchScoringResponse(
             success=len(all_errors) == 0,
             scored_count=total_scored,
-            total_contacts=len(all_contact_ids),
+            total_contacts=total_contacts,
             errors=all_errors if all_errors else None,
-            message=f"Batch scoring complete: {total_scored}/{len(all_contact_ids)} contacts scored"
+            message=f"Batch scoring complete: {total_scored}/{total_contacts} contacts scored"
         )
         
     except HTTPException:
