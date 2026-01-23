@@ -145,23 +145,21 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         # 4. CALCULATE OVERALL SCORE (average of three frameworks)
         overall_score = round((mdcp_score + bant_score + spice_score) / 3, 2)
 
-        # 5. DETERMINE TIERS
+        # 5. DETERMINE TIERS (computed, not stored - tier columns don't exist in DB)
         mdcp_tier = get_tier(mdcp_score)
         bant_tier = get_tier(bant_score)
         spice_tier = get_tier(spice_score)
 
         # 6. PERSIST TO DATABASE
-        # NOTE: last_scored_at removed - column doesn't exist in contacts table
+        # NOTE: Column names have NO underscores (mdcpscore not mdcp_score)
+        # NOTE: Tier columns don't exist in DB - tiers are computed from scores
         now = datetime.utcnow()
         update_payload = {
-            "mdcp_score": float(mdcp_score),
-            "mdcp_tier": mdcp_tier,
-            "bant_score": float(bant_score),
-            "bant_tier": bant_tier,
-            "spice_score": float(spice_score),
-            "spice_tier": spice_tier,
-            "overall_score": overall_score,
-            "updated_at": now.isoformat()
+            "mdcpscore": float(mdcp_score),
+            "bantscore": float(bant_score),
+            "spicescore": float(spice_score),
+            "overallscore": overall_score,
+            "updatedat": now.isoformat()
         }
         
         update_response = supabase.table("contacts").update(update_payload).eq("id", contact_id).execute()
@@ -169,7 +167,7 @@ async def calculate_all_scores(contact_id: str) -> ScoreResponse:
         if not update_response.data:
             raise HTTPException(status_code=500, detail="Failed to persist scores to database")
 
-        # 7. RETURN RESPONSE
+        # 7. RETURN RESPONSE (tiers are computed, not from DB)
         response = ScoreResponse(
             contact_id=contact_id,
             mdcp_score=round(float(mdcp_score), 2),
@@ -249,31 +247,30 @@ async def batch_score_contacts(request: BatchScoreRequest) -> BatchScoringRespon
                 scores = {}
                 
                 # Calculate only requested frameworks
+                # NOTE: Column names have NO underscores (mdcpscore not mdcp_score)
+                # NOTE: Tier columns don't exist in DB - don't include them
                 if "mdcp" in frameworks and mdcp_config:
                     mdcp_result = calculate_mdcp_score(contact, mdcp_config)
-                    scores["mdcp_score"] = round(float(mdcp_result.get("score", 0)), 2)
-                    scores["mdcp_tier"] = get_tier(scores["mdcp_score"])
+                    scores["mdcpscore"] = round(float(mdcp_result.get("score", 0)), 2)
                 
                 if "bant" in frameworks and bant_config:
                     bant_result = calculate_bant_score(contact, bant_config)
-                    scores["bant_score"] = round(float(bant_result.get("score", 0)), 2)
-                    scores["bant_tier"] = get_tier(scores["bant_score"])
+                    scores["bantscore"] = round(float(bant_result.get("score", 0)), 2)
                 
                 if "spice" in frameworks and spice_config:
                     spice_result = calculate_spice_score(contact, spice_config)
-                    scores["spice_score"] = round(float(spice_result.get("score", 0)), 2)
-                    scores["spice_tier"] = get_tier(scores["spice_score"])
+                    scores["spicescore"] = round(float(spice_result.get("score", 0)), 2)
                 
                 # Calculate overall (average of requested frameworks)
-                score_values = [v for k, v in scores.items() if "_score" in k]
+                score_values = [v for k, v in scores.items() if "score" in k]
                 overall_score = round(sum(score_values) / len(score_values), 2) if score_values else 0
                 
-                # Prepare update - NOTE: last_scored_at removed (column doesn't exist)
+                # Prepare update - using correct column names (no underscores)
                 update_obj = {
                     "id": contact["id"],
-                    "overall_score": overall_score,
-                    "updated_at": now.isoformat(),
-                    **scores  # Unpack mdcp_score, bant_score, spice_score, etc.
+                    "overallscore": overall_score,
+                    "updatedat": now.isoformat(),
+                    **scores  # Unpack mdcpscore, bantscore, spicescore
                 }
                 updates.append(update_obj)
                 
