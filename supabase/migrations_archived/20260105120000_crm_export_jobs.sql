@@ -181,8 +181,19 @@ CREATE TABLE IF NOT EXISTS crm_credentials (
 CREATE INDEX IF NOT EXISTS idx_crm_credentials_user_id 
     ON crm_credentials(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_crm_credentials_platform 
-    ON crm_credentials(platform);
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+          AND table_name = 'crm_credentials'
+          AND column_name = 'platform'
+    ) THEN
+        CREATE INDEX IF NOT EXISTS idx_crm_credentials_platform
+            ON crm_credentials(platform);
+    END IF;
+END $$;
 
 -- Enable RLS
 ALTER TABLE crm_credentials ENABLE ROW LEVEL SECURITY;
