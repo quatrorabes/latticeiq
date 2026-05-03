@@ -259,6 +259,21 @@ except Exception as e:
 # IMPORT OTHER ROUTERS
 # ============================================================================
 
+logger.info({"event": "attempting_batch_enrichment_import"})
+try:
+    from app.enrichment_batch.router import router as batch_enrichment_router
+    app.include_router(batch_enrichment_router, prefix="/api/v3")
+    logger.info({"event": "batch_enrichment_router_registered", "prefix": "/api/v3/enrichment-jobs"})
+except Exception as e:
+    logger.error({"event": "batch_enrichment_import_failed", "error": str(e), "error_type": type(e).__name__})
+
+logger.info({"event": "attempting_hubspot_writeback_import"})
+try:
+    from app.hubspot.writeback_router import router as hubspot_writeback_router
+    app.include_router(hubspot_writeback_router, prefix="/api/v3")
+    logger.info({"event": "hubspot_writeback_router_registered", "prefix": "/api/v3/hubspot"})
+except Exception as e:
+    logger.error({"event": "hubspot_writeback_import_failed", "error": str(e), "error_type": type(e).__name__})
 
 # Contacts Router
 try:
