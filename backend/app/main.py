@@ -666,7 +666,8 @@ async def health_v3():
         "crm_exports": {
             "status": "operational" if crm_export_operational else "partial",
             "services": crm_export_status
-        }
+        },
+        "scoring": "available" if any(r.path.startswith("/api/v3/scoring") for r in app.router.routes) else "unavailable"
     }
 
 
@@ -806,6 +807,7 @@ async def export_health():
 
 
 @app.get("/api/routes")
+@app.get("/apiroutes")
 def list_routes(request: Request):
     return sorted(
         [{"path": r.path, "name": r.name, "methods": sorted(list(r.methods or []))}
