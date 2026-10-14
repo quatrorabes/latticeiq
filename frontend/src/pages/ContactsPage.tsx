@@ -1466,6 +1466,14 @@ export default function ContactsPage() {
           isOpen={isModalOpen}
           onClose={handleCloseModal}
           initialTab={initialTab}
+          onUpdate={(updatedContact) => {
+            setContacts(previous => previous.map(item =>
+              item.id === updatedContact.id ? updatedContact : item
+            ));
+            setSelectedContact(previous =>
+              previous?.id === updatedContact.id ? updatedContact : previous
+            );
+          }}
         />
       )}
 

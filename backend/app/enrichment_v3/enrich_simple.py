@@ -14,6 +14,7 @@ from supabase import Client
 
 from app.database import get_supabase
 from app.auth import get_current_user
+from app.enrichment_v3.saved_results import get_saved_results, persist_saved_result
 from app.enrichment_v3.models import (
     UnifiedEnrichmentResult,
     EnrichmentMeta,
@@ -378,7 +379,7 @@ async def quick_enrich_contact(
     supabase: Client = Depends(get_supabase),
 ):
     # Load contact from Supabase
-    contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
+    contact_res = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
     if not contact_res.data or len(contact_res.data) == 0:
         raise HTTPException(status_code=404, detail="Contact not found")
 
@@ -410,13 +411,7 @@ async def quick_enrich_contact(
         "raw_provider_response": provider_result["raw_provider_response"],
     }
 
-    supabase.table("contacts").update(
-        {
-            "enrichment_status": "completed",
-            "enrichment_data": enrichment_data,
-            "enriched_at": datetime.utcnow().isoformat(),
-        }
-    ).eq("id", contact_id).execute()
+    persist_saved_result(supabase, contact_id, "quick", enrichment_data, user.id)
 
     return QuickEnrichResponse(
         contactid=contact_id,
@@ -436,14 +431,15 @@ async def quick_enrich_debug(
     user=Depends(get_current_user),
     supabase: Client = Depends(get_supabase),
 ):
-    contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
+    contact_res = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
     if not contact_res.data:
         raise HTTPException(status_code=404, detail="Contact not found")
 
     row = contact_res.data
     data = row.get("enrichment_data") or {}
 
-    if not data or data.get("mode") != "quick":
+    data = get_saved_results(data)["quick"] or {}
+    if not data:
         raise HTTPException(
             status_code=404,
             detail="No quick enrichment data found for this contact",

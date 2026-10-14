@@ -1,7 +1,11 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { X, Building2, Target, Loader2, RefreshCw, AlertCircle, CheckCircle2, Clock, User, Zap, MessageSquare, ShieldAlert, Mail, Phone, Copy, Send, Sparkles } from 'lucide-react'
 import { supabase } from '../lib/supabaseClient'
 import { Contact } from '../types'
+import SavedEnrichmentTabs from './SavedEnrichmentTabs'
+import {
+  EnrichmentMode, SavedEnrichments, normalizeSavedEnrichments,
+} from '../lib/savedEnrichment'
 import { 
   generateEmails, 
   generateCallScripts,
@@ -194,6 +198,7 @@ const styles = {
   },
   tabsContainer: {
     display: 'flex',
+    overflowX: 'auto' as const,
     borderBottom: '1px solid #334155',
     backgroundColor: 'rgba(30, 41, 59, 0.5)',
   },
@@ -615,14 +620,18 @@ function parseLegacyToQuickEnrich(legacy: QuickEnrichLegacyResponse): QuickEnric
   if (legacy.talkingpoints) {
     talkingPoints = legacy.talkingpoints.split(' • ').filter(Boolean)
   }
+  const compatible = legacy as QuickEnrichLegacyResponse & QuickEnrichResult
+  if (!talkingPoints.length && Array.isArray(compatible.talking_points)) {
+    talkingPoints = compatible.talking_points
+  }
   
   return {
     summary: legacy.summary || undefined,
-    opening_line: legacy.openingline || undefined,
+    opening_line: legacy.openingline || compatible.opening_line || undefined,
     talking_points: talkingPoints.length > 0 ? talkingPoints : undefined,
     vertical: legacy.vertical || undefined,
     provider: legacy.provider || undefined,
-    generated_at: legacy.generatedat || undefined,
+    generated_at: legacy.generatedat || compatible.generated_at || undefined,
   }
 }
 
@@ -643,14 +652,19 @@ export default function ContactDetailModal({
   const [activeTab, setActiveTab] = useState<'overview' | 'enrichment' | 'outreach' | 'scores'>(initialTab)
   
   // Deep Enrichment state
-  const [enrichmentData, setEnrichmentData] = useState<UnifiedEnrichmentResult | null>(null)
   const [isEnriching, setIsEnriching] = useState(false)
   const [enrichmentError, setEnrichmentError] = useState<string | null>(null)
   
   // Quick Enrichment state
-  const [quickEnrichData, setQuickEnrichData] = useState<QuickEnrichResult | null>(null)
   const [isQuickEnriching, setIsQuickEnriching] = useState(false)
   const [quickEnrichError, setQuickEnrichError] = useState<string | null>(null)
+  const [savedEnrichments, setSavedEnrichments] = useState<SavedEnrichments>(
+    () => normalizeSavedEnrichments(contact.enrichment_data)
+  )
+  const [selectedEnrichment, setSelectedEnrichment] = useState<EnrichmentMode>('quick')
+  const savedReadRevision = useRef(0)
+  const currentContactId = useRef(contact.id)
+  currentContactId.current = contact.id
   
   // Scoring state
   const [isScoring, setIsScoring] = useState(false)
@@ -658,6 +672,17 @@ export default function ContactDetailModal({
   
   // Local contact state for scores (to show updated scores without full refresh)
   const [localContact, setLocalContact] = useState<Contact>(contact)
+  const latestContact = useRef(contact)
+  latestContact.current = localContact
+  const selectedSnapshot = savedEnrichments[selectedEnrichment]
+  const selectedData = selectedSnapshot?.data || selectedSnapshot
+  const enrichmentData = selectedData && isUnifiedFormat(selectedData)
+    ? selectedData as UnifiedEnrichmentResult : null
+  const quickEnrichData = selectedEnrichment === 'quick' && selectedSnapshot
+    ? selectedSnapshot.legacy ? parseLegacyToQuickEnrich(selectedSnapshot.legacy)
+      : selectedData && (selectedData.summary || selectedData.openingline)
+        ? parseLegacyToQuickEnrich(selectedData) : null
+    : null
   
   const [copiedField, setCopiedField] = useState<string | null>(null)
   
@@ -675,44 +700,14 @@ export default function ContactDetailModal({
   useEffect(() => {
     // Update local contact when prop changes
     setLocalContact(contact)
+    latestContact.current = contact
 
      // NEW: Reset to initial tab when contact changes
     setActiveTab(initialTab)
     
-    if (contact?.enrichment_data) {
-      const rawData = contact.enrichment_data as any
-      
-      // Check for the new structure: { mode: 'quick', data: {...}, legacy: {...} }
-      if (rawData?.mode === 'quick') {
-        // Quick enrich format from backend
-        if (rawData.data && isUnifiedFormat(rawData.data)) {
-          setEnrichmentData(rawData.data as UnifiedEnrichmentResult)
-        }
-        if (rawData.legacy) {
-          setQuickEnrichData(parseLegacyToQuickEnrich(rawData.legacy))
-        }
-      } else {
-        // Legacy format - try to detect what type of data it is
-        const data = rawData?.data || rawData
-        
-        if (data && typeof data === 'object') {
-          if (isUnifiedFormat(data)) {
-            // Deep enrichment format
-            setEnrichmentData(data as UnifiedEnrichmentResult)
-          } else if (data.summary || data.talking_points || data.openingline) {
-            // Quick enrichment legacy format
-            if (data.openingline) {
-              setQuickEnrichData(parseLegacyToQuickEnrich(data))
-            } else {
-              setQuickEnrichData(data as QuickEnrichResult)
-            }
-          }
-        }
-      }
-    } else {
-      setEnrichmentData(null)
-      setQuickEnrichData(null)
-    }
+    const saved = normalizeSavedEnrichments(contact?.enrichment_data)
+    setSavedEnrichments(saved)
+    setSelectedEnrichment(previous => saved[previous] ? previous : saved.deep ? 'deep' : 'quick')
     // Reset errors
     setEnrichmentError(null)
     setQuickEnrichError(null)
@@ -724,6 +719,53 @@ export default function ContactDetailModal({
     setCallScriptError(null)
   }, [contact?.id, contact?.enrichment_data])
 
+  // Fetch saved snapshots when opening/changing a contact. This GET never runs
+  // enrichment. Ignore late responses when the user closes or changes contacts.
+  useEffect(() => {
+    if (!isOpen) return
+    let cancelled = false
+    const revision = ++savedReadRevision.current
+    const load = async () => {
+      try {
+        const token = await getAuthToken()
+        const response = await fetch(`${API_URL}/api/v3/enrichment/saved/${contact.id}`, {
+          headers: { ...(token && { Authorization: `Bearer ${token}` }) }
+        })
+        if (!response.ok) return // Legacy backend can still display contact data.
+        const result = await response.json()
+        if (!cancelled && revision === savedReadRevision.current) {
+          const saved = normalizeSavedEnrichments(result)
+          setSavedEnrichments(saved)
+          setSelectedEnrichment(previous => saved[previous] ? previous : saved.deep ? 'deep' : 'quick')
+        }
+      } catch {
+        // Keep locally available snapshots; do not regenerate on read failure.
+      }
+    }
+    void load()
+    return () => { cancelled = true }
+  }, [contact.id, isOpen])
+
+  const reloadSavedResults = async (mode: EnrichmentMode, token: string | null) => {
+    const response = await fetch(`${API_URL}/api/v3/enrichment/saved/${contact.id}`, {
+      headers: { ...(token && { Authorization: `Bearer ${token}` }) }
+    })
+    if (!response.ok) {
+      throw new Error('Enrichment finished, but saved results could not be loaded. Reopen this contact before refreshing again.')
+    }
+    const result = await response.json()
+    if (currentContactId.current !== contact.id) return
+    const saved = normalizeSavedEnrichments(result)
+    if (!saved[mode]) throw new Error(`${mode} result was not returned. Reopen this contact to check saved results.`)
+    setSavedEnrichments(saved)
+    setSelectedEnrichment(mode)
+    const updatedContact = { ...latestContact.current, enrichment_data: {
+      ...saved[mode], saved_results: saved, storage_version: 2,
+    } } as Contact
+    latestContact.current = updatedContact
+    setLocalContact(updatedContact)
+    onUpdate?.(updatedContact)
+  }
 
   if (!isOpen) return null
 
@@ -759,20 +801,21 @@ export default function ContactDetailModal({
       }
 
       const result = await response.json()
+      if (currentContactId.current !== contact.id) return
       console.log('✅ Scoring result:', result)
       
       // Update local contact with new scores - handle ScoreResponse format
       const updatedContact = {
-        ...localContact,
-        mdcp_score: result.mdcp_score ?? localContact.mdcp_score,
-        mdcp_tier: result.mdcp_tier ?? localContact.mdcp_tier,
-        bant_score: result.bant_score ?? localContact.bant_score,
-        bant_tier: result.bant_tier ?? localContact.bant_tier,
-        spice_score: result.spice_score ?? localContact.spice_score,
-        spice_tier: result.spice_tier ?? localContact.spice_tier,
-        overall_score: result.overall_score ?? localContact.overall_score,
+        ...latestContact.current,
+        mdcp_score: result.mdcp_score ?? latestContact.current.mdcp_score,
+        mdcp_tier: result.mdcp_tier ?? latestContact.current.mdcp_tier,
+        bant_score: result.bant_score ?? latestContact.current.bant_score,
+        bant_tier: result.bant_tier ?? latestContact.current.bant_tier,
+        spice_score: result.spice_score ?? latestContact.current.spice_score,
+        spice_tier: result.spice_tier ?? latestContact.current.spice_tier,
+        overall_score: result.overall_score ?? latestContact.current.overall_score,
       }
-      
+      latestContact.current = updatedContact
       setLocalContact(updatedContact)
       
       // Update parent if callback provided
@@ -797,6 +840,7 @@ export default function ContactDetailModal({
 
   // Quick Enrich - Fast, 3-5 seconds
   const handleQuickEnrich = async () => {
+    savedReadRevision.current++
     setIsQuickEnriching(true)
     setQuickEnrichError(null)
 
@@ -819,34 +863,7 @@ export default function ContactDetailModal({
         throw new Error(errorData.detail || `Quick enrich failed: ${response.status}`)
       }
 
-      const result = await response.json()
-      console.log('✅ Quick enrich result:', result)
-      
-      // Parse the response - backend returns:
-      // { contactid, status, data: UnifiedEnrichmentResult, legacy: QuickEnrichLegacyData }
-      
-      // Set quick intel data from legacy field
-      if (result.legacy) {
-        const quickData = parseLegacyToQuickEnrich(result.legacy)
-        console.log('📋 Parsed quick intel data:', quickData)
-        setQuickEnrichData(quickData)
-      }
-      
-      // Also set deep enrichment data from data field (it's in UnifiedEnrichmentResult format)
-      if (result.data && isUnifiedFormat(result.data)) {
-        console.log('📊 Setting enrichment data from quick-enrich:', result.data)
-        setEnrichmentData(result.data as UnifiedEnrichmentResult)
-      }
-      
-      // Update parent if callback provided - store full response structure
-      if (onUpdate) {
-        const enrichmentPayload = {
-          mode: 'quick',
-          data: result.data,
-          legacy: result.legacy,
-        }
-        onUpdate({ ...contact, enrichment_data: enrichmentPayload } as Contact)
-      }
+      await reloadSavedResults('quick', token)
       
       // Auto-trigger scoring after successful quick enrich
       console.log('🎯 Auto-triggering scoring after Quick Enrich...')
@@ -865,6 +882,7 @@ export default function ContactDetailModal({
 
   // Deep Enrich - Comprehensive, 10-18 seconds
   const handleDeepEnrich = async () => {
+    savedReadRevision.current++
     setIsEnriching(true)
     setEnrichmentError(null)
 
@@ -918,10 +936,7 @@ export default function ContactDetailModal({
             null
 
           if (enrichData && enrichData.contact_profile) {
-            setEnrichmentData(enrichData as UnifiedEnrichmentResult)
-            if (onUpdate) {
-              onUpdate({ ...contact, enrichment_data: { data: enrichData } } as Contact)
-            }
+            await reloadSavedResults('deep', token)
             setIsEnriching(false)
             
             // Auto-trigger scoring after successful deep enrich
@@ -1402,7 +1417,7 @@ const handleGenerateCallScripts = async () => {
 
   const contactName = `${contact.first_name || ''} ${contact.last_name || ''}`.trim() || contact.email?.split('@')[0] || 'Unknown'
   const initials = contactName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'XX'
-  const hasAnyEnrichment = enrichmentData || quickEnrichData
+  const hasAnyEnrichment = Boolean(savedEnrichments.quick || savedEnrichments.deep)
 
 
   return (
@@ -1422,7 +1437,7 @@ const handleGenerateCallScripts = async () => {
                 </p>
               </div>
             </div>
-            <button style={styles.closeBtn} onClick={onClose}>
+            <button style={styles.closeBtn} onClick={onClose} aria-label="Close contact">
               <X style={{ width: 20, height: 20 }} />
             </button>
           </div>
@@ -1474,6 +1489,8 @@ const handleGenerateCallScripts = async () => {
           {/* Enrichment Tab */}
           {activeTab === 'enrichment' && (
             <div>
+              <SavedEnrichmentTabs selected={selectedEnrichment}
+                results={savedEnrichments} onSelect={setSelectedEnrichment} />
               {/* Action Buttons */}
               <div style={styles.actionBar}>
                 <div style={styles.buttonGroup}>
@@ -1491,7 +1508,7 @@ const handleGenerateCallScripts = async () => {
                     ) : (
                       <>
                         <Sparkles style={{ width: 16, height: 16 }} />
-                        Quick Enrich
+                        {savedEnrichments.quick ? 'Refresh Quick' : 'Run Quick Enrich'}
                       </>
                     )}
                   </button>
@@ -1507,10 +1524,10 @@ const handleGenerateCallScripts = async () => {
                         <Loader2 style={{ width: 16, height: 16, animation: 'spin 1s linear infinite' }} />
                         Deep... (10-18s)
                       </>
-                    ) : enrichmentData ? (
+                    ) : savedEnrichments.deep ? (
                       <>
                         <RefreshCw style={{ width: 16, height: 16 }} />
-                        Re-Enrich Deep
+                        Refresh Deep
                       </>
                     ) : (
                       <>
@@ -1565,10 +1582,13 @@ const handleGenerateCallScripts = async () => {
               )}
 
               {/* Quick Enrich Results */}
-              {quickEnrichData && !isQuickEnriching && !isEnriching && renderQuickEnrichResults()}
+              <div role="tabpanel" id={`saved-${selectedEnrichment}-panel`}
+                aria-labelledby={`saved-${selectedEnrichment}-tab`}>
+              {selectedEnrichment === 'quick' && quickEnrichData
+                && !isQuickEnriching && !isEnriching && renderQuickEnrichResults()}
 
               {/* Deep Enrich Results */}
-              {enrichmentData && !isEnriching && (
+              {enrichmentData && !isEnriching && !isQuickEnriching && (
                 <div>
                   {renderContactProfile(enrichmentData.contact_profile)}
                   {renderCompanyProfile(enrichmentData.company_profile)}
@@ -1580,16 +1600,17 @@ const handleGenerateCallScripts = async () => {
               )}
 
               {/* Empty State */}
-              {!hasAnyEnrichment && !isEnriching && !isQuickEnriching && (
+              {!savedEnrichments[selectedEnrichment] && !isEnriching && !isQuickEnriching && (
                 <div style={styles.emptyState}>
                   <Building2 style={{ width: 48, height: 48, color: '#475569', marginBottom: '1rem' }} />
-                  <h3 style={styles.emptyTitle}>No Enrichment Data</h3>
+                  <h3 style={styles.emptyTitle}>No saved {selectedEnrichment === 'quick' ? 'Quick' : 'Deep'} result</h3>
                   <p style={styles.emptyText}>
-                    <strong>Quick Enrich</strong> (3-5s): Summary, opening line, talking points<br />
-                    <strong>Deep Enrich</strong> (10-18s): Full profile, buying signals, messaging
+                    This result has not been retained independently. Other saved results remain available.<br />
+                    Use the enrichment button above only if you want to generate this result using API credits.
                   </p>
                 </div>
               )}
+              </div>
             </div>
           )}
 
