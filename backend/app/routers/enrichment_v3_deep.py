@@ -15,6 +15,7 @@ from supabase import Client
 
 from app.database import get_supabase
 from app.auth import get_current_user
+from app.enrichment_v3.saved_results import get_saved_results, persist_saved_result
 from app.enrichment_v3.models import (
     UnifiedEnrichmentResult,
     EnrichmentMeta,
@@ -581,7 +582,7 @@ async def trigger_deep_enrichment(
         )
     
     try:
-        contact_res = supabase.table("contacts").select("*").eq("id", contact_id).execute()
+        contact_res = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
         
         # Debug logging
         logger.info(f"Supabase response type: {type(contact_res.data)}, content: {contact_res.data[:1] if contact_res.data else 'empty'}")
@@ -619,7 +620,7 @@ async def trigger_deep_enrichment(
         )
         
         # Check for existing quick enrichment to merge
-        existing_data = contact.get("enrichment_data") or {}
+        existing_data = get_saved_results(contact.get("enrichment_data"))["quick"] or {}
         quick_result = None
         if existing_data.get("mode") == "quick" and existing_data.get("data"):
             try:
@@ -640,10 +641,7 @@ async def trigger_deep_enrichment(
             "enriched_at": datetime.utcnow().isoformat(),
         }
         
-        supabase.table("contacts").update({
-            "enrichment_data": enrichment_payload,
-            "enrichment_status": "completed",
-        }).eq("id", contact_id).execute()
+        persist_saved_result(supabase, contact_id, "deep", enrichment_payload, user.id)
         
         logger.info(f"Deep enrichment completed for contact {contact_id}")
         
@@ -695,7 +693,7 @@ async def deep_enrich_result(
     try:
         contact_res = supabase.table("contacts").select(
             "id, enrichment_data"
-        ).eq("id", contact_id).execute()
+        ).eq("id", contact_id).eq("user_id", user.id).execute()
 
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -715,6 +713,10 @@ async def deep_enrich_result(
 
         if not enrichment_data:
             raise HTTPException(status_code=404, detail="No enrichment data found")
+
+        deep_snapshot = get_saved_results(enrichment_data)["deep"]
+        if deep_snapshot:
+            return UnifiedEnrichmentResult.parse_obj(deep_snapshot.get("data") or deep_snapshot)
 
         if enrichment_data.get("mode") in ("deep", "quick") and enrichment_data.get("data"):
             return UnifiedEnrichmentResult.parse_obj(enrichment_data["data"])
@@ -753,7 +755,7 @@ async def deep_enrich_status(
     try:
         contact_res = supabase.table("contacts").select(
             "id, enrichment_status"
-        ).eq("id", contact_id).execute()
+        ).eq("id", contact_id).eq("user_id", user.id).execute()
 
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -810,7 +812,7 @@ async def deep_enrich_debug(
     try:
         contact_res = supabase.table("contacts").select(
             "id, enrichment_data"
-        ).eq("id", contact_id).execute()
+        ).eq("id", contact_id).eq("user_id", user.id).execute()
 
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -827,7 +829,8 @@ async def deep_enrich_debug(
             raise HTTPException(status_code=500, detail="Invalid contact data")
 
         data = contact.get("enrichment_data") or {}
-        if not data or data.get("mode") != "deep":
+        data = get_saved_results(data)["deep"] or {}
+        if not data:
             raise HTTPException(
                 status_code=404,
                 detail="No deep enrichment data found",
@@ -859,4 +862,3 @@ async def deep_enrich_debug(
     except Exception as e:
         logger.error(f"Failed to get debug info: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-

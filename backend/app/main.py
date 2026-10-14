@@ -137,6 +137,9 @@ app.add_middleware(
 
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+from app.enrichment_v3.saved_results_router import router as saved_results_router
+app.include_router(saved_results_router)
+
 
 # ============================================================================
 # INITIALIZE SUPABASE
