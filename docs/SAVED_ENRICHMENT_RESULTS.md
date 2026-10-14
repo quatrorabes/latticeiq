@@ -2,6 +2,10 @@
 
 Implemented October 14, 2026 against `quatrorabes/latticeiq` main revision `cfe03c66137553d3a6d513b9fb1a0495e165e8aa`. This feature is separate from the previously prepared provider monitoring probe, which is not included in this change.
 
+## Review status
+
+The implementation is on branch `fix/saved-quick-deep-enrichment` in [draft pull request #2](https://github.com/quatrorabes/latticeiq/pull/2). It has not been merged into main or deployed to production; approval and live smoke verification remain the next steps.
+
 ## User-facing behavior
 
 - **Quick and Deep viewing tabs:** Each shows the latest independent saved result and its own timestamp. Switching views reads existing browser state and does not generate enrichment or trigger scoring.
