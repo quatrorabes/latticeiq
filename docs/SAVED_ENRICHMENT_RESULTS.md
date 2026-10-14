@@ -4,7 +4,9 @@ Implemented October 14, 2026 against `quatrorabes/latticeiq` main revision `cfe0
 
 ## Review status
 
-The implementation is on branch `fix/saved-quick-deep-enrichment` in [draft pull request #2](https://github.com/quatrorabes/latticeiq/pull/2). It has not been merged into main or deployed to production; approval and live smoke verification remain the next steps.
+The implementation was merged in [pull request #2](https://github.com/quatrorabes/latticeiq/pull/2) on October 14, 2026 at 19:36 UTC, commit `9bcdae69df06e7b7c4c8034cdbdab6bf8a4bcf07`. The Vercel frontend deployed successfully; the first Render backend rollout failed during startup and left the previous healthy backend running ([Render service](https://dashboard.render.com/web/srv-d51o44mmcj7s73egfv5g)).
+
+The failed rollout reported `ModuleNotFoundError: No module named 'psycopg'` while importing `app.database` through the newly registered saved-results router. Production requirements included `psycopg2-binary`, but not the separate Psycopg 3 driver requested by the production startup path. A follow-up fix adds `psycopg[binary]==3.3.6` without changing database URLs or provider credentials, and includes subprocess startup tests for both PostgreSQL drivers. The follow-up must be merged and deployed before backend production signoff.
 
 ## User-facing behavior
 
@@ -55,7 +57,7 @@ The existing JSONB column now contains a `storage_version: 2` envelope. The top-
 
 This is latest-per-mode retention, not a full historical audit trail. Refreshing Quick replaces the previous Quick snapshot, not Deep; refreshing Deep replaces the previous Deep snapshot, not Quick.
 
-No Supabase migration, new table, new production dependency, or new secret is required. The full provider payload remains in the database for the existing debug surfaces; the new saved-results GET returns display fields without raw provider response bodies.
+No Supabase migration, new table, or new secret is required. The rollout follow-up adds the missing Psycopg 3 production dependency; the feature itself uses existing infrastructure. The full provider payload remains in the database for the existing debug surfaces; the new saved-results GET returns display fields without raw provider response bodies.
 
 ### Legacy records
 
