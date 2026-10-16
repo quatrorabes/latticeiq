@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.enrichment_v3.saved_results import (
-    get_saved_results, merge_saved_result, persist_saved_result,
+    get_saved_results, merge_saved_result, persist_saved_result, REVISION_FILTER,
 )
 from app.enrichment_v3.models import UnifiedEnrichmentResult, EnrichmentMeta
 from app.enrichment_v3 import saved_results_router as read_router
@@ -29,6 +29,7 @@ class FakeDB:
     def __init__(self, value=None, user_id="owner"):
         self.row = {"id": "contact-1", "user_id": user_id, "enrichment_data": deepcopy(value)}
         self.next_conflict = None
+        self.next_conflict_enriched_at = None
         self.always_conflict = False
         self.writes = 0
 
@@ -53,15 +54,23 @@ class Query:
         return self
 
     def is_(self, key, value):
-        assert key == "enrichment_data" and value == "null"
+        assert key in ("enrichment_data", "enriched_at", REVISION_FILTER) and value == "null"
         self.filters[key] = None
         return self
 
     def execute(self):
         if self.patch is not None and self.db.next_conflict is not None:
             self.db.row["enrichment_data"] = self.db.next_conflict
+            if self.db.next_conflict_enriched_at is not None:
+                self.db.row["enriched_at"] = self.db.next_conflict_enriched_at
             self.db.next_conflict = None
-        if any(self.db.row.get(key) != value for key, value in self.filters.items()):
+        def actual(key):
+            if key == REVISION_FILTER:
+                data = self.db.row.get("enrichment_data")
+                return data.get("storage_revision") if isinstance(data, dict) else None
+            return self.db.row.get(key)
+
+        if any(actual(key) != value for key, value in self.filters.items()):
             return SimpleNamespace(data=[])
         if self.patch is not None:
             if self.db.always_conflict:
@@ -102,6 +111,7 @@ def test_both_orders_and_refresh_preserve_other_mode(first, second):
     assert stored["mode"] == first
     assert stored["data"]["contact_profile"]["headline"] == f"{first}-refreshed"
     assert all("saved_results" not in entry for entry in stored["saved_results"].values())
+    assert all("storage_revision" not in entry for entry in stored["saved_results"].values())
 
 
 def test_legacy_quick_migrates_on_deep_save():
@@ -111,13 +121,28 @@ def test_legacy_quick_migrates_on_deep_save():
     assert stored["saved_results"]["quick"] == original
 
 
-def test_cas_retries_merge_concurrent_completion():
-    db = FakeDB()
-    concurrent = merge_saved_result(None, "deep", snapshot("deep", "concurrent"))
+@pytest.mark.parametrize("initial", [
+    None, snapshot("quick"), merge_saved_result(None, "quick", snapshot("quick")),
+])
+def test_cas_retries_merge_concurrent_completion(initial):
+    db = FakeDB(initial)
+    concurrent = merge_saved_result(initial, "deep", snapshot("deep", "concurrent"))
     db.next_conflict = concurrent
     stored = persist_saved_result(db, "contact-1", "quick", snapshot("quick"), "owner")
     assert stored["saved_results"]["deep"] == concurrent["saved_results"]["deep"]
     assert stored["saved_results"]["quick"]
+    assert db.writes == 1
+
+
+def test_legacy_timestamp_guard_catches_pre_upgrade_writer():
+    db = FakeDB(snapshot("quick"))
+    db.row["enriched_at"] = "2026-10-15T19:00:00+00:00"
+    concurrent = merge_saved_result(db.row["enrichment_data"], "deep", snapshot("deep"))
+    concurrent.pop("storage_revision")  # Model the earlier deployed helper.
+    db.next_conflict = concurrent
+    db.next_conflict_enriched_at = "2026-10-15T19:01:00+00:00"
+    stored = persist_saved_result(db, "contact-1", "quick", snapshot("quick"), "owner")
+    assert stored["saved_results"]["deep"] == concurrent["saved_results"]["deep"]
     assert db.writes == 1
 
 
@@ -197,9 +222,11 @@ def test_actual_routes_preserve_both_modes(monkeypatch, order):
     assert result.meta.source == "deep"
 
 
-@pytest.mark.parametrize("initial", [None, {}, snapshot("deep")])
+@pytest.mark.parametrize("initial", [
+    None, {}, snapshot("deep"), merge_saved_result(None, "deep", snapshot("deep")),
+])
 def test_real_postgrest_cas_request_contract(initial):
-    """Actual installed SDK serializes null/JSONB guard and returns a row."""
+    """Actual SDK serializes bounded null/revision guards and returns a row."""
     import httpx
     from postgrest import SyncPostgrestClient
     requests = []
@@ -212,11 +239,16 @@ def test_real_postgrest_cas_request_contract(initial):
         assert request.method == "PATCH"
         assert request.url.params["id"] == "eq.contact-1"
         assert request.url.params["user_id"] == "eq.owner"
-        guard = request.url.params["enrichment_data"]
         if initial is None:
-            assert guard == "is.null"
+            assert request.url.params["enrichment_data"] == "is.null"
+        elif initial.get("storage_revision"):
+            assert request.url.params[REVISION_FILTER] == (
+                "eq." + initial["storage_revision"]
+            )
         else:
-            assert json.loads(guard.removeprefix("eq.")) == initial
+            assert request.url.params[REVISION_FILTER] == "is.null"
+            assert request.url.params["enriched_at"] == "is.null"
+        assert len(str(request.url).encode()) < 512
         assert "return=representation" in request.headers["prefer"]
         return httpx.Response(200, json=[{"id": "contact-1", "enrichment_data": merged}])
 
@@ -240,3 +272,77 @@ def test_real_application_registers_saved_get(monkeypatch):
               "/api/v3/enrichment/saved/{contact_id}"]
     assert len(routes) == 1
     assert routes[0].methods == {"GET"}
+
+
+@pytest.mark.parametrize("first", ["quick", "deep"])
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("repeats", [180, 5000])
+def test_large_saved_payload_stays_out_of_patch_url(first, legacy, repeats):
+    """Model the gateway's non-JSON 400 for an oversized request URI."""
+    import httpx
+    from postgrest import SyncPostgrestClient
+
+    original = snapshot(first)
+    original["raw_provider_response"] = {"content": "large provider response " * repeats}
+    existing = merge_saved_result(None, first, original)
+    original = get_saved_results(existing)[first]
+    if legacy:
+        existing.pop("storage_revision", None)
+    next_mode = "deep" if first == "quick" else "quick"
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        if request.method == "GET":
+            return httpx.Response(200, json=[{
+                "id": "contact-1", "enrichment_data": existing,
+                "enriched_at": "2026-10-15T19:00:00+00:00",
+            }])
+        assert request.method == "PATCH"
+        if len(str(request.url).encode()) > 8192:
+            return httpx.Response(400, text="Bad Request")
+        if legacy:
+            assert request.url.params[REVISION_FILTER] == "is.null"
+            assert request.url.params["enriched_at"] == "eq.2026-10-15T19:00:00+00:00"
+        else:
+            assert request.url.params[REVISION_FILTER] == "eq." + existing["storage_revision"]
+        body = json.loads(request.content)
+        assert body["enrichment_data"]["saved_results"][first] == original
+        assert body["enrichment_data"]["saved_results"][next_mode]
+        assert "enrichment_data" not in request.url.params
+        assert "large provider response" not in str(request.url)
+        assert len(str(request.url).encode()) < 512
+        return httpx.Response(200, json=[{"id": "contact-1", **body}])
+
+    client = SyncPostgrestClient("https://example.invalid/rest/v1")
+    client.session.close()
+    client.session = httpx.Client(
+        base_url="https://example.invalid/rest/v1", transport=httpx.MockTransport(handler)
+    )
+    try:
+        stored = persist_saved_result(
+            client, "contact-1", next_mode, snapshot(next_mode), "owner"
+        )
+    finally:
+        client.session.close()
+    assert all(get_saved_results(stored).values())
+    assert [request.method for request in requests] == ["GET", "PATCH"]
+
+
+def test_revision_is_new_per_save_and_excluded_from_snapshots():
+    old = merge_saved_result(None, "quick", snapshot("quick"))
+    new = merge_saved_result(old, "deep", {**snapshot("deep"), "storage_revision": "stale"})
+    assert old["storage_revision"] != new["storage_revision"]
+    assert len(new["storage_revision"]) == 32
+    assert all("storage_revision" not in value for value in new["saved_results"].values())
+    legacy = {**snapshot("quick"), "storage_revision": old["storage_revision"]}
+    assert "storage_revision" not in get_saved_results(legacy)["quick"]
+
+
+@pytest.mark.parametrize("invalid", ["x" * 10000, {}, 123, "not-a-uuid"])
+def test_invalid_revision_cannot_create_an_oversized_guard(invalid):
+    db = FakeDB({**snapshot("quick"), "storage_revision": invalid})
+    with pytest.raises(HTTPException) as error:
+        persist_saved_result(db, "contact-1", "deep", snapshot("deep"), "owner")
+    assert error.value.status_code == 409
+    assert db.writes == 0

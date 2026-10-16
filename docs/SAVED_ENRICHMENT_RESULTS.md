@@ -6,7 +6,17 @@ Implemented October 14, 2026 against `quatrorabes/latticeiq` main revision `cfe0
 
 The implementation was merged in [pull request #2](https://github.com/quatrorabes/latticeiq/pull/2) on October 14, 2026 at 19:36 UTC, commit `9bcdae69df06e7b7c4c8034cdbdab6bf8a4bcf07`. The Vercel frontend deployed successfully; the first Render backend rollout failed during startup and left the previous healthy backend running ([Render service](https://dashboard.render.com/web/srv-d51o44mmcj7s73egfv5g)).
 
-The failed rollout reported `ModuleNotFoundError: No module named 'psycopg'` while importing `app.database` through the newly registered saved-results router. Production requirements included `psycopg2-binary`, but not the separate Psycopg 3 driver requested by the production startup path. A follow-up fix adds `psycopg[binary]==3.3.6` without changing database URLs or provider credentials, and includes subprocess startup tests for both PostgreSQL drivers. The follow-up must be merged and deployed before backend production signoff.
+The failed rollout reported `ModuleNotFoundError: No module named 'psycopg'` while importing `app.database` through the newly registered saved-results router. Production requirements included `psycopg2-binary`, but not the separate Psycopg 3 driver requested by the production startup path. [PR #3](https://github.com/quatrorabes/latticeiq/pull/3) added `psycopg[binary]==3.3.6` and startup tests; both production services subsequently deployed successfully on October 14.
+
+### October 15 save-path regression
+
+Production Deep attempts failed after provider completion while executing the persistence PATCH, not while parsing provider output. PostgREST wrapped a non-JSON HTTP 400 response (`Bad Request`) as `JSON could not be generated` ([Render service logs](https://dashboard.render.com/web/srv-d51o44mmcj7s73egfv5g/logs)). The earlier full-JSONB equality filter put the entire previous enrichment in the request URL. This creates oversized requests as real provider payloads grow, a case the initial small mocked payloads did not cover.
+
+The follow-up changes only the shared persistence helper, regression tests, and documentation. A 32-character UUID `storage_revision` in the existing JSONB envelope replaces the full-payload URL filter. The full JSON remains in the PATCH body; no table, column, migration, API key, or new dependency is required. Legacy envelopes acquire a revision on their next explicit save. Their first save compares a missing revision plus the existing `enriched_at` column, protecting against an older writer finishing during rollout.
+
+Before applying the fix, the actual installed PostgREST SDK reproduced the screenshot's exact error against a simulated gateway rejecting request URIs larger than 8 KiB. Larger payloads also exceeded HTTPX's query length limit. The gateway threshold is a regression fixture, not a measured production limit. The updated helper keeps all tested PATCH URLs below 512 bytes, including roughly 230 KiB envelopes, with Quick and Deep preserved in either order and concurrent completion retries retained.
+
+This follow-up requires deployment approval and a live write verification before claiming the production save failure is fixed. One explicit Deep generation for the affected contact can verify the previously failing path and Quick retention; that uses provider credits and must be authorized separately from read-only checks. Do not automatically rerun paid enrichment after a save error.
 
 ## User-facing behavior
 
@@ -28,6 +38,7 @@ The existing JSONB column now contains a `storage_version: 2` envelope. The top-
 ```json
 {
   "storage_version": 2,
+  "storage_revision": "22be5131061e40b4b7fc638eb12e1454",
   "mode": "deep",
   "data": {
     "contact_id": "example-contact-id",
@@ -69,7 +80,9 @@ Known legacy UTC timestamps without timezone suffixes are interpreted as UTC rat
 
 ### Concurrent completion safety
 
-After the provider returns, persistence rereads the current row, merges the corresponding mode, and writes only if the prior JSONB value is unchanged. Atomic PostgREST equality filters provide compare-and-swap behavior; a conflicting writer causes a reread and merge, not another provider call.
+After the provider returns, persistence rereads the current row, merges the corresponding mode, and writes only if the prior `storage_revision` matches. Each successful replacement writes a new UUID revision. Empty fields use a null-field guard; existing legacy fields without a revision compare a missing revision and the prior `enriched_at` column. Atomic PostgREST filters provide compare-and-swap behavior; a conflicting writer causes a reread and merge, not another provider call.
+
+The guard no longer includes the entire JSONB in a URL parameter. Revision metadata stays at the envelope root and is not copied into individual Quick/Deep snapshots. Malformed or oversized revision values return 409 without creating an unbounded filter or overwriting data.
 
 Five repeated conflicts return 409 rather than overwrite competing data. This protects writes through the updated Quick/Deep routes. It does not prevent an unrelated legacy client or rollback deployment from replacing the whole column with a single-mode payload.
 
