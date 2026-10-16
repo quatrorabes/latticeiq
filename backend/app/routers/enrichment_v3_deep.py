@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import os
 import re
@@ -15,6 +14,11 @@ from supabase import Client
 
 from app.database import get_supabase
 from app.auth import get_current_user
+from app.enrichment_v3.deep_provider import (
+    DEEP_RESEARCH_RESPONSE_FORMAT,
+    DeepProviderResponseError,
+    parse_deep_provider_response,
+)
 from app.enrichment_v3.saved_results import get_saved_results, persist_saved_result
 from app.enrichment_v3.models import (
     UnifiedEnrichmentResult,
@@ -45,10 +49,10 @@ DEEP_ENRICH_SYSTEM_PROMPT = """You are a B2B sales intelligence researcher. Your
 CRITICAL REQUIREMENTS:
 1. Return VALID JSON only - no markdown, no extra text, no code blocks
 2. All fields must match the EXACT structure below
-3. Use empty arrays [] if no data found for a section
+3. Use null for unknown scalar fields and empty arrays [] when no evidence is found
 4. NEVER include citation markers in any text
 5. No explanations before or after - ONLY the JSON object
-6. Each bullet must have 3-5 items minimum when data is available
+6. Include 3-5 bullets when supported by evidence; never invent facts to fill a list
 
 REQUIRED JSON STRUCTURE:
 {
@@ -142,7 +146,8 @@ RESEARCH INSTRUCTIONS:
 - For cold_openers: Reference something SPECIFIC (recent news, achievement, shared connection angle)
 - For risks: Think about why they might NOT buy or respond
 - Keep each bullet text under 100 characters
-- Minimum 2-3 bullets per array, more if data available
+- Include 2-3 bullets per array when evidence is available; otherwise use []
+- Label role-based KPI, risk, and objection inferences as inferences
 
 RESPONSE FORMAT:
 Start your response with { and end with }
@@ -150,7 +155,7 @@ No text before or after the JSON object
 No markdown code blocks"""
 
 # ---------------------------------------------------------------------------
-# JSON Repair Utilities
+# Display Normalization Utilities
 # ---------------------------------------------------------------------------
 
 def strip_citations(text: str) -> str:
@@ -160,38 +165,6 @@ def strip_citations(text: str) -> str:
     cleaned = re.sub(r'\[\d+\]', '', text)
     cleaned = re.sub(r'\s+\d+\s*$', '', cleaned)
     return cleaned.strip()
-
-def repair_truncated_json(content: str) -> str:
-    """Attempt to repair truncated JSON by closing open brackets/braces."""
-    content = content.rstrip()
-
-    if content.endswith('}'):
-        return content
-
-    lines = content.split('\n')
-    while lines:
-        last_line = lines[-1].strip()
-        if last_line.endswith(('}', ']', '"', ',', 'null', 'true', 'false')) or re.search(r'\d$', last_line):
-            break
-        lines.pop()
-
-    if not lines:
-        return content
-
-    content = '\n'.join(lines)
-    content = re.sub(r',\s*$', '', content)
-
-    open_braces = content.count('{') - content.count('}')
-    open_brackets = content.count('[') - content.count(']')
-
-    in_string = (content.count('"') - content.count('\\"')) % 2 == 1
-    if in_string:
-        content += '"'
-
-    content += ']' * max(0, open_brackets)
-    content += '}' * max(0, open_braces)
-
-    return content
 
 def ensure_bullet_list(value: Any) -> List[EnrichmentBullet]:
     """Convert various formats to list of EnrichmentBullet objects."""
@@ -427,7 +400,9 @@ async def call_perplexity_deep_research(
 ) -> Dict[str, Any]:
     """Run deep research using Perplexity API."""
 
-    name = f"{contact.get('firstname', '')} {contact.get('lastname', '')}".strip()
+    first_name = contact.get("first_name") or contact.get("firstname") or ""
+    last_name = contact.get("last_name") or contact.get("lastname") or ""
+    name = f"{first_name} {last_name}".strip()
     company = contact.get("company") or ""
     title = contact.get("title") or contact.get("job_title") or ""
     linkedin_url = contact.get("linkedin_url") or ""
@@ -456,7 +431,9 @@ RESEARCH TASKS:
 5. Consider potential objections and risks for sales outreach
 6. Create personalized messaging - openers that reference specific facts about them
 
-Return the complete JSON structure with all sections populated. Use empty arrays [] only if you truly cannot find any information for that section.
+Return the complete JSON structure matching the supplied response schema.
+Use null for unknown scalar fields and empty arrays [] for unsupported lists.
+Do not invent facts to satisfy a requested bullet count.
 
 START YOUR RESPONSE WITH {{ AND END WITH }}"""
 
@@ -473,41 +450,48 @@ START YOUR RESPONSE WITH {{ AND END WITH }}"""
         ],
         "temperature": 0.2,
         "max_tokens": 16000,
+        "response_format": DEEP_RESEARCH_RESPONSE_FORMAT,
     }
 
-    async with httpx.AsyncClient(timeout=120) as client:
-        resp = await client.post(PERPLEXITY_API_URL, json=payload, headers=headers)
+    # Exactly one provider request. A parse/save failure must never spend again.
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            resp = await client.post(PERPLEXITY_API_URL, json=payload, headers=headers)
+    except httpx.TimeoutException:
+        logger.warning("Perplexity deep-enrich request timed out")
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Deep enrichment provider timed out. Saved results were not changed.",
+        ) from None
+    except httpx.RequestError:
+        logger.warning("Perplexity deep-enrich request failed in transit")
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Deep enrichment provider connection failed. Saved results were not changed.",
+        ) from None
 
     if resp.status_code != 200:
-        logger.error("Perplexity deep-enrich error: %s - %s", resp.status_code, resp.text)
+        logger.error("Perplexity deep-enrich error: HTTP %s", resp.status_code)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Deep enrichment provider error",
+            detail=f"Deep enrichment provider error (status {resp.status_code}). Saved results were not changed.",
         )
-
-    data = resp.json()
-    content = data["choices"][0]["message"]["content"]
-
-    clean_content = content.strip()
-    if clean_content.startswith("```"):
-        clean_content = re.sub(r'^```(?:json)?\s*', '', clean_content)
-        clean_content = re.sub(r'\s*```$', '', clean_content)
-
-    first_brace = clean_content.find('{')
-    last_brace = clean_content.rfind('}')
-    if first_brace != -1 and last_brace != -1:
-        clean_content = clean_content[first_brace:last_brace + 1]
-
-    clean_content = repair_truncated_json(clean_content)
 
     try:
-        parsed = json.loads(clean_content)
-    except json.JSONDecodeError as e:
-        logger.error("Failed to parse deep-enrich JSON: %s\nRaw content:\n%s", e, clean_content[:2000])
+        data = resp.json()
+    except ValueError:
+        logger.warning("Perplexity deep-enrich returned a non-JSON response envelope")
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Deep enrichment returned invalid JSON: {str(e)}",
-        )
+            detail="Deep enrichment provider returned an invalid response. Saved results were not changed.",
+        ) from None
+    try:
+        parsed = parse_deep_provider_response(data)
+    except DeepProviderResponseError as exc:
+        logger.warning("Perplexity deep-enrich rejected: %s", exc.reason)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY, detail=str(exc)
+        ) from None
 
     return {
         "raw_provider_response": data,
@@ -561,6 +545,18 @@ def merge_quick_and_deep(
 # POST Endpoint - TRIGGER Deep Enrichment (THIS WAS MISSING!)
 # ---------------------------------------------------------------------------
 
+def _mark_deep_enrichment_failed(supabase: Client, contact_id: str, user_id: str) -> None:
+    """Best-effort status cleanup without touching any saved enrichment payload."""
+    try:
+        supabase.table("contacts").update({
+            "enrichment_status": "failed"
+        }).eq("id", contact_id).eq("user_id", user_id).eq(
+            "enrichment_status", "processing"
+        ).execute()
+    except Exception:
+        logger.warning("Could not clear Deep processing status for contact %s", contact_id)
+
+
 @router.post(
     "/deep-enrich/{contact_id}",
     response_model=DeepEnrichmentStatus,
@@ -581,11 +577,9 @@ async def trigger_deep_enrichment(
             detail="Deep enrichment service not configured",
         )
     
+    processing_started = False
     try:
         contact_res = supabase.table("contacts").select("*").eq("id", contact_id).eq("user_id", user.id).execute()
-        
-        # Debug logging
-        logger.info(f"Supabase response type: {type(contact_res.data)}, content: {contact_res.data[:1] if contact_res.data else 'empty'}")
         
         if not contact_res.data or len(contact_res.data) == 0:
             raise HTTPException(status_code=404, detail="Contact not found")
@@ -601,12 +595,11 @@ async def trigger_deep_enrichment(
             logger.error(f"Contact extraction failed. Final type: {type(contact)}, raw data type: {type(contact_res.data)}")
             raise HTTPException(status_code=500, detail=f"Invalid contact data: expected dict, got {type(contact).__name__}")
         
-        logger.info(f"Contact extracted successfully: {contact.get('id')}, {contact.get('firstname')} {contact.get('lastname')}")
-        
         # Update status to processing
         supabase.table("contacts").update({
             "enrichment_status": "processing"
-        }).eq("id", contact_id).execute()
+        }).eq("id", contact_id).eq("user_id", user.id).execute()
+        processing_started = True
         
         # Call Perplexity API
         logger.info(f"Starting deep enrichment for contact {contact_id}")
@@ -653,20 +646,18 @@ async def trigger_deep_enrichment(
         )
         
     except HTTPException:
+        if processing_started:
+            _mark_deep_enrichment_failed(supabase, contact_id, user.id)
         raise
     except Exception as e:
         logger.error(f"Deep enrichment failed for {contact_id}: {e}", exc_info=True)
         
-        try:
-            supabase.table("contacts").update({
-                "enrichment_status": "failed"
-            }).eq("id", contact_id).execute()
-        except Exception:
-            pass
+        if processing_started:
+            _mark_deep_enrichment_failed(supabase, contact_id, user.id)
         
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Deep enrichment failed: {str(e)}",
+            detail="Deep enrichment could not be completed. Reopen the contact to check saved results before retrying.",
         )
 
 # ---------------------------------------------------------------------------
